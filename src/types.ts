@@ -35,6 +35,19 @@ export interface GameState {
   experience: number;
   day: number;
   timeOfDay: "Morning" | "Afternoon" | "Night";
+  attributes?: {
+    str: number;
+    dex: number;
+    int: number;
+    will: number;
+    eth: number;
+  };
+  skills?: {
+    cyberBlade: number;
+    netSlicer: number;
+    heavyChrome: number;
+    mindmancer: number;
+  };
 }
 
 export interface LogMessage {

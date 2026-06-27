@@ -91,6 +91,49 @@ export default function App() {
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [hasSave, setHasSave] = useState(false);
 
+  // Ventilation Shaft failure state for richer branch options
+  const [ventFailed, setVentFailed] = useState(false);
+
+  // Tactical grid-based combat structures
+  interface GridCombatant {
+    id: string;
+    name: string;
+    team: 'player' | 'enemy';
+    hp: number;
+    maxHp: number;
+    shields: number;
+    maxShields: number;
+    x: number;
+    y: number;
+    avatar: string;
+    color: string;
+    range: number;
+    damage: number;
+    ap: number;
+    maxAp: number;
+    initiative: number;
+    isDead: boolean;
+    isCompanion?: boolean;
+  }
+
+  interface GridCombatState {
+    combatants: GridCombatant[];
+    turnOrder: string[];
+    currentTurnIdx: number;
+    selectedAction: "move" | "attack" | "spell" | "item" | null;
+    turnLog: string;
+  }
+
+  const [gridCombat, setGridCombat] = useState<GridCombatState | null>(null);
+
+  // Hex matching hacking mini-game state
+  const [hackingPuzzle, setHackingPuzzle] = useState<{
+    targets: { hex: string; matched: boolean }[];
+    options: string[];
+    selectedTargetIdx: number | null;
+    status: "idle" | "playing" | "success" | "failure";
+  } | null>(null);
+
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Dismiss companion from squad entirely
@@ -158,6 +201,254 @@ export default function App() {
     });
   };
 
+  // Tactical grid-based combat initialization helper
+  const initGridCombat = (
+    enemyName: string,
+    enemyHp: number,
+    enemyMaxHp: number,
+    enemyShields: number,
+    enemyMaxShields: number,
+    district: string,
+    party: string[],
+    archetype: string
+  ) => {
+    const pRange = archetype === "Cyber-Blade" ? 1 : 3;
+    const pDmg = archetype === "Cyber-Blade" ? 22 : archetype === "Techno-Mage" ? 28 : 18;
+    const pAvatar = archetype === "Cyber-Blade" ? "⚔️" : archetype === "Techno-Mage" ? "🔮" : "🔫";
+
+    const combatants: GridCombatant[] = [
+      {
+        id: "player",
+        name: `You (${archetype})`,
+        team: "player",
+        hp: gameState?.hp || 100,
+        maxHp: gameState?.maxHp || 100,
+        shields: 0,
+        maxShields: 0,
+        x: 1,
+        y: 2,
+        avatar: pAvatar,
+        color: "border-cyan-500 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.4)]",
+        range: pRange,
+        damage: pDmg,
+        ap: 2,
+        maxAp: 2,
+        initiative: 12 + Math.floor(Math.random() * 5),
+        isDead: false
+      }
+    ];
+
+    // Prologue companions
+    if (["conduit09", "shatter_ridge_core"].includes(district)) {
+      combatants.push({
+        id: "vice",
+        name: "Vice (Companion)",
+        team: "player",
+        hp: 120,
+        maxHp: 120,
+        shields: 0,
+        maxShields: 0,
+        x: 1,
+        y: 1,
+        avatar: "🔫",
+        color: "border-rose-500 text-rose-400",
+        range: 3,
+        damage: 16,
+        ap: 2,
+        maxAp: 2,
+        initiative: 14,
+        isDead: false,
+        isCompanion: true
+      });
+      combatants.push({
+        id: "tracker",
+        name: "Tracker (Companion)",
+        team: "player",
+        hp: 90,
+        maxHp: 90,
+        shields: 0,
+        maxShields: 0,
+        x: 0,
+        y: 3,
+        avatar: "📟",
+        color: "border-amber-500 text-amber-400",
+        range: 3,
+        damage: 12,
+        ap: 2,
+        maxAp: 2,
+        initiative: 13,
+        isDead: false,
+        isCompanion: true
+      });
+    } else if (district === "data_vault") {
+      combatants.push({
+        id: "vice",
+        name: "Vice (Companion)",
+        team: "player",
+        hp: 75,
+        maxHp: 120,
+        shields: 0,
+        maxShields: 0,
+        x: 1,
+        y: 1,
+        avatar: "🔫",
+        color: "border-rose-500 text-rose-400",
+        range: 3,
+        damage: 16,
+        ap: 2,
+        maxAp: 2,
+        initiative: 14,
+        isDead: false,
+        isCompanion: true
+      });
+    } else {
+      // Chapter 1 onwards
+      party.forEach((name, idx) => {
+        if (name === "Scythe") {
+          combatants.push({
+            id: "scythe",
+            name: "Scythe (Companion)",
+            team: "player",
+            hp: 100,
+            maxHp: 100,
+            shields: 10,
+            maxShields: 10,
+            x: 0,
+            y: idx + 1,
+            avatar: "🥷",
+            color: "border-teal-500 text-teal-400",
+            range: 1,
+            damage: 24,
+            ap: 2,
+            maxAp: 2,
+            initiative: 16,
+            isDead: false,
+            isCompanion: true
+          });
+        } else if (name === "Vex") {
+          combatants.push({
+            id: "vex",
+            name: "Vex (Companion)",
+            team: "player",
+            hp: 80,
+            maxHp: 80,
+            shields: 0,
+            maxShields: 0,
+            x: 0,
+            y: idx + 1,
+            avatar: "🔮",
+            color: "border-purple-500 text-purple-400",
+            range: 4,
+            damage: 26,
+            ap: 2,
+            maxAp: 2,
+            initiative: 11,
+            isDead: false,
+            isCompanion: true
+          });
+        } else if (name === "Brick") {
+          combatants.push({
+            id: "brick",
+            name: "Brick (Companion)",
+            team: "player",
+            hp: 150,
+            maxHp: 150,
+            shields: 30,
+            maxShields: 30,
+            x: 0,
+            y: idx + 1,
+            avatar: "🦾",
+            color: "border-stone-500 text-stone-400",
+            range: 1,
+            damage: 18,
+            ap: 2,
+            maxAp: 2,
+            initiative: 8,
+            isDead: false,
+            isCompanion: true
+          });
+        }
+      });
+    }
+
+    // Add primary enemy
+    const isBoss = enemyName.includes("Behemoth") || enemyName.includes("Ares Prime") || enemyName.includes("Special Ops Commander");
+    combatants.push({
+      id: "enemy-1",
+      name: enemyName,
+      team: "enemy",
+      hp: enemyHp,
+      maxHp: enemyMaxHp,
+      shields: enemyShields,
+      maxShields: enemyMaxShields,
+      x: 6,
+      y: 2,
+      avatar: isBoss ? "👹" : enemyName.includes("Drone") ? "🤖" : "🕴️",
+      color: "border-red-500 text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]",
+      range: isBoss ? 2 : enemyName.includes("Drone") ? 3 : 2,
+      damage: isBoss ? 24 : 14,
+      ap: 2,
+      maxAp: 2,
+      initiative: 10 + Math.floor(Math.random() * 4),
+      isDead: false
+    });
+
+    // Add 1 auxiliary enemy if not solo weak mob
+    if (enemyHp >= 40) {
+      const isMech = enemyName.includes("Drone") || enemyName.includes("Security");
+      combatants.push({
+        id: "enemy-2",
+        name: isMech ? "Sentry Watcher Drone" : "Corporate Patrol Guard",
+        team: "enemy",
+        hp: Math.floor(enemyHp * 0.45) || 25,
+        maxHp: Math.floor(enemyHp * 0.45) || 25,
+        shields: 0,
+        maxShields: 0,
+        x: 7,
+        y: isMech ? 1 : 3,
+        avatar: isMech ? "🛸" : "👮",
+        color: "border-red-400 text-red-400",
+        range: isMech ? 3 : 2,
+        damage: isMech ? 8 : 10,
+        ap: 2,
+        maxAp: 2,
+        initiative: 11,
+        isDead: false
+      });
+    }
+
+    const sorted = [...combatants].sort((a, b) => b.initiative - a.initiative);
+    const turnOrder = sorted.map(c => c.id);
+
+    return {
+      combatants,
+      turnOrder,
+      currentTurnIdx: 0,
+      selectedAction: "move" as const,
+      turnLog: `Tactical grid combat initialized. All units deployed. ${sorted[0].name} has the initiative!`
+    };
+  };
+
+  // Sync grid combat with game state combat changes
+  useEffect(() => {
+    if (gameState?.combatState?.isActive && !gridCombat) {
+      const combat = gameState.combatState;
+      const initialGrid = initGridCombat(
+        combat.enemyName,
+        combat.enemyHp,
+        combat.enemyMaxHp,
+        combat.enemyShields,
+        combat.enemyMaxShields,
+        gameState.district,
+        gameState.party,
+        gameState.archetype
+      );
+      setGridCombat(initialGrid);
+    } else if (!gameState?.combatState?.isActive && gridCombat) {
+      setGridCombat(null);
+    }
+  }, [gameState?.combatState?.isActive]);
+
   // Check if save exists on load
   useEffect(() => {
     const savedState = localStorage.getItem("neon_ether_state");
@@ -182,7 +473,9 @@ export default function App() {
       const buttons = gameState.combatState?.isActive
         ? ["Physical Attack", "Spell Slash", "Cyber Hack", "Quick Item", "Attempt Flee"]
         : activePOIView 
-          ? (MAP_POIS.find(p => p.id === activePOIView)?.buttons || [])
+          ? (activePOIView === "ventilation_shaft" && ventFailed
+            ? ["Force Fan Blades (STR Check)", "Trigger EMP Burst (EMP Explosion!)", "Hack Fan Console (INT Check)"]
+            : (MAP_POIS.find(p => p.id === activePOIView)?.buttons || []))
           : [];
         
       const keyIndex = parseInt(e.key) - 1;
@@ -204,6 +497,8 @@ export default function App() {
       try {
         const parsedState = JSON.parse(savedState);
         // Clean migration of old state variables
+        const isBlade = parsedState.archetype === "Cyber-Blade";
+        const isMage = parsedState.archetype === "Techno-Mage";
         const migratedState: GameState = {
           district: "aurus",
           poi: "Main Headquarters (The Hideout)",
@@ -223,6 +518,19 @@ export default function App() {
           experience: 0,
           day: 1,
           timeOfDay: "Morning",
+          attributes: {
+            str: isBlade ? 14 : isMage ? 9 : 10,
+            dex: isBlade ? 15 : isMage ? 11 : 13,
+            int: isBlade ? 10 : isMage ? 14 : 15,
+            will: isBlade ? 11 : isMage ? 12 : 11,
+            eth: isBlade ? 10 : isMage ? 15 : 11,
+          },
+          skills: {
+            cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
+            netSlicer: isBlade ? 1 : isMage ? 2 : 3,
+            heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
+            mindmancer: 0
+          },
           ...parsedState
         };
         setGameState(migratedState);
@@ -293,8 +601,8 @@ export default function App() {
 
     setLogs([welcomeLog]);
     setGameState(initial);
-    setActiveRegionId("aurus");
-    setActivePOIView("hideout"); // Start initialized right inside the Hideout detailed view!
+    setActiveRegionId("conduit09");
+    setActivePOIView("ventilation_shaft"); // Start initialized right inside the Ventilation Shaft detailed view!
     setCurrentScreen("game");
     setIsLoading(false);
   };
@@ -303,6 +611,12 @@ export default function App() {
   const handleSwitchRegion = (regionId: string) => {
     const reg = REGIONS.find(r => r.id === regionId);
     if (!reg || !gameState) return;
+
+    // Check if player is currently in the prologue
+    if (["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district)) {
+      triggerToast("SYSTEM ERROR: LOCAL COGNITIVE BOUNDS ENGAGED - HEIST IN PROGRESS");
+      return;
+    }
 
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
@@ -417,6 +731,30 @@ export default function App() {
         combat.enemyHp -= hDmg;
         narrative = `💾 NODE OVERLOAD: You inject a system-overload ransomware trigger! Dealt ${hDmg} neuro-bypass damage directly.`;
       }
+      else if (cleanAction.includes("mind hack")) {
+        if (nextState.mana < 20) {
+          narrative = "⚠️ COGNITIVE STABLE FAULT: Insufficient ETHER flow. Your psychic hypnosis failed! (-0 Mana)";
+        } else {
+          nextState.mana -= 20;
+          combat.enemyHp = Math.max(0, combat.enemyHp - 50);
+          narrative = `🔮 MIND HACK: You bend the synaptic currents of ${combat.enemyName}! Hypnotized for 2 turns. The hostile turns its weapon inward, blasting its own systems for 50 damage! (-20 Mana)`;
+        }
+      }
+      else if (cleanAction.includes("neural overload")) {
+        if (nextState.mana < 35) {
+          narrative = "⚠️ COGNITIVE STABLE FAULT: Insufficient ETHER flow. Your neural overload failed! (-0 Mana)";
+        } else {
+          nextState.mana -= 35;
+          const roll = Math.random();
+          if (roll <= 0.40) {
+            combat.enemyHp = 0;
+            narrative = `🔮 NEURAL OVERLOAD SUCCESS: A devastating psych-ether spike ruptures the brain synapses of ${combat.enemyName}! Instant critical shutdown! (-35 Mana)`;
+          } else {
+            nextState.hp = Math.max(1, nextState.hp - 15);
+            narrative = `🔮 NEURAL OVERLOAD FAIL: You focus your psychic ether beam, but ${combat.enemyName}'s firewall resists the impact! You suffer 15 points of traumatic psychic feedback. (-35 Mana)`;
+          }
+        }
+      }
       else if (cleanAction.includes("quick item") || cleanAction.includes("med-stim") || cleanAction.includes("consume heal")) {
         if (nextState.inventory.includes("Nano Med-Stim (Heal)")) {
           nextState.hp = Math.min(nextState.maxHp, nextState.hp + 60);
@@ -457,6 +795,23 @@ export default function App() {
 
         narrative += `\n\n★ THREAT EXTERMINATED: ${combat.enemyName} collasped with heavy spark leaks. You recover +${rewardC}¤ and earn +${expGained} XP!`;
 
+        // Check Prologue map transitions on combat victory
+        if (combat.enemyName.includes("Security Drones") || combat.enemyName.includes("Autonomous Security Drones")) {
+          nextState.district = "data_vault";
+          nextState.poi = "Sanctuary Hacking Terminal";
+          setActiveRegionId("data_vault");
+          setActivePOIView("terminal_hacking_puzzle");
+          nextState.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
+          narrative += `\n\n🛡️ SECURITY BYPASSED: The final security drone sparks and explodes! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector! Get inside the core vault chamber.' You travel to the Data Vault Sanctuary.`;
+        }
+        else if (combat.enemyName.includes("Corporate Enforcers") || combat.enemyName.includes("Ambush")) {
+          nextState.poi = "Mysterious Relic Altar";
+          setActivePOIView("relic_altar");
+          setActiveDialogue("post_combat_tracker");
+          nextState.activeQuests = ["Prologue: Choose the fate of the dying Tracker and escape to Aurus District Safe-house."];
+          narrative += `\n\n🛡️ AMBUSH SURVIVED: The last corporate enforcer drops. Tracker lies on the bloody steel floor, breathing his final heavy breaths. Vice, wounded and leaning against the altar, gasps: 'That traitor... he was about to sell us out. Check his belt.'\n\nYou retrieve a decrypted datapad proving Tracker was under contract to assassinate you and Vice once the data was secured! Choose Tracker's fate above.`;
+        }
+
         // Check Quest item collection
         if (combat.enemyName === "Toxic Sludge Behemoth" && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
           nextState.inventory.push("Acid Beast Core");
@@ -485,17 +840,26 @@ export default function App() {
         narrative += `\n\n⚠️ HOSTILE REACTION: ${combat.enemyName} strikes back, dealing ${eDmg} kinetic damage to your armor.`;
 
         if (nextState.hp <= 0) {
-          // PLAYER DOWNED
-          const penalty = Math.floor(nextState.credits * 0.15);
-          nextState.credits -= penalty;
-          nextState.hp = 25;
-          nextState.poi = "Main Headquarters (The Hideout)";
-          nextState.district = "aurus";
-          setActiveRegionId("aurus");
-          setActivePOIView("hideout");
-          nextState.combatState = null;
-          narrative += `\n\n☠️ SYSTEM OVERRIDE TRAUMA: Bio-signatures flatlined! Your emergency backup beacon auto-teleported your frame to Hideout medical bay. -${penalty}¤ Trauma deduction.`;
-          logType = "system";
+          if (["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district)) {
+            // PROLOGUE GAME OVER / RETRY
+            nextState.hp = nextState.maxHp;
+            nextState.mana = nextState.maxMana;
+            nextState.combatState = null;
+            narrative += `\n\n☠️ CRITICAL OVERLOAD: Your bio-signatures flatlined in the catacombs! Fortunately, your squad-mate Vice injected an adrenaline micro-dose, resetting your critical vitals and dragging you back to safety. Let's try again!`;
+            logType = "system";
+          } else {
+            // PLAYER DOWNED
+            const penalty = Math.floor(nextState.credits * 0.15);
+            nextState.credits -= penalty;
+            nextState.hp = 25;
+            nextState.poi = "Main Headquarters (The Hideout)";
+            nextState.district = "aurus";
+            setActiveRegionId("aurus");
+            setActivePOIView("hideout");
+            nextState.combatState = null;
+            narrative += `\n\n☠️ SYSTEM OVERRIDE TRAUMA: Bio-signatures flatlined! Your emergency backup beacon auto-teleported your frame to Hideout medical bay. -${penalty}¤ Trauma deduction.`;
+            logType = "system";
+          }
         } else {
           combat.turnLog = `Enemy HP: ${combat.enemyHp}/${combat.enemyMaxHp}. Action requested!`;
           nextState.combatState = combat;
@@ -553,6 +917,208 @@ export default function App() {
         narrative = `💤 REST PROTOCOLS COMPLETE: Rested on safehouse medical bunk. Cybernetic channels completely drained and fully calibrated to 100% capacity.${passiveText}`;
       }
       
+      // ---- PROLOGUE MAP 1: SUBSURFACE AI CATACOMBS (CONDUIT 09) ----
+      
+      // Ventilation Shaft
+      else if (cleanAction.includes("slip through vent")) {
+        const dex = nextState.attributes?.dex || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + dex;
+        if (roll >= 23) {
+          nextState.experience += 25;
+          narrative = `🎯 DEX CHECK SUCCESS (Roll: ${roll} vs 23): You calibrate your speed servos perfectly, sliding through the spinning blades during the sub-second frequency lull! Vice whispers: 'Damn, kid. Clean slip.' Earned +25 XP.`;
+          nextState.poi = "Security Sub-Terminal";
+          setActivePOIView("security_terminal");
+        } else {
+          const dmg = 20;
+          nextState.hp = Math.max(10, nextState.hp - dmg);
+          nextState.experience += 10;
+          setVentFailed(true);
+          narrative = `⚠️ DEX CHECK FAILURE (Roll: ${roll} vs 23): The heavy spinning fan blade strikes your back chassis! Sparks fly as you are pinned inside the duct. Dealt ${dmg} kinetic damage. Alarms begin to beep softly! You are STUCK in the ventilation shaft. You must choose an emergency override response immediately before security arrives.`;
+        }
+      }
+      else if (cleanAction.includes("force fan blades (str check)") || cleanAction.includes("force fan")) {
+        const str = nextState.attributes?.str || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + str;
+        if (roll >= 15) {
+          narrative = `💥 STR CHECK SUCCESS (Roll: ${roll} vs 15): With a guttural growl, you wrench the auxiliary hydraulic shaft. The massive blades halt with a screeching metallic tear! You scramble through, but the noise was immense! Alarm beacons begin to spin.`;
+          nextState.poi = "Security Sub-Terminal";
+          setActivePOIView("security_terminal");
+          setVentFailed(false);
+          
+          // Trigger alarm combat!
+          nextState.combatState = {
+            enemyName: "Ares Sentry Drone (Alerted)",
+            enemyHp: 40,
+            enemyMaxHp: 40,
+            enemyShields: 10,
+            enemyMaxShields: 10,
+            isActive: true,
+            turnLog: "The screeching fan tear has alerted the nearby sector! A rapid sentry drone deploys from the ceiling vents with guns hot!"
+          };
+        } else {
+          narrative = `❌ STR CHECK FAILURE (Roll: ${roll} vs 15): You attempt to force the rotor, but the titanium alloy is too rigid! The blades spin faster, tearing into your cybernetics for 15 damage and sounding the sector alarms! Sentry units are converging!`;
+          nextState.hp = Math.max(10, nextState.hp - 15);
+          nextState.poi = "Security Sub-Terminal";
+          setActivePOIView("security_terminal");
+          setVentFailed(false);
+          
+          nextState.combatState = {
+            enemyName: "Ares Security Drone (Group Ambush)",
+            enemyHp: 50,
+            enemyMaxHp: 50,
+            enemyShields: 15,
+            enemyMaxShields: 15,
+            isActive: true,
+            turnLog: "Alarms are blaring! You fall out of the ventilation shaft right in front of an alerted security patrol!"
+          };
+        }
+      }
+      else if (cleanAction.includes("trigger emp burst") || cleanAction.includes("emp explosion")) {
+        narrative = `⚡ LOUD EMP EXPLOSION: You override your cyberdeck battery, releasing a raw, unstable EMP blast! The ventilation fan sparks violently and explodes in a shower of blue fire. You are thrown forward into the Security Sub-Terminal, taking 10 damage from the shockwave. The blast has completely fried the sector's grid, sounding emergency sirens!`;
+        nextState.hp = Math.max(10, nextState.hp - 10);
+        nextState.poi = "Security Sub-Terminal";
+        setActivePOIView("security_terminal");
+        setVentFailed(false);
+        
+        nextState.combatState = {
+          enemyName: "Alerted Patrol Guard (EMP Intercept)",
+          enemyHp: 45,
+          enemyMaxHp: 45,
+          enemyShields: 10,
+          enemyMaxShields: 10,
+          isActive: true,
+          turnLog: "The EMP explosion blacked out the corridor! Alerted patrol guards breach the entrance with sub-machine railguns flashing!"
+        };
+      }
+      else if (cleanAction.includes("hack fan console (int check)") || cleanAction.includes("hack fan")) {
+        const intVal = nextState.attributes?.int || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        if (roll >= 16) {
+          narrative = `💾 INT CHECK SUCCESS (Roll: ${roll} vs 16): You patch your neural link directly into the exposed fan relay. Executing a quiet loop-bypass script, the heavy blades spin down to a complete, silent halt. You slide through safely. Vice pats your shoulder: 'Smart hack, rookie.'`;
+          nextState.poi = "Security Sub-Terminal";
+          setActivePOIView("security_terminal");
+          setVentFailed(false);
+        } else {
+          narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 16): Your override script causes a short circuit! A small pop sounds, and the fan controller starts burning. You take 10 kinetic damage, and the sparks alert a security drone!`;
+          nextState.hp = Math.max(10, nextState.hp - 10);
+          nextState.poi = "Security Sub-Terminal";
+          setActivePOIView("security_terminal");
+          setVentFailed(false);
+          
+          nextState.combatState = {
+            enemyName: "Ares Sentry Drone (Short-Circuit Alert)",
+            enemyHp: 40,
+            enemyMaxHp: 40,
+            enemyShields: 5,
+            enemyMaxShields: 5,
+            isActive: true,
+            turnLog: "The burning fan controller sounds a local short-circuit alarm! A patrol drone hovers down to investigate!"
+          };
+        }
+      }
+      else if (nextState.district === "conduit09" && (cleanAction.includes("talk to vice") || cleanAction.includes("talk to tracker") || cleanAction.includes("banter"))) {
+        narrative = `💬 AMBIENT CONDUIT FEED:
+- Vice: 'We're looking for server node 09-D. Keep your head on a swivel. If Tracker's decryption is off, we'll be fighting our way out.'
+- Tracker: 'My keys are flawless. Just focus on prying any heavy bulkheads we find, recruit.'`;
+      }
+
+      // Security Sub-Terminal
+      else if (cleanAction.includes("bypass sub-terminal")) {
+        const intVal = nextState.attributes?.int || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        if (roll >= 23) {
+          nextState.experience += 25;
+          nextState.inventory.push("Rusted Circuitry");
+          narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 23): You slice the alarm sub-grid gracefully, rendering the outer perimeter completely blind! You salvage a piece of valuable 'Rusted Circuitry' copper scrap from the motherboard. Tracker grunts: 'Efficient work.' Earned +25 XP.`;
+          nextState.poi = "Heavy Blast Door";
+          setActivePOIView("blast_door");
+        } else {
+          nextState.mana = Math.max(0, nextState.mana - 15);
+          nextState.experience += 10;
+          narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 23): An electrostatic firewall feedback discharges directly into your deck! Your mana flow drops by -15. But you force an emergency override to clear the block. Earned +10 XP.`;
+          nextState.poi = "Heavy Blast Door";
+          setActivePOIView("blast_door");
+        }
+      }
+      else if (cleanAction.includes("search terminal wreckage")) {
+        if (Math.random() > 0.4) {
+          nextState.inventory.push("Rusted Circuitry");
+          narrative = "🔍 SCAVENGE SUCCESS: You unscrew the auxiliary panel and slide out a piece of copper 'Rusted Circuitry' scrap! This can be recycled at the Apex Armory.";
+        } else {
+          narrative = "🔍 SCAVENGE EMPTY: The sub-terminal circuits are completely charred and useless.";
+        }
+      }
+
+      // Heavy Blast Door
+      else if (cleanAction.includes("pry open valve") || cleanAction.includes("pry open door")) {
+        const strVal = nextState.attributes?.str || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + strVal;
+        if (roll >= 23) {
+          nextState.experience += 25;
+          narrative = `🎯 STR CHECK SUCCESS (Roll: ${roll} vs 23): You grip the mechanical hydraulic valve and twist it with raw hydraulic force! The massive titanium doors hiss open. Vice nods: 'Whoa. Mind your power limits, brute!' Earned +25 XP.`;
+          nextState.poi = "Next Section Gate (Transit)";
+          setActivePOIView("section_gate");
+        } else {
+          const dmg = 10;
+          nextState.hp = Math.max(10, nextState.hp - dmg);
+          nextState.experience += 10;
+          narrative = `⚠️ STR CHECK FAILURE (Roll: ${roll} vs 23): Your hydraulic servos scream under the strain! You suffer ${dmg} points of internal system fatigue. Tracker steps up and uses his manual heavy cutter to melt the latch. Earned +10 XP.`;
+          nextState.poi = "Next Section Gate (Transit)";
+          setActivePOIView("section_gate");
+        }
+      }
+
+      // Next Section Gate (Transit to Map 2)
+      else if (cleanAction.includes("proceed to shatter-ridge core")) {
+        nextState.district = "shatter_ridge_core";
+        nextState.poi = "Core Array Shatter-Ridge";
+        setActiveRegionId("shatter_ridge_core");
+        setActivePOIView("main_array_core");
+        nextState.activeQuests = ["Prologue: Core Array Shatter-Ridge - Defend Tracker while he bypasses the primary mainframe lock."];
+        narrative = "🚀 TRANSITING SECTION: You climb through the heavy gate and seal it behind you. A huge cavernous hangar of the Core Array Shatter-Ridge stretches ahead. The glowing blue crystals hum loudly.";
+      }
+
+      // ---- PROLOGUE MAP 2: SHATTER-RIDGE CORE ----
+      else if (cleanAction.includes("defend core array") || cleanAction.includes("triggers combat")) {
+        nextState.combatState = {
+          enemyName: "3x Autonomous Security Drones",
+          enemyHp: 130,
+          enemyMaxHp: 130,
+          enemyShields: 30,
+          enemyMaxShields: 30,
+          isActive: true,
+          turnLog: "Three floating discs with revolving red sensors descend from the grid ceiling, hum-charging their laser cannons!"
+        };
+        narrative = "💥 COMBAT INITIATED: The automated security network is fully alert! Secure the perimeter and destroy the security drones!";
+        logType = "combat";
+      }
+
+      // ---- PROLOGUE MAP 3: DATA VAULT SANCTUARY ----
+      else if (cleanAction.includes("activate mysterious relic")) {
+        // Debuff player: reduce max HP by 25, set mana to highly unstable
+        nextState.maxHp = Math.max(50, nextState.maxHp - 25);
+        nextState.hp = Math.min(nextState.hp, nextState.maxHp);
+        
+        // Mid-Battle Ability Unlock: Grant the player 2 absolute Mindmancer spells
+        if (nextState.skills) {
+          nextState.skills.mindmancer = 1; // Unlock Mindmancer spells
+        }
+        
+        // Spawn Ambush Encounter: Ares Corporate Enforcers
+        nextState.combatState = {
+          enemyName: "Ares Corporate Enforcers (Ambush)",
+          enemyHp: 160,
+          enemyMaxHp: 160,
+          enemyShields: 20,
+          enemyMaxShields: 20,
+          isActive: true,
+          turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
+        };
+        
+        narrative = "💥 ALARM SIGNAL DETECTED: The moment you touch the floating golden relic, a massive psychic feedback shockwave rips into your neural pathways, reducing your maximum vitals! Your eyes spark with purple energy... the MINDMANCER powers have awakened inside your cortex! Mid-Battle spells unlocked: Mind Hack and Neural Overload!\n\nSuddenly, the vault walls detonate. Ares Corporate Enforcers ambush you!";
+        logType = "combat";
+      }
+
       // Check Inventory Stash
       else if (cleanAction.includes("check stash") || cleanAction.includes("stash inventory")) {
         narrative = `🎒 STORAGE AUDIT: Current items stored in physical slots: ${nextState.inventory.length > 0 ? nextState.inventory.join(", ") : "None"}. Balance liquidity: ${nextState.credits}¤.`;
@@ -1274,19 +1840,32 @@ export default function App() {
                     {/* Regional Switch Panel on top of Holographic view */}
                     {!activePOIView && (
                       <div className="flex flex-wrap gap-1 font-mono text-3xs">
-                        {REGIONS.map(r => (
-                          <button
-                            key={r.id}
-                            onClick={() => handleSwitchRegion(r.id)}
-                            className={`px-2.5 py-1 rounded border transition-all cursor-pointer ${
-                              activeRegionId === r.id
-                                ? "bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]"
-                                : "bg-slate-900/50 text-slate-400 border-white/5 hover:bg-slate-900/80 hover:text-white"
-                            }`}
-                          >
-                            {r.name.split(" ")[0]}
-                          </button>
-                        ))}
+                        {REGIONS.map(r => {
+                          const isPrologueRegion = ["conduit09", "shatter_ridge_core", "data_vault"].includes(r.id);
+                          const currentIsPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+                          const isDisabled = currentIsPrologue && !isPrologueRegion;
+                          return (
+                            <button
+                              key={r.id}
+                              onClick={() => {
+                                if (isDisabled) {
+                                  triggerToast("SYSTEM LOCKED: FINISH HEIST OBJECTIVE FIRST");
+                                  return;
+                                }
+                                handleSwitchRegion(r.id);
+                              }}
+                              className={`px-2.5 py-1 rounded border transition-all cursor-pointer ${
+                                activeRegionId === r.id
+                                  ? "bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]"
+                                  : isDisabled
+                                    ? "bg-slate-950/20 text-slate-700 border-dashed border-white/5 cursor-not-allowed"
+                                    : "bg-slate-900/50 text-slate-400 border-white/5 hover:bg-slate-900/80 hover:text-white"
+                              }`}
+                            >
+                              {isDisabled ? `🔒 ${r.name.split(" ")[0]}` : r.name.split(" ")[0]}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1447,7 +2026,133 @@ export default function App() {
                           {/* Dynamic NPC Dialog or Scene Buttons depending on dialogue engagement */}
                           <div className="border-t border-white/5 pt-3">
                             {activeDialogue ? (
-                              <div className="bg-slate-900/60 border border-cyan-400/20 rounded-lg p-3 relative flex items-start gap-3">
+                              activeDialogue === "post_combat_tracker" ? (
+                                <div className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl">
+                                  <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
+                                    <span className="text-red-500 font-extrabold text-[11px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                      <AlertTriangle size={14} /> Traitor's Judgment Scene
+                                    </span>
+                                    <span className="text-3xs text-slate-500">CONDUIT DATA SECURED</span>
+                                  </div>
+                                  
+                                  <div className="flex gap-3 items-start">
+                                    <img
+                                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                                      alt="Tracker portrait"
+                                      referrerPolicy="no-referrer"
+                                      className="w-14 h-14 object-cover rounded-md border border-red-500/30 filter grayscale flex-shrink-0"
+                                    />
+                                    <div className="text-[10px] space-y-1 text-slate-300 flex-1">
+                                      <p className="text-red-400 font-extrabold uppercase text-left">Tracker (Dying)</p>
+                                      <p className="text-3xs text-slate-500 leading-none text-left">ROLE: Tactical Co-Supervisor (Traitor)</p>
+                                      <p className="text-slate-300 font-sans text-2xs italic leading-relaxed pt-1 text-left">
+                                        "cough... cough... You think... you won, rookie? Ares Biotech... owns Megacity-9. If you don't hand... the data... to them... you're both dead..."
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-slate-900/40 border border-white/5 p-2 rounded text-3xs text-slate-400 font-sans leading-relaxed text-left">
+                                    Vice leans heavily against the altar, bleeding from a plasma burn: "The tracker pad lists Ares' direct assassination protocol. He was paid to wipe us after the data download. He's dying, but we can't leave witnesses. What are you going to do, rookie?"
+                                  </div>
+
+                                  {/* Post-combat choices */}
+                                  <div className="flex flex-col sm:flex-row gap-2 pt-2 text-3xs uppercase justify-start">
+                                    <button
+                                      onClick={() => {
+                                        let next = { ...gameState! };
+                                        next.district = "aurus";
+                                        next.poi = "Main Headquarters (The Hideout)";
+                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedQuests.push("Traitors Get No Mercy (Killed Tracker)");
+                                        setGameState(next);
+                                        setActiveRegionId("aurus");
+                                        setActivePOIView("hideout");
+                                        setActiveDialogue(null);
+                                        
+                                        setLogs(prev => [
+                                          ...prev,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                            text: "💥 TRAITOR ELIMINATED: You double-tap Tracker with a clean round. There is no space for traitors in the slums. Carrying the heavy data crystal and helping the wounded Vice, you slip through the cooling vents as the alarm sirens begin blaring. After a grueling trek, you arrive at the Aurus District Safehouse. You split up to bypass scanners, and Vice has gone dark. Chapter 1 Begins.",
+                                            type: "narration",
+                                            district: "aurus",
+                                            poi: "Main Headquarters (The Hideout)"
+                                          }
+                                        ]);
+                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AUREUS DISTRICT");
+                                      }}
+                                      className="bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center"
+                                    >
+                                      [Double Tap] Kill Tracker
+                                    </button>
+
+                                    <button
+                                      onClick={() => {
+                                        let next = { ...gameState! };
+                                        next.district = "aurus";
+                                        next.poi = "Main Headquarters (The Hideout)";
+                                        if (next.skills) {
+                                          next.skills.mindmancer += 1;
+                                        }
+                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedQuests.push("Mind-Shattered Traitor (Subjugated Tracker)");
+                                        setGameState(next);
+                                        setActiveRegionId("aurus");
+                                        setActivePOIView("hideout");
+                                        setActiveDialogue(null);
+                                        
+                                        setLogs(prev => [
+                                          ...prev,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                            text: "🔮 TRACKER SUBJUGATED: Your eyes glow purple with newly awakened Mindmancer power! You reach into Tracker's dying cortex, rewriting his neurons. He overrides the emergency lockdown doors, wipes his own memory of your involvement, and collapses. You escape with the wounded Vice to the Aurus District Safehouse, your Mindmancer skill expanding. Chapter 1 Begins.",
+                                            type: "narration",
+                                            district: "aurus",
+                                            poi: "Main Headquarters (The Hideout)"
+                                          }
+                                        ]);
+                                        triggerToast("CHAPTER 1 BEGUN: MINDMANCER UNLOCKED (+1 Skill)");
+                                      }}
+                                      className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center animate-pulse"
+                                    >
+                                      [Mindmance] Subjugate Traitor
+                                    </button>
+
+                                    <button
+                                      onClick={() => {
+                                        let next = { ...gameState! };
+                                        next.district = "aurus";
+                                        next.poi = "Main Headquarters (The Hideout)";
+                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedQuests.push("Pacified Traitor (Sedated Tracker)");
+                                        setGameState(next);
+                                        setActiveRegionId("aurus");
+                                        setActivePOIView("hideout");
+                                        setActiveDialogue(null);
+                                        
+                                        setLogs(prev => [
+                                          ...prev,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                            text: "💊 SEDATED & FLED: You inject a high-strength corporate medical sedative into Tracker, silencing his alerts, and quickly flee into the shadows with Vice before the tactical squad breaches. You lay low inside the Aurus District Safehouse. Chapter 1 Begins.",
+                                            type: "narration",
+                                            district: "aurus",
+                                            poi: "Main Headquarters (The Hideout)"
+                                          }
+                                        ]);
+                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AUREUS DISTRICT");
+                                      }}
+                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center"
+                                    >
+                                      [Sedate] Inject Sedative & Flee
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="bg-slate-900/60 border border-cyan-400/20 rounded-lg p-3 relative flex items-start gap-3">
                                 {/* NPC small avatar */}
                                 <img
                                   src={
@@ -1610,27 +2315,182 @@ export default function App() {
                                   </div>
                                 </div>
                               </div>
-                            ) : (
-                              // Regular Location Action option rows
-                              <div className="space-y-4">
-                                <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
-                                  OPERATIONAL RESPONSES PREPARED AT LOCATION:
-                                </p>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  {(MAP_POIS.find(p => p.id === activePOIView)?.buttons || []).map((action, idx) => (
-                                    <button
-                                      key={idx}
-                                      onClick={() => handleExecuteAction(action)}
-                                      className="text-left px-3.5 py-2.5 rounded-lg border border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white font-mono text-xs transition-all flex items-center justify-between cursor-pointer group"
-                                    >
-                                      <span className="truncate group-hover:text-cyan-300">{action}</span>
-                                      <span className="text-[9px] text-slate-600 font-bold border border-white/5 px-1 rounded block flex-shrink-0 ml-2">
-                                        {idx + 1}
-                                      </span>
-                                    </button>
-                                  ))}
+                            )
+                          ) : (
+                              // Custom Mini-Game rendering for Sanctuary Hacking Terminal
+                              activePOIView === "terminal_hacking_puzzle" ? (
+                                <div className="bg-slate-950/95 border border-cyan-400/30 rounded-xl p-4 font-mono text-xs space-y-3 shadow-lg">
+                                  <div className="flex justify-between items-center border-b border-cyan-500/20 pb-2">
+                                    <span className="text-cyan-400 font-bold flex items-center gap-1.5 uppercase text-3xs tracking-widest">
+                                      <Terminal size={14} className="text-cyan-400 animate-pulse" /> Cyberdeck Decryption Module v3.15
+                                    </span>
+                                    <span className="text-[9px] text-slate-500 uppercase">INT BUFFER RATIO: {gameState?.attributes?.int || 10}</span>
+                                  </div>
+                                  
+                                  {(!hackingPuzzle || hackingPuzzle.status === "idle") ? (
+                                    <div className="text-center py-4 space-y-3">
+                                      <p className="text-slate-400 text-3xs leading-relaxed max-w-md mx-auto">
+                                        The Ares Biotech cyber-vault terminal is protected by standard dual-stage hex encryption. Match the target registers to bypass the local alarms.
+                                      </p>
+                                      <button
+                                        onClick={() => {
+                                          setHackingPuzzle({
+                                            targets: [
+                                              { hex: "0x4F", matched: false },
+                                              { hex: "0xE9", matched: false },
+                                              { hex: "0xA2", matched: false },
+                                              { hex: "0x7C", matched: false }
+                                            ],
+                                            options: ["0x3B", "0x4F", "0x1A", "0xE9", "0x8D", "0xA2", "0xD4", "0x7C"].sort(() => Math.random() - 0.5),
+                                            selectedTargetIdx: null,
+                                            status: "playing"
+                                          });
+                                        }}
+                                        className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold px-4 py-2.5 rounded text-3xs uppercase transition-all cursor-pointer shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+                                      >
+                                        Initialize Decryption Subroutines
+                                      </button>
+                                    </div>
+                                  ) : hackingPuzzle.status === "playing" ? (
+                                    <div className="space-y-4 py-1">
+                                      <p className="text-[10px] text-slate-400 text-center uppercase tracking-wider font-bold">
+                                        {hackingPuzzle.selectedTargetIdx === null 
+                                          ? "1. Select an encrypted register block below" 
+                                          : "2. Click the matching hex key from the decryption pool"}
+                                      </p>
+                                      
+                                      {/* Targets */}
+                                      <div className="grid grid-cols-4 gap-2">
+                                        {hackingPuzzle.targets.map((t, idx) => (
+                                          <button
+                                            key={idx}
+                                            onClick={() => {
+                                              if (t.matched) return;
+                                              setHackingPuzzle(prev => prev ? { ...prev, selectedTargetIdx: idx } : null);
+                                            }}
+                                            className={`p-3 rounded-lg border font-bold text-center transition-all cursor-pointer flex flex-col justify-between items-center min-h-[55px] ${
+                                              t.matched
+                                                ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-400 shadow-[inset_0_0_8px_rgba(16,185,129,0.2)] cursor-default"
+                                                : hackingPuzzle.selectedTargetIdx === idx
+                                                  ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
+                                                  : "bg-slate-900 border-white/5 text-slate-300 hover:border-white/15"
+                                            }`}
+                                          >
+                                            <span className="text-4xs text-slate-500 uppercase tracking-widest leading-none block mb-1">REG {idx + 1}</span>
+                                            <span className="text-[11px] block">{t.matched ? "✓ OPENED" : t.hex}</span>
+                                          </button>
+                                        ))}
+                                      </div>
+
+                                      {/* Key Pool Options */}
+                                      <div className="grid grid-cols-4 gap-2 border-t border-white/5 pt-3">
+                                        {hackingPuzzle.options.map((opt, idx) => (
+                                          <button
+                                            key={idx}
+                                            disabled={hackingPuzzle.selectedTargetIdx === null}
+                                            onClick={() => {
+                                              if (hackingPuzzle.selectedTargetIdx === null) return;
+                                              const target = hackingPuzzle.targets[hackingPuzzle.selectedTargetIdx];
+                                              if (target.hex === opt) {
+                                                const newTargets = [...hackingPuzzle.targets];
+                                                newTargets[hackingPuzzle.selectedTargetIdx] = { ...target, matched: true };
+                                                
+                                                const isFinished = newTargets.every(t => t.matched);
+                                                setHackingPuzzle(prev => {
+                                                  if (!prev) return null;
+                                                  return {
+                                                    ...prev,
+                                                    targets: newTargets,
+                                                    selectedTargetIdx: null,
+                                                    status: isFinished ? "success" : "playing"
+                                                  };
+                                                });
+                                                triggerToast("REGISTER UNLOCKED");
+                                              } else {
+                                                triggerToast("KEY MISMATCH - CYBER-DECK RETRYING");
+                                                setHackingPuzzle(prev => prev ? { ...prev, selectedTargetIdx: null } : null);
+                                              }
+                                            }}
+                                            className={`p-2.5 rounded border transition-all text-center text-[10px] ${
+                                              hackingPuzzle.selectedTargetIdx === null
+                                                ? "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
+                                                : "bg-slate-900/80 border-cyan-500/15 text-slate-300 hover:bg-slate-850 hover:border-cyan-400/50 cursor-pointer"
+                                            }`}
+                                          >
+                                            {opt}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : hackingPuzzle.status === "success" ? (
+                                    <div className="text-center py-4 space-y-3">
+                                      <p className="text-emerald-400 font-extrabold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 animate-pulse">
+                                        <CheckCircle size={14} /> SECURITY SCHEMAS DECRYPTED - FULL DOWNLOAD READY
+                                      </p>
+                                      <p className="text-slate-400 text-3xs leading-relaxed max-w-sm mx-auto">
+                                        The corporate database has been successfully copied. The locking pins on the Golden Relic Chamber have completely retracted.
+                                      </p>
+                                      <button
+                                        onClick={() => {
+                                          let nextState = { ...gameState! };
+                                          nextState.poi = "Mysterious Relic Altar";
+                                          setActivePOIView("relic_altar");
+                                          nextState.inventory.push("Ares Data Crystal");
+                                          nextState.experience += 50;
+                                          setGameState(nextState);
+                                          setHackingPuzzle(null);
+                                          
+                                          setLogs(prev => [
+                                            ...prev,
+                                            {
+                                              id: crypto.randomUUID(),
+                                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                              text: "💾 DECRYPTION SUCCESS: You safely extract the 'Ares Data Crystal' into your inventory stash. The heavy security door behind the terminal slides back silently, revealing a glowing chamber with a floating golden relic on a black altar...",
+                                              type: "narration",
+                                              district: nextState.district,
+                                              poi: nextState.poi
+                                            }
+                                          ]);
+                                          triggerToast("HACK COMPLETE: COPIED DATA");
+                                        }}
+                                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded text-3xs uppercase transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                                      >
+                                        Extract Database & Access Relic
+                                      </button>
+                                    </div>
+                                  ) : null}
                                 </div>
-                              </div>
+                              ) : (
+                                // Regular Location Action option rows
+                                <div className="space-y-4">
+                                  <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
+                                    {activePOIView === "ventilation_shaft" && ventFailed
+                                      ? "⚠️ CRITICAL LOCKDOWN: AIRLOCK BLADES SECURED. RESOLVE FAILURE:"
+                                      : "OPERATIONAL RESPONSES PREPARED AT LOCATION:"}
+                                  </p>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {(activePOIView === "ventilation_shaft" && ventFailed
+                                      ? ["Force Fan Blades (STR Check)", "Trigger EMP Burst (EMP Explosion!)", "Hack Fan Console (INT Check)"]
+                                      : (MAP_POIS.find(p => p.id === activePOIView)?.buttons || [])
+                                    ).map((action, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => handleExecuteAction(action)}
+                                        className={`text-left px-3.5 py-2.5 rounded-lg border font-mono text-xs transition-all flex items-center justify-between cursor-pointer group ${
+                                          activePOIView === "ventilation_shaft" && ventFailed
+                                            ? "border-red-500/30 bg-red-950/40 hover:bg-red-900/50 hover:border-red-500/60 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
+                                            : "border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white"
+                                        }`}
+                                      >
+                                        <span className="truncate group-hover:text-cyan-300">{action}</span>
+                                        <span className="text-[9px] text-slate-600 font-bold border border-white/5 px-1 rounded block flex-shrink-0 ml-2">
+                                          {idx + 1}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
                             )}
                           </div>
 
@@ -1658,97 +2518,818 @@ export default function App() {
 
                 {/* ADVANCED ELECTRONIC TACTICAL COMBAT HUD */}
                 <AnimatePresence>
-                  {gameState.combatState?.isActive && (
+                  {gameState.combatState?.isActive && gridCombat && (
                     <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="glass-panel-heavy border-red-500/30 rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col gap-4 box-glow-pink overflow-hidden"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="glass-panel-heavy border-red-500/40 rounded-2xl p-4 md:p-6 shadow-2xl flex flex-col gap-5 box-glow-pink overflow-hidden"
                     >
-                      <div className="flex justify-between items-center border-b border-rose-400/20 pb-2">
-                        <span className="font-display font-extrabold text-sm text-rose-400 flex items-center gap-2 uppercase tracking-wider animate-pulse">
-                          <Sword size={16} className="text-rose-500" /> Active Conflict Intercept
-                        </span>
-                        <span className="text-3xs font-mono text-slate-400 font-bold">ENGAGED SECURITY PARAMETER</span>
+                      {/* Header */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-rose-500/20 pb-3 gap-2">
+                        <div>
+                          <span className="font-display font-black text-base text-rose-400 flex items-center gap-2 uppercase tracking-wider animate-pulse">
+                            <Sword size={18} className="text-rose-500" /> TACTICAL COMBAT SEQUENCE
+                          </span>
+                          <p className="text-4xs font-mono text-slate-500 uppercase tracking-widest mt-0.5">GRID MATRIX ALPHA-9: SQUAD-BASED CONFLICT</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] bg-rose-950 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-md font-mono uppercase tracking-wider font-extrabold">
+                            CONFLICT BOUND
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Opposing gauges: Player vs Hostile */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
-                        
-                        {/* Player stats recap */}
-                        <div className="bg-slate-900/60 p-3 rounded-lg border border-white/5 space-y-2">
-                          <p className="font-bold text-slate-400 uppercase text-[10px]">Your Bio-Vitals Frame</p>
-                          <div className="flex justify-between">
-                            <span>HP: {gameState.hp} / {gameState.maxHp}</span>
-                            <span className="text-cyan-400">MP: {gameState.mana} / {gameState.maxMana}</span>
+                      {/* Initiative Queue Timeline */}
+                      <div className="bg-slate-950/60 border border-white/5 p-2 rounded-xl flex flex-col gap-1">
+                        <span className="text-4xs font-mono text-slate-500 uppercase tracking-widest font-black text-left">Initiative Timeline Queue:</span>
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-thin">
+                          {gridCombat.turnOrder.map((id, index) => {
+                            const unit = gridCombat.combatants.find(c => c.id === id);
+                            if (!unit || unit.isDead) return null;
+                            const isActive = index === gridCombat.currentTurnIdx;
+                            return (
+                              <div
+                                key={id}
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-3xs font-mono transition-all duration-300 flex-shrink-0 ${
+                                  isActive
+                                    ? "bg-cyan-950/80 border-cyan-400 text-cyan-300 ring-2 ring-cyan-500/20 animate-pulse scale-105"
+                                    : unit.team === "player"
+                                      ? "bg-slate-900/60 border-slate-700 text-slate-300"
+                                      : "bg-red-950/30 border-red-900/50 text-red-300"
+                                }`}
+                              >
+                                <span>{unit.avatar}</span>
+                                <span className="font-bold truncate max-w-[80px]">{unit.name.split(" ")[0]}</span>
+                                <span className="text-slate-500 text-4xs">({unit.initiative} INI)</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Tactical Grid Map & Stats Bar */}
+                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                        {/* 8x6 Cyber Grid Container */}
+                        <div className="lg:col-span-3 flex flex-col gap-2">
+                          <div className="flex justify-between items-center text-3xs font-mono text-slate-400 px-1">
+                            <span className="flex items-center gap-1"><Compass size={10} className="text-cyan-400" /> TAP CELLS TO MOVE [RANGE 2] / ATTACK WITH MELEE OR GUNS</span>
+                            <span>INTERIOR CORRIDOR ARRAY [8x6]</span>
                           </div>
-                          <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden p-0.5">
-                            <div className="bg-gradient-to-r from-cyan-400 to-rose-500 h-full rounded-full" style={{ width: `${(gameState.hp/gameState.maxHp)*100}%` }} />
+
+                          {/* Render the Grid */}
+                          <div className="grid grid-cols-8 gap-1.5 p-3 bg-slate-950/95 border border-slate-800/80 rounded-xl relative overflow-hidden box-glow-cyan select-none min-h-[220px] sm:min-h-[280px]">
+                            {/* Grid Cell Loop */}
+                            {Array.from({ length: 6 }).map((_, rIdx) =>
+                              Array.from({ length: 8 }).map((__, cIdx) => {
+                                const COMBAT_OBSTACLES = [[2, 1], [2, 4], [5, 2], [5, 3], [3, 0], [4, 5]];
+                                const isObstacle = COMBAT_OBSTACLES.some(([ox, oy]) => ox === cIdx && oy === rIdx);
+                                const unit = gridCombat.combatants.find(c => c.x === cIdx && c.y === rIdx && !c.isDead);
+                                
+                                const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                const isPlayerTurn = activeActor?.team === "player";
+                                
+                                // Movement Reachability Calculation
+                                let reachable = false;
+                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && !isObstacle && !unit && gridCombat.selectedAction === "move") {
+                                  const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                  reachable = d > 0 && d <= 2;
+                                }
+
+                                // Targeting Calculation
+                                let targetable = false;
+                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && unit && unit.team === "enemy" && gridCombat.selectedAction === "attack") {
+                                  const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                  targetable = d <= activeActor.range;
+                                }
+
+                                return (
+                                  <div
+                                    key={`${cIdx}-${rIdx}`}
+                                    onClick={() => {
+                                      if (!isPlayerTurn || !activeActor) return;
+                                      
+                                      // Execute move
+                                      if (reachable && gridCombat.selectedAction === "move") {
+                                        const updated = gridCombat.combatants.map(c => {
+                                          if (c.id === activeActor.id) {
+                                            return { ...c, x: cIdx, y: rIdx, ap: c.ap - 1 };
+                                          }
+                                          return c;
+                                        });
+
+                                        setGridCombat(prev => prev ? {
+                                          ...prev,
+                                          combatants: updated,
+                                          turnLog: `⚡ ${activeActor.name} moved to sector coordinates [${cIdx}, ${rIdx}].`
+                                        } : null);
+
+                                        // Sync player coordinates or state if it's the main player
+                                        if (activeActor.id === "player" && gameState) {
+                                          let ns = { ...gameState };
+                                          setGameState(ns);
+                                        }
+                                        triggerToast("SECTOR MOVEMENT COMPLETE");
+                                      }
+                                      
+                                      // Execute attack
+                                      if (targetable && unit && gridCombat.selectedAction === "attack") {
+                                        const rollDmg = activeActor.damage + Math.floor(Math.random() * 7) - 3;
+                                        const updated = gridCombat.combatants.map(c => {
+                                          if (c.id === unit.id) {
+                                            let finalHp = c.hp;
+                                            let finalShields = c.shields;
+                                            if (finalShields > 0) {
+                                              finalShields -= rollDmg;
+                                              if (finalShields < 0) {
+                                                finalHp += finalShields;
+                                                finalShields = 0;
+                                              }
+                                            } else {
+                                              finalHp -= rollDmg;
+                                            }
+                                            const isDead = finalHp <= 0;
+                                            return { ...c, hp: Math.max(0, finalHp), shields: finalShields, isDead };
+                                          }
+                                          if (c.id === activeActor.id) {
+                                            return { ...c, ap: c.ap - 1 };
+                                          }
+                                          return c;
+                                        });
+
+                                        const hitEnemy = updated.find(c => c.id === unit.id);
+                                        const enemyRemainingLog = hitEnemy?.isDead 
+                                          ? `💥 ${hitEnemy.name} COMPROMISED: Systems overloaded and shattered!`
+                                          : `🎯 Hit! ${hitEnemy?.name} sustained ${rollDmg} damage. Vitals: (${hitEnemy?.hp}/${hitEnemy?.maxHp} HP, ${hitEnemy?.shields} SHIELD).`;
+
+                                        setGridCombat(prev => prev ? {
+                                          ...prev,
+                                          combatants: updated,
+                                          turnLog: `⚔️ ATTACK REPORT: ${activeActor.name} engaged ${unit.name} with weapon array! ${enemyRemainingLog}`
+                                        } : null);
+
+                                        // Sync health back to primary gameState if the primary enemy or player was damaged
+                                        if (gameState) {
+                                          let ns = { ...gameState };
+                                          if (unit.id === "enemy-1") {
+                                            ns.combatState!.enemyHp = Math.max(0, hitEnemy?.hp || 0);
+                                            ns.combatState!.enemyShields = hitEnemy?.shields || 0;
+                                          }
+                                          setGameState(ns);
+                                        }
+                                        triggerToast("STRIKE REGISTERED");
+                                      }
+                                    }}
+                                    className={`relative rounded border aspect-square flex items-center justify-center transition-all ${
+                                      isObstacle 
+                                        ? "bg-stripes-warning border-slate-900 bg-slate-900/40 text-slate-600"
+                                        : reachable
+                                          ? "border-cyan-400 bg-cyan-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(34,211,238,0.3)] hover:bg-cyan-900/40"
+                                          : targetable
+                                            ? "border-rose-500 bg-rose-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(239,68,68,0.3)] hover:bg-rose-900/40"
+                                            : "border-white/[0.03] bg-slate-900/30 hover:bg-slate-900/50"
+                                    }`}
+                                  >
+                                    {/* Obstacle Icon */}
+                                    {isObstacle && <span className="text-[10px] opacity-30 select-none">⚡</span>}
+
+                                    {/* Coordinates Hover Label */}
+                                    <span className="absolute bottom-0.5 right-0.5 text-[7px] text-slate-800 font-mono select-none">
+                                      {cIdx},{rIdx}
+                                    </span>
+
+                                    {/* Reachable Dot */}
+                                    {reachable && <div className="absolute w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />}
+
+                                    {/* Render Unit Token */}
+                                    {unit && (
+                                      <div
+                                        className={`w-4/5 h-4/5 rounded-full border-2 flex flex-col items-center justify-center relative shadow-lg ${unit.color} ${
+                                          unit.id === activeActor?.id ? "ring-2 ring-cyan-400 animate-pulse scale-105" : ""
+                                        }`}
+                                      >
+                                        <span className="text-xs select-none">{unit.avatar}</span>
+                                        
+                                        {/* Simple Mini Health / Shield indicator */}
+                                        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-full max-w-[28px] h-1 bg-slate-950 rounded overflow-hidden flex">
+                                          {unit.shields > 0 && (
+                                            <div 
+                                              className="bg-cyan-400 h-full" 
+                                              style={{ width: `${(unit.shields / unit.maxShields) * 100}%` }} 
+                                            />
+                                          )}
+                                          <div 
+                                            className="bg-red-500 h-full flex-1" 
+                                            style={{ width: `${(unit.hp / unit.maxHp) * 100}%` }} 
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )}
                           </div>
                         </div>
 
-                        {/* Hostile opponent stats */}
-                        <div className="bg-slate-900/60 p-3 rounded-lg border border-red-500/20 space-y-2">
-                          <p className="font-black text-rose-400 uppercase text-[10px] flex items-center justify-between">
-                            <span>👾 Enemy: {gameState.combatState.enemyName}</span>
-                            <span className="text-[10px] bg-rose-950 text-rose-400 border border-rose-500/20 px-1.5 py-0.2 rounded font-mono">HOSTILE</span>
+                        {/* Sidebar: Combatants Details list */}
+                        <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 flex flex-col gap-3 font-mono text-3xs">
+                          <span className="text-slate-400 font-extrabold uppercase text-[10px] tracking-wider border-b border-white/10 pb-1.5 block">Tactical Roster:</span>
+                          <div className="flex-1 space-y-2 max-h-[190px] lg:max-h-[250px] overflow-y-auto pr-1">
+                            {gridCombat.combatants.map(c => {
+                              if (c.isDead) return null;
+                              return (
+                                <div key={c.id} className="bg-slate-950/40 border border-white/[0.03] p-1.5 rounded flex justify-between items-center">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs">{c.avatar}</span>
+                                    <div>
+                                      <p className="font-bold text-slate-300 leading-none">{c.name.split(" ")[0]}</p>
+                                      <p className="text-[7px] text-slate-500 leading-none mt-0.5">X:{c.x}, Y:{c.y} • AP:{c.ap}</p>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-red-400 leading-none">{c.hp}/{c.maxHp} HP</p>
+                                    {c.shields > 0 && <p className="text-cyan-400 text-[7px] leading-none mt-0.5">{c.shields} SHLD</p>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Quick active combatant turn indicator */}
+                          <div className="bg-slate-950 border border-cyan-500/20 p-2 rounded-lg text-left">
+                            <span className="text-[8px] text-cyan-400 block uppercase font-bold leading-none mb-1">Acting Now:</span>
+                            <span className="text-[10px] text-white font-extrabold block uppercase tracking-wide truncate">
+                              {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.name}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <span className="text-[8px] text-slate-500 font-black">AP:</span>
+                              <div className="flex gap-1">
+                                {Array.from({ length: gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.maxAp || 2 }).map((_, idx) => (
+                                  <div
+                                    key={idx}
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      idx < (gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.ap || 0)
+                                        ? "bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,0.8)]"
+                                        : "bg-slate-800"
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Combat Status Feed Log */}
+                      <div className="bg-slate-950 border border-rose-500/10 p-2.5 rounded-lg text-rose-300 font-mono text-[10px] text-center italic tracking-wider">
+                        {gridCombat.turnLog}
+                      </div>
+
+                      {/* Controls Area */}
+                      <div className="border-t border-white/5 pt-3 flex flex-col md:flex-row gap-3 items-center justify-between">
+                        {/* Player / Companion Turn Controls */}
+                        {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.team === "player" ? (
+                          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                            <button
+                              onClick={() => {
+                                setGridCombat(prev => prev ? { ...prev, selectedAction: "move" } : null);
+                              }}
+                              className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                gridCombat.selectedAction === "move"
+                                  ? "bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.3)]"
+                                  : "bg-slate-900 border-white/5 text-cyan-400 hover:bg-slate-800"
+                              }`}
+                            >
+                              🚀 Move Position [AP: 1]
+                            </button>
+                            
+                            <button
+                              onClick={() => {
+                                setGridCombat(prev => prev ? { ...prev, selectedAction: "attack" } : null);
+                              }}
+                              className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                gridCombat.selectedAction === "attack"
+                                  ? "bg-rose-500 text-white border-rose-400 font-extrabold shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                                  : "bg-slate-900 border-white/5 text-rose-400 hover:bg-slate-800"
+                              }`}
+                            >
+                              ⚔️ Strike / Shoot [AP: 1]
+                            </button>
+
+                            {/* Ether Spell discharge */}
+                            <button
+                              onClick={() => {
+                                if (!gameState) return;
+                                const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                if (!activeActor || activeActor.ap < 1) {
+                                  triggerToast("NO AP FOR SPELL DISCHARGE");
+                                  return;
+                                }
+                                if (gameState.mana < 15) {
+                                  triggerToast("INSUFFICIENT ETHER COGNITIVE STABLE");
+                                  return;
+                                }
+
+                                // Apply massive spell damage directly to the primary enemy
+                                const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
+                                if (!enemy || enemy.isDead) {
+                                  triggerToast("NO HOSTILE TARGET ACQUIRED");
+                                  return;
+                                }
+
+                                let mDmg = Math.floor(Math.random() * 16) + 30; // 30-45
+                                if (gameState.inventory.includes("Coven Ether-deck v3")) {
+                                  mDmg = Math.floor(mDmg * 1.35);
+                                }
+
+                                let ns = { ...gameState };
+                                ns.mana = Math.max(0, ns.mana - 15);
+
+                                const updated = gridCombat.combatants.map(c => {
+                                  if (c.id === "enemy-1") {
+                                    const finalHp = Math.max(0, c.hp - mDmg);
+                                    const isDead = finalHp <= 0;
+                                    return { ...c, hp: finalHp, isDead };
+                                  }
+                                  if (c.id === activeActor.id) {
+                                    return { ...c, ap: c.ap - 1 };
+                                  }
+                                  return c;
+                                });
+
+                                ns.combatState!.enemyHp = updated.find(c => c.id === "enemy-1")?.hp || 0;
+                                setGameState(ns);
+
+                                setGridCombat(prev => prev ? {
+                                  ...prev,
+                                  combatants: updated,
+                                  turnLog: `🔮 ETHER SPELL BURST: Cast Spell Slash on ${enemy.name}! Dealt ${mDmg} armor-bypassing magic damage. (-15 Mana)`
+                                } : null);
+
+                                triggerToast("SPELL DISCHARGED");
+                              }}
+                              className="flex-1 md:flex-initial bg-purple-950/40 hover:bg-purple-900 border border-purple-500/30 text-purple-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                            >
+                              🔮 Spell Plasma [-15 Mana]
+                            </button>
+
+                            {/* Mindmancer Spells (Strictly locked if not reached) */}
+                            {!!(gameState?.skills?.mindmancer && gameState.skills.mindmancer > 0 && !["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district)) && (
+                              <button
+                                onClick={() => {
+                                  if (!gameState) return;
+                                  const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                  if (!activeActor || activeActor.ap < 1) {
+                                    triggerToast("NO AP");
+                                    return;
+                                  }
+                                  if (gameState.mana < 20) {
+                                    triggerToast("INSUFFICIENT ETHER");
+                                    return;
+                                  }
+
+                                  const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
+                                  if (!enemy || enemy.isDead) return;
+
+                                  let ns = { ...gameState };
+                                  ns.mana = Math.max(0, ns.mana - 20);
+
+                                  const updated = gridCombat.combatants.map(c => {
+                                    if (c.id === "enemy-1") {
+                                      const finalHp = Math.max(0, c.hp - 50);
+                                      const isDead = finalHp <= 0;
+                                      return { ...c, hp: finalHp, isDead };
+                                    }
+                                    if (c.id === activeActor.id) {
+                                      return { ...c, ap: c.ap - 1 };
+                                    }
+                                    return c;
+                                  });
+
+                                  ns.combatState!.enemyHp = updated.find(c => c.id === "enemy-1")?.hp || 0;
+                                  setGameState(ns);
+
+                                  setGridCombat(prev => prev ? {
+                                    ...prev,
+                                    combatants: updated,
+                                    turnLog: `🔮 MIND PSYCHIC HYPNOSIS: Bending ${enemy.name}'s synaptic currents. Forced system discharge dealing 50 damage! (-20 Mana)`
+                                  } : null);
+                                  triggerToast("MIND HACK COMPLETE");
+                                }}
+                                className="flex-1 md:flex-initial bg-fuchsia-950/40 hover:bg-fuchsia-900 border border-fuchsia-500/40 text-fuchsia-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider animate-pulse shadow-[0_0_8px_rgba(217,70,239,0.25)]"
+                              >
+                                🧠 Mind Hack [-20 Mana]
+                              </button>
+                            )}
+
+                            {/* Stimpack Consumable */}
+                            <button
+                              onClick={() => {
+                                if (!gameState) return;
+                                const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                if (!activeActor || activeActor.ap < 1) {
+                                  triggerToast("NO AP");
+                                  return;
+                                }
+
+                                if (!gameState.inventory.includes("Nano Med-Stim (Heal)")) {
+                                  triggerToast("NO MED-STIM IN INVENTORY DECK");
+                                  return;
+                                }
+
+                                let ns = { ...gameState };
+                                ns.inventory = ns.inventory.filter((item, idx) => idx !== ns.inventory.indexOf("Nano Med-Stim (Heal)"));
+
+                                const updated = gridCombat.combatants.map(c => {
+                                  if (c.id === activeActor.id) {
+                                    return { ...c, hp: Math.min(c.maxHp, c.hp + 60), ap: c.ap - 1 };
+                                  }
+                                  return c;
+                                });
+
+                                ns.hp = updated.find(c => c.id === "player")?.hp || ns.hp;
+                                setGameState(ns);
+
+                                setGridCombat(prev => prev ? {
+                                  ...prev,
+                                  combatants: updated,
+                                  turnLog: `💊 STIMPACK DETONATED: ${activeActor.name} injected medical nano-sealants, restoring +60 HP!`
+                                } : null);
+                                triggerToast("STIMPACK CONSUMED");
+                              }}
+                              className="flex-1 md:flex-initial bg-amber-950/30 hover:bg-amber-900 border border-amber-500/30 text-amber-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                            >
+                              💊 Consume Stimpack
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                // Advance the turn queue
+                                setGridCombat(prev => {
+                                  if (!prev) return null;
+                                  
+                                  const updatedCombatants = prev.combatants.map(c => {
+                                    const activeId = prev.turnOrder[prev.currentTurnIdx];
+                                    if (c.id === activeId) {
+                                      return { ...c, ap: c.maxAp };
+                                    }
+                                    return c;
+                                  });
+
+                                  let nextIdx = prev.currentTurnIdx;
+                                  let foundAlive = false;
+                                  let iterations = 0;
+
+                                  while (iterations < prev.turnOrder.length) {
+                                    nextIdx = (nextIdx + 1) % prev.turnOrder.length;
+                                    const nextId = prev.turnOrder[nextIdx];
+                                    const actor = updatedCombatants.find(c => c.id === nextId);
+                                    if (actor && !actor.isDead) {
+                                      foundAlive = true;
+                                      break;
+                                    }
+                                    iterations++;
+                                  }
+
+                                  if (!foundAlive) return prev;
+
+                                  const nextActor = updatedCombatants.find(c => c.id === prev.turnOrder[nextIdx])!;
+                                  return {
+                                    ...prev,
+                                    combatants: updatedCombatants,
+                                    currentTurnIdx: nextIdx,
+                                    selectedAction: "move" as const,
+                                    turnLog: `Turn advanced to ${nextActor.name}. AP fully restored.`
+                                  };
+                                });
+                                triggerToast("TURN ENDED");
+                              }}
+                              className="flex-1 md:flex-initial bg-slate-800 hover:bg-slate-700 border border-white/10 text-white font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                            >
+                              ⏱️ End Turn
+                            </button>
+                          </div>
+                        ) : (
+                          /* Enemy AI Resolution panel */
+                          <div className="flex flex-col sm:flex-row items-center gap-3 w-full bg-red-950/20 border border-red-500/10 p-3 rounded-xl">
+                            <span className="text-rose-400 font-mono text-3xs uppercase tracking-widest font-black animate-pulse flex items-center gap-1">
+                              ⚠️ HOSTILE ACTION DETECTED: {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.name} IS FORMULATING ACTION PLANS...
+                            </span>
+                            <button
+                              onClick={() => {
+                                // Run enemy AI
+                                const actor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                if (!actor || actor.isDead) return;
+
+                                // Find closest player-team target
+                                const targets = gridCombat.combatants.filter(c => c.team === "player" && !c.isDead);
+                                if (targets.length === 0) return;
+
+                                let closestTarget = targets[0];
+                                let minDist = 999;
+                                targets.forEach(t => {
+                                  const d = Math.abs(t.x - actor.x) + Math.abs(t.y - actor.y);
+                                  if (d < minDist) {
+                                    minDist = d;
+                                    closestTarget = t;
+                                  }
+                                });
+
+                                setGridCombat(prev => {
+                                  if (!prev) return null;
+                                  
+                                  let updatedCombatants = prev.combatants.map(c => ({ ...c }));
+                                  const livingActor = updatedCombatants.find(c => c.id === actor.id)!;
+                                  let currentTarget = updatedCombatants.find(c => c.id === closestTarget.id)!;
+
+                                  let movementLog = "";
+                                  let attackLog = "";
+
+                                  // If out of attack range, move closer!
+                                  if (minDist > livingActor.range) {
+                                    // Pathing approximation: search cells within Manhattan distance 2
+                                    let bestX = livingActor.x;
+                                    let bestY = livingActor.y;
+                                    let closestDistAfterMove = minDist;
+
+                                    const COMBAT_OBSTACLES = [[2, 1], [2, 4], [5, 2], [5, 3], [3, 0], [4, 5]];
+                                    const isObstacle = (cx: number, cy: number) => COMBAT_OBSTACLES.some(([ox, oy]) => ox === cx && oy === cy);
+
+                                    for (let dx = -2; dx <= 2; dx++) {
+                                      for (let dy = -2; dy <= 2; dy++) {
+                                        if (Math.abs(dx) + Math.abs(dy) <= 2) {
+                                          const tx = livingActor.x + dx;
+                                          const ty = livingActor.y + dy;
+
+                                          // Bounds check
+                                          if (tx >= 0 && tx < 8 && ty >= 0 && ty < 6) {
+                                            const occupied = updatedCombatants.some(c => c.x === tx && c.y === ty && !c.isDead);
+                                            if (!occupied && !isObstacle(tx, ty)) {
+                                              const newD = Math.abs(tx - currentTarget.x) + Math.abs(ty - currentTarget.y);
+                                              if (newD < closestDistAfterMove) {
+                                                closestDistAfterMove = newD;
+                                                bestX = tx;
+                                                bestY = ty;
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+
+                                    livingActor.x = bestX;
+                                    livingActor.y = bestY;
+                                    livingActor.ap -= 1;
+                                    movementLog = `${livingActor.name} maneuvers to [${bestX}, ${bestY}]. `;
+                                    
+                                    // Re-evaluate distance
+                                    minDist = Math.abs(bestX - currentTarget.x) + Math.abs(bestY - currentTarget.y);
+                                  }
+
+                                  // If in range, attack!
+                                  if (minDist <= livingActor.range && livingActor.ap > 0) {
+                                    const enemyDmg = livingActor.damage + Math.floor(Math.random() * 5) - 2;
+                                    
+                                    if (currentTarget.shields > 0) {
+                                      currentTarget.shields -= enemyDmg;
+                                      if (currentTarget.shields < 0) {
+                                        currentTarget.hp += currentTarget.shields;
+                                        currentTarget.shields = 0;
+                                      }
+                                    } else {
+                                      currentTarget.hp -= enemyDmg;
+                                    }
+
+                                    currentTarget.hp = Math.max(0, currentTarget.hp);
+                                    currentTarget.isDead = currentTarget.hp <= 0;
+                                    livingActor.ap -= 1;
+                                    attackLog = `💥 ${livingActor.name} attacks ${currentTarget.name} dealing ${enemyDmg} damage directly!`;
+                                  }
+
+                                  // Reset actor's AP on turn end
+                                  livingActor.ap = livingActor.maxAp;
+
+                                  // Sync health to main state
+                                  const mainPlayer = updatedCombatants.find(c => c.id === "player")!;
+                                  if (gameState) {
+                                    let ns = { ...gameState };
+                                    ns.hp = mainPlayer.hp;
+                                    setGameState(ns);
+                                  }
+
+                                  // Check defeat
+                                  if (mainPlayer.hp <= 0) {
+                                    return {
+                                      ...prev,
+                                      combatants: updatedCombatants,
+                                      turnLog: `☠️ Player fell in combat! Conflict concluded.`
+                                    };
+                                  }
+
+                                  // Advance turn queue
+                                  let nextIdx = prev.currentTurnIdx;
+                                  let foundAlive = false;
+                                  let iterations = 0;
+
+                                  while (iterations < prev.turnOrder.length) {
+                                    nextIdx = (nextIdx + 1) % prev.turnOrder.length;
+                                    const nextId = prev.turnOrder[nextIdx];
+                                    const actorInQueue = updatedCombatants.find(c => c.id === nextId);
+                                    if (actorInQueue && !actorInQueue.isDead) {
+                                      foundAlive = true;
+                                      break;
+                                    }
+                                    iterations++;
+                                  }
+
+                                  const nextActor = updatedCombatants.find(c => c.id === prev.turnOrder[nextIdx])!;
+                                  const actionSum = movementLog || attackLog 
+                                    ? `${movementLog}${attackLog}`
+                                    : `${livingActor.name} bypassed tactical action.`;
+
+                                  return {
+                                    ...prev,
+                                    combatants: updatedCombatants,
+                                    currentTurnIdx: nextIdx,
+                                    selectedAction: "move" as const,
+                                    turnLog: `🤖 AI MOVE: ${actionSum} Turn passed to ${nextActor.name}.`
+                                  };
+                                });
+
+                                triggerToast("ENEMY ACTION SOLVED");
+                              }}
+                              className="bg-red-500 hover:bg-red-400 text-slate-950 font-mono font-black text-3xs px-4 py-2 rounded-lg cursor-pointer transition-all uppercase tracking-wider animate-pulse ml-auto"
+                            >
+                              Let Enemy Act
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            if (!gameState) return;
+                            if (Math.random() > 0.4) {
+                              let nextState = { ...gameState };
+                              nextState.combatState = null;
+                              setGameState(nextState);
+                              setGridCombat(null);
+                              setLogs(prev => [
+                                ...prev,
+                                {
+                                  id: crypto.randomUUID(),
+                                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                  text: `🏃 ESCAPE DEPLOYED: You deploy active cloaking mesh and successfully broke contact back to security corridors.`,
+                                  type: "narration",
+                                  district: nextState.district,
+                                  poi: nextState.poi
+                                }
+                              ]);
+                              triggerToast("FLED COMBAT");
+                            } else {
+                              setGridCombat(prev => prev ? {
+                                ...prev,
+                                turnLog: "❌ EVASION REFUSED: Hostile interceptors block your flight path coordinates!"
+                              } : null);
+                              triggerToast("FLEE FAILED");
+                            }
+                          }}
+                          className="w-full md:w-auto bg-slate-900 border border-white/10 hover:bg-slate-800 text-slate-300 font-mono font-black text-3xs px-4 py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                        >
+                          Attempt Flee
+                        </button>
+                      </div>
+
+                      {/* Tactical overlays: Defeat / Victory Check screens */}
+                      {/* Player dead overlay */}
+                      {gridCombat.combatants.find(c => c.id === "player")?.isDead && (
+                        <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-6 space-y-4 z-30 font-mono">
+                          <span className="text-red-500 font-black text-3xl animate-bounce select-none">☠️ VITALS SHATTERED ☠️</span>
+                          <p className="text-slate-400 text-3xs max-w-sm uppercase leading-relaxed">
+                            Your bio-signatures flatlined in the grid database! Tactical shield matrices failed completely. Initiating emergency safehouse rescue protocol...
                           </p>
-                          <div className="flex justify-between leading-none text-[11px]">
-                            <span>HEALTH: {gameState.combatState.enemyHp} / {gameState.combatState.enemyMaxHp}</span>
-                            <span>SHIELDS: {gameState.combatState.enemyShields} / {gameState.combatState.enemyMaxShields}</span>
-                          </div>
-                          
-                          {/* Slashes progress metrics */}
-                          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                            <div className="bg-slate-950 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-rose-500 h-full" style={{ width: `${(gameState.combatState.enemyHp/gameState.combatState.enemyMaxHp)*100}%` }} />
-                            </div>
-                            <div className="bg-slate-950 h-1.5 rounded-full overflow-hidden">
-                              <div className="bg-cyan-500 h-full" style={{ width: `${gameState.combatState.enemyMaxShields > 0 ? (gameState.combatState.enemyShields/gameState.combatState.enemyMaxShields)*100 : 0}%` }} />
-                            </div>
-                          </div>
+                          <button
+                            onClick={() => {
+                              if (!gameState) return;
+                              let nextState = { ...gameState };
+                              let narrative = "";
+                              if (["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district)) {
+                                nextState.hp = nextState.maxHp;
+                                nextState.mana = nextState.maxMana;
+                                nextState.combatState = null;
+                                narrative = `☠️ CRITICAL OVERLOAD: Your bio-signatures flatlined in the catacombs! Fortunately, your squad-mate Vice injected an adrenaline micro-dose, resetting your critical vitals and dragging you back to safety. Let's try again!`;
+                              } else {
+                                const penalty = Math.floor(nextState.credits * 0.15);
+                                nextState.credits -= penalty;
+                                nextState.hp = 25;
+                                nextState.poi = "Main Headquarters (The Hideout)";
+                                nextState.district = "aurus";
+                                setActiveRegionId("aurus");
+                                setActivePOIView("hideout");
+                                nextState.combatState = null;
+                                narrative = `☠️ SYSTEM OVERRIDE TRAUMA: Bio-signatures flatlined in battle! Your emergency backup beacon auto-teleported your frame to Hideout medical bay. -${penalty}¤ Trauma deduction.`;
+                              }
+
+                              setGameState(nextState);
+                              setGridCombat(null);
+                              setLogs(prev => [
+                                ...prev,
+                                {
+                                  id: crypto.randomUUID(),
+                                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                  text: narrative,
+                                  type: "system",
+                                  district: nextState.district,
+                                  poi: nextState.poi
+                                }
+                              ]);
+                              triggerToast("BATTLE OVER: HEALED");
+                            }}
+                            className="bg-red-500 hover:bg-red-400 text-slate-950 font-black px-6 py-3 rounded-lg text-xs uppercase cursor-pointer transition-all shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+                          >
+                            Activate Auto-Rescue Beacon & Re-awaken
+                          </button>
                         </div>
+                      )}
 
-                      </div>
+                      {/* Enemies all dead victory overlay */}
+                      {gridCombat.combatants.filter(c => c.team === "enemy" && !c.isDead).length === 0 && (
+                        <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center text-center p-6 space-y-4 z-30 font-mono">
+                          <span className="text-emerald-400 font-black text-3xl animate-pulse select-none">★ THREAT ELIMINATED ★</span>
+                          <p className="text-slate-400 text-3xs max-w-sm uppercase leading-relaxed">
+                            Airlock clear! All hostile signature feeds have been terminated. Recovery protocols have completed scanning.
+                          </p>
+                          <button
+                            onClick={() => {
+                              if (!gameState) return;
+                              let nextState = { ...gameState };
+                              const playerCombatant = gridCombat.combatants.find(c => c.id === "player");
+                              if (playerCombatant) {
+                                nextState.hp = playerCombatant.hp;
+                              }
+                              
+                              const rewardC = Math.floor(Math.random() * 51) + 75; // 75-125
+                              const expGained = 45;
+                              nextState.credits += rewardC;
+                              nextState.experience += expGained;
 
-                      {/* Combat Prompt Log */}
-                      <div className="bg-slate-950/70 border border-rose-500/10 p-2.5 rounded-lg text-rose-300 font-mono text-[10px] text-center italic">
-                        {gameState.combatState.turnLog}
-                      </div>
+                              let narrative = `★ THREAT EXTERMINATED: You successfully cleared the area in tactical grid combat! Recovered +${rewardC}¤ and earned +${expGained} XP!`;
 
-                      {/* Tactile battle keypad controls */}
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-3xs">
-                        <button
-                          onClick={() => handleExecuteAction("Physical Attack")}
-                          className="bg-rose-950/30 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 font-bold py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
-                        >
-                          Physical Slash [1]
-                        </button>
-                        <button
-                          onClick={() => handleExecuteAction("Spell Slash")}
-                          className="bg-violet-950/30 hover:bg-violet-950/60 border border-violet-500/30 text-violet-300 font-bold py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
-                        >
-                          Spell Plasma [2]
-                        </button>
-                        <button
-                          onClick={() => handleExecuteAction("Cyber Hack")}
-                          className="bg-cyan-950/30 hover:bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 font-bold py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
-                        >
-                          Neuro Hack [3]
-                        </button>
-                        <button
-                          onClick={() => handleExecuteAction("Quick Item")}
-                          className="bg-amber-950/30 hover:bg-amber-900/60 border border-amber-500/30 text-amber-300 font-bold py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
-                        >
-                          Consume stim [4]
-                        </button>
-                        <button
-                          onClick={() => handleExecuteAction("Attempt Flee")}
-                          className="bg-slate-900/80 hover:bg-slate-800 border border-white/10 text-slate-300 font-bold py-3.5 rounded-lg transition-all cursor-pointer uppercase col-span-2 sm:col-span-1 tracking-wider"
-                        >
-                          Attempt Flee [5]
-                        </button>
-                      </div>
+                              const enemyName = gameState.combatState?.enemyName || "";
+                              if (enemyName.includes("Drone") || enemyName.includes("Sentry")) {
+                                nextState.district = "data_vault";
+                                nextState.poi = "Sanctuary Hacking Terminal";
+                                setActiveRegionId("data_vault");
+                                setActivePOIView("terminal_hacking_puzzle");
+                                nextState.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
+                                narrative += `\n\n🛡️ SECURITY BYPASSED: The security drones spark and crash to the floor! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector! Get inside the core vault chamber.' You travel to the Data Vault Sanctuary.`;
+                              }
+                              else if (enemyName.includes("Enforcer") || enemyName.includes("Ambush") || enemyName.includes("Commander")) {
+                                nextState.poi = "Mysterious Relic Altar";
+                                setActivePOIView("relic_altar");
+                                setActiveDialogue("post_combat_tracker");
+                                nextState.activeQuests = ["Prologue: Choose the fate of the dying Tracker and escape to Aurus District Safe-house."];
+                                narrative += `\n\n🛡️ AMBUSH SURVIVED: The last corporate enforcer drops. Tracker lies on the bloody steel floor, breathing his final heavy breaths. Vice, wounded and leaning against the altar, gasps: 'That traitor... he was about to sell us out. Check his belt.'\n\nYou retrieve a decrypted datapad proving Tracker was under contract to assassinate you and Vice once the data was secured! Choose Tracker's fate above.`;
+                              }
+                              else if (enemyName.includes("Behemoth") && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
+                                nextState.inventory.push("Acid Beast Core");
+                                nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Corporate Hunt"));
+                                nextState.activeQuests.push("Objective: Deliver the 'Acid Beast Core' to Chancellor Aria at Apex Armory.");
+                                narrative += "\n\n🎒 OBJECTIVE COLLECTED: Dislodged the rare green pulsating 'Acid Beast Core'. Advance to Chancellor Aria to deliver the asset.";
+                              }
+
+                              if (nextState.experience >= 100) {
+                                nextState.level += 1;
+                                nextState.experience -= 100;
+                                nextState.maxHp += 20;
+                                nextState.maxMana += 15;
+                                nextState.hp = nextState.maxHp;
+                                nextState.mana = nextState.maxMana;
+                                narrative += `\n\n📶 SYSTEM LEVEL EXPANDED: Congratulations! Ascended to Level ${nextState.level}. Max health and mana stats fully restored!`;
+                              }
+
+                              nextState.combatState = null;
+                              setGameState(nextState);
+                              setGridCombat(null);
+                              setLogs(prev => [
+                                ...prev,
+                                {
+                                  id: crypto.randomUUID(),
+                                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                  text: narrative,
+                                  type: "system",
+                                  district: nextState.district,
+                                  poi: nextState.poi
+                                }
+                              ]);
+                              triggerToast("BATTLE CLEAR: VICTORY!");
+                            }}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3 rounded-lg text-xs uppercase cursor-pointer transition-all shadow-[0_0_15px_rgba(16,185,129,0.5)]"
+                          >
+                            Download Reward Chips & Proceed
+                          </button>
+                        </div>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1881,6 +3462,66 @@ export default function App() {
                             <span className="text-slate-500 uppercase block font-bold">TEAM PARTY SIZE</span>
                             <p className="text-white font-black text-xs uppercase mt-0.5">{gameState.party.length + 1} SQUAD</p>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CORE ATTRIBUTES & SKILL TREES */}
+                    <div className="glass-panel rounded-2xl p-5 shadow-2xl border border-white/10 flex flex-col gap-4 font-mono">
+                      <div className="border-b border-white/10 pb-2 flex justify-between items-center">
+                        <span className="text-slate-400 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
+                          🛡️ Core Attribute Matrices
+                        </span>
+                        <span className="text-[9px] text-cyan-400 font-extrabold uppercase">LEVEL UP FOR +PTS</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-5 gap-2 text-center">
+                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
+                          <span className="text-[8px] text-slate-500 block uppercase font-bold">STR</span>
+                          <span className="text-xs text-white font-black">{gameState.attributes?.str ?? 10}</span>
+                        </div>
+                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
+                          <span className="text-[8px] text-slate-500 block uppercase font-bold">DEX</span>
+                          <span className="text-xs text-white font-black">{gameState.attributes?.dex ?? 10}</span>
+                        </div>
+                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
+                          <span className="text-[8px] text-slate-500 block uppercase font-bold">INT</span>
+                          <span className="text-xs text-white font-black">{gameState.attributes?.int ?? 10}</span>
+                        </div>
+                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
+                          <span className="text-[8px] text-slate-500 block uppercase font-bold">WILL</span>
+                          <span className="text-xs text-white font-black">{gameState.attributes?.will ?? 10}</span>
+                        </div>
+                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
+                          <span className="text-[8px] text-slate-500 block uppercase font-bold">ETH</span>
+                          <span className="text-xs text-cyan-400 font-black">{gameState.attributes?.eth ?? 10}</span>
+                        </div>
+                      </div>
+
+                      <div className="border-b border-white/10 pb-1 mt-1 flex justify-between items-center">
+                        <span className="text-slate-400 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
+                          📶 ACTIVE SKILL TREES
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-3xs font-mono">
+                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
+                          <span className="text-slate-300 font-bold uppercase">⚔️ Cyber-Blade (Melee)</span>
+                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.cyberBlade ?? 1}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
+                          <span className="text-slate-300 font-bold uppercase">💾 Net-Slicer (Hacking)</span>
+                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.netSlicer ?? 1}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
+                          <span className="text-slate-300 font-bold uppercase">🛡️ Heavy Chrome (Defense)</span>
+                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.heavyChrome ?? 1}</span>
+                        </div>
+                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
+                          <span className="text-slate-300 font-bold uppercase">🔮 MINDMANCER (Psychic)</span>
+                          <span className={`font-black ${gameState.skills?.mindmancer ? "text-purple-400" : "text-slate-600 animate-pulse"}`}>
+                            {gameState.skills?.mindmancer ? `LVL ${gameState.skills.mindmancer}` : "LOCKED [PROLOGUE]"}
+                          </span>
                         </div>
                       </div>
                     </div>

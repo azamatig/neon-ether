@@ -82,6 +82,24 @@ export interface Region {
 
 export const REGIONS: Region[] = [
   {
+    id: "conduit09",
+    name: "Conduit 09",
+    description: "The Subsurface AI Catacombs. Dripping water conduits, old server cabinets, and high-voltage feeder cables line this forgotten sector.",
+    bgImage: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "shatter_ridge_core",
+    name: "Shatter-Ridge Core",
+    description: "The Core Array Shatter-Ridge. A hum of static electricity fills the air as heavy automated defense grids rotate on metal sliders.",
+    bgImage: "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "data_vault",
+    name: "Data Vault Sanctuary",
+    description: "The hyper-secure neural safe containing corporate database crystals. Neon security barriers guard the central vault altar.",
+    bgImage: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
     id: "aurus",
     name: "Aurus District",
     description: "The gritty, neon-soaked rain corridors and crowded lower-level slums of Aurus District.",
@@ -110,23 +128,123 @@ export const REGIONS: Region[] = [
 export interface MapPOI {
   id: string;
   name: string;
-  district: string; // Region ID e.g. "aurus", "docks", "downtown", "satoshi"
+  district: string; // Region ID e.g. "conduit09", "shatter_ridge_core", "data_vault", "aurus", etc.
   description: string;
   image: string; // Scenic close-up inside the POI
   x: number; // percentage coordinate on map grids
   y: number; // percentage coordinate on map grids
-  type: "safehouse" | "social" | "shop" | "hiring" | "arcane" | "combat";
+  type: "safehouse" | "social" | "shop" | "hiring" | "arcane" | "combat" | "quest";
   buttons: string[];
 }
 
 export const MAP_POIS: MapPOI[] = [
-  // 1. AURUS DISTRICT
+  // ---- MAP 1: SUBSURFACE AI CATACOMBS (CONDUIT 09) ----
+  {
+    id: "ventilation_shaft",
+    name: "Ventilation Shaft (Entry Point)",
+    district: "conduit09",
+    description: "A narrow, massive circular shaft with heavy metal fan blades spinning at high speed. Vice coordinates from his pocket interface: 'The fan rotors run on a variable frequency cycle. We can slip through during the 0.5-second lull. DEX will determine if you get sliced, rookie.' Tracker mutters: 'Move it. Patrol drones are scanning this sector.'",
+    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
+    x: 15,
+    y: 80,
+    type: "quest",
+    buttons: [
+      "Slip through Vent (DEX Check)",
+      "Talk to Vice & Tracker"
+    ]
+  },
+  {
+    id: "security_terminal",
+    name: "Security Sub-Terminal",
+    district: "conduit09",
+    description: "A buzzing sub-grid terminal flashing corporate warning logs. Tracker gestures at the hardware: 'This sub-terminal bridges the outer perimeter alarm nodes. If you have the INT, you can bypass the firewall and scavenge some valuable copper Rusted Circuitry.' Vice laughs: 'I'll keep watch while you operate.'",
+    image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
+    x: 45,
+    y: 55,
+    type: "quest",
+    buttons: [
+      "Bypass Sub-Terminal (INT Check)",
+      "Search terminal wreckage for scrap"
+    ]
+  },
+  {
+    id: "blast_door",
+    name: "Heavy Blast Door",
+    district: "conduit09",
+    description: "A solid titanium bulkhead door blocking access to the core. Red security locks pulse defensively. Tracker spits: 'This thing is reinforced. You can either use pure physical force to pry open the auxiliary hydraulic valve, or find another way. What's your STR state looking like, rookie?'",
+    image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600",
+    x: 75,
+    y: 40,
+    type: "quest",
+    buttons: [
+      "Pry Open Valve (STR Check)",
+      "Banter with Vice and Tracker"
+    ]
+  },
+  {
+    id: "section_gate",
+    name: "Next Section Gate (Transit)",
+    district: "conduit09",
+    description: "A heavy transit hatch linking Conduit 09 directly to Shatter-Ridge Core. The digital terminal panel glows yellow. Tracker yells: 'The route is clear. Get inside! Once we seal this hatch, there is no returning back.' Vice nods solemnly: 'Get ready, the real array is just ahead.'",
+    image: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&q=80&w=600",
+    x: 90,
+    y: 20,
+    type: "quest",
+    buttons: [
+      "Proceed to Shatter-Ridge Core (Transit)"
+    ]
+  },
+
+  // ---- MAP 2: CORE ARRAY SHATTER-RIDGE ----
+  {
+    id: "main_array_core",
+    name: "Core Array Shatter-Ridge",
+    district: "shatter_ridge_core",
+    description: "A majestic array of glowing blue power cells humming in vertical columns. As Tracker begins a manual security check bypass, his terminal flashes a critical red warning! Tracker yells: 'System fault! The corporate mainframe rejected my encryption key! Hostile drones are deploying!' Vice unsheathes his plasma pistol: 'Engage combat systems!'",
+    image: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=600",
+    x: 50,
+    y: 50,
+    type: "combat",
+    buttons: [
+      "Defend Core Array (Triggers Combat!)"
+    ]
+  },
+
+  // ---- MAP 3: DATA VAULT SANCTUARY ----
+  {
+    id: "terminal_hacking_puzzle",
+    name: "Sanctuary Hacking Terminal",
+    district: "data_vault",
+    description: "The primary cyber-vault terminal containing files of Ares Biotech. Hexadecimal encryption streams cycle across the glass console. Access is fully restricted. Your cyberdeck awaits input. Vice says: 'Hurry up! Hack the system and get the data!'",
+    image: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600",
+    x: 35,
+    y: 60,
+    type: "quest",
+    buttons: [
+      "Initiate Terminal Hack (Mini-Game)"
+    ]
+  },
+  {
+    id: "relic_altar",
+    name: "Mysterious Relic Altar",
+    district: "data_vault",
+    description: "Behind the hacked console, a heavy obsidian altar slides open, revealing a floating, golden relic device of unknown origin. It hums with a warm, terrifying psych-ether frequency. Vice looks tense: 'That's not corporate files. Don't touch it!' Tracker's eyes shine: 'Do it! Touch it... it represents infinite power.'",
+    image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
+    x: 75,
+    y: 40,
+    type: "quest",
+    buttons: [
+      "Activate Mysterious Relic"
+    ]
+  },
+
+  // ---- CHAPTER 1: AURUS DISTRICT ----
   {
     id: "hideout",
-    name: "Main Headquarters (The Hideout)",
+    name: "Aurus Safehouse (The Hideout)",
     district: "aurus",
-    description: "Your secure safehouse tucked below the metal alleys of Aurus District. Cybermatic components, workbench monitors, and spare batteries line the walls. Here, you can rest safely to reset your vital parameters.",
-    image: "/src/assets/images/scene_hideout_1782169616757.jpg",
+    description: "Your secure safehouse tucked below the metal alleys of Aurus District. Cybermatic components, workbench monitors, and spare batteries line the walls. Vice is missing after the dramatic data vault escape, but you can rest safely here to reset your vital parameters.",
+    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
     x: 20,
     y: 75,
     type: "safehouse",
@@ -140,8 +258,8 @@ export const MAP_POIS: MapPOI[] = [
     id: "bar",
     name: "The Neon Abyss Bar",
     district: "aurus",
-    description: "A dim, synth-pulsing cyberbar dripping in fuchsia lights. Mercs, street operators, and hackers lounge in leather booths behind holographic smoke. Agent Jax sits in the far booth planning rebellious runs against corporate tracking nets.",
-    image: "/src/assets/images/scene_neon_bar_1782169575784.jpg",
+    description: "A dim, synth-pulsing cyberbar dripping in fuchsia lights. Mercs, street operators, and hackers lounge in leather booths behind holographic smoke. Agent Jax sits in the far booth planning rebellious runs, and maybe someone has info on Vice's whereabouts.",
+    image: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600",
     x: 55,
     y: 60,
     type: "social",
@@ -154,10 +272,10 @@ export const MAP_POIS: MapPOI[] = [
   },
   {
     id: "armory",
-    name: "Apex Armory & Augment Labs",
+    name: "Apex Armory (Underground Weapon Shop)",
     district: "aurus",
-    description: "The clean clinical testing floors of Apex Corp arms distribution network. Modern weapon brackets glow under plexiglass hooks. Chancellor Aria coordinates strategic operations here, offering high-level credit payments for hazardous hunts.",
-    image: "/src/assets/images/scene_apex_armory_1782169656111.jpg",
+    description: "An underground weapon shop under heavy fluorescent lights. High-tier physical gear, weapon brackets, and custom attachments glow under plexiglass hooks. Chancellor Aria coordinates operations here, offering high-level credit payments.",
+    image: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=600",
     x: 82,
     y: 35,
     type: "shop",
@@ -171,7 +289,7 @@ export const MAP_POIS: MapPOI[] = [
     id: "agency",
     name: "The Nexus Mercenary Agency",
     district: "aurus",
-    description: "A private high-rise enlistment suite. Ambient water curtains partition glass desk offices. Elite freelance hackers, cyber-ninjas, and guards await high-stakes work orders here.",
+    description: "A private high-rise enlistment suite. Ambient water curtains partition glass desk offices. Recruiters help coordinate your active skill-tree progression and hire freelance operatives for automated servers.",
     image: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=600",
     x: 45,
     y: 20,
@@ -184,7 +302,7 @@ export const MAP_POIS: MapPOI[] = [
     ]
   },
 
-  // 2. DOCKS REGION
+  // ---- 2. DOCKS REGION ----
   {
     id: "freight_hub",
     name: "Titan Logistics Freight Hub",
@@ -219,7 +337,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Sludge Conduits & Waterworks",
     district: "docks",
     description: "A toxic cybernetic sewer swamp flowing with radioactive waste under heavy grease clouds. Chem-filters and mechanical debris form a dangerous sludge territory. Home of the acid Mutant Sludge Behemoth.",
-    image: "/src/assets/images/scene_wetlands_1782169559223.jpg",
+    image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
     x: 75,
     y: 70,
     type: "combat",
@@ -230,7 +348,7 @@ export const MAP_POIS: MapPOI[] = [
     ]
   },
 
-  // 3. DOWNTOWN REGION
+  // ---- 3. DOWNTOWN REGION ----
   {
     id: "shatter_ridge",
     name: "Shatter Ridge Corridors",
@@ -276,7 +394,7 @@ export const MAP_POIS: MapPOI[] = [
     ]
   },
 
-  // 4. SATOSHI SQUARE REGION
+  // ---- 4. SATOSHI SQUARE REGION ----
   {
     id: "temple",
     name: "The Iron Coven Temple",
@@ -297,7 +415,7 @@ export const MAP_POIS: MapPOI[] = [
     id: "genesis_megatower",
     name: "Genesis Megatower Hub",
     district: "satoshi",
-    description: "A magnificent architectural peak. Floating digital rings display cryptocurrency indexes. Technocrats and elite network executives gather under golden light columns.",
+    description: "A magnificent architectural peak. Floating digital rings display cryptocurrency indexes. Technocrats and network executives gather under golden light columns.",
     image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
     x: 80,
     y: 40,
@@ -387,16 +505,19 @@ export const ENEMIES: Record<string, EnemyTemplate[]> = {
 };
 
 export function getInitialState(archetype: Archetype): GameState {
+  const isBlade = archetype.name === "Cyber-Blade";
+  const isMage = archetype.name === "Techno-Mage";
+  
   return {
-    district: "aurus", // Stored as lower case region identifier
-    poi: "Main Headquarters (The Hideout)",
+    district: "conduit09", // Stored as lower case region identifier
+    poi: "Ventilation Shaft (Entry Point)",
     hp: archetype.maxHp,
     maxHp: archetype.maxHp,
     mana: archetype.maxMana,
     maxMana: archetype.maxMana,
     credits: archetype.credits,
     party: [],
-    activeQuests: ["Main: Find Outcast Coordinator Agent Jax at 'The Neon Abyss Bar' located in Aurus District slums."],
+    activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
     completedQuests: [],
     inventory: [...archetype.startingEquipment],
     companions: [...INITIAL_COMPANIONS],
@@ -405,6 +526,19 @@ export function getInitialState(archetype: Archetype): GameState {
     level: 1,
     experience: 0,
     day: 1,
-    timeOfDay: "Morning"
+    timeOfDay: "Morning",
+    attributes: {
+      str: isBlade ? 14 : isMage ? 9 : 10,
+      dex: isBlade ? 15 : isMage ? 11 : 13,
+      int: isBlade ? 10 : isMage ? 14 : 15,
+      will: isBlade ? 11 : isMage ? 12 : 11,
+      eth: isBlade ? 10 : isMage ? 15 : 11,
+    },
+    skills: {
+      cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
+      netSlicer: isBlade ? 1 : isMage ? 2 : 3,
+      heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
+      mindmancer: 0
+    }
   };
 }

@@ -30,7 +30,15 @@ import {
   Sparkles,
   ArrowLeft,
   X,
-  Plus
+  Plus,
+  Cpu,
+  Gem,
+  Crosshair,
+  Pill,
+  Settings,
+  Check,
+  Edit,
+  UserCog
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -48,6 +56,42 @@ import {
   ITEM_METADATA,
   ItemDetails
 } from "./data";
+
+const getItemIcon = (itemName: string, slot?: string) => {
+  const nameLower = itemName.toLowerCase();
+  
+  if (nameLower.includes("pistol") || nameLower.includes("smg") || nameLower.includes("rifle") || nameLower.includes("cannon") || nameLower.includes("revolver") || nameLower.includes("gun")) {
+    return <Crosshair size={14} className="text-cyan-400" />;
+  }
+  if (nameLower.includes("katana") || nameLower.includes("blade") || nameLower.includes("baton") || nameLower.includes("fists") || nameLower.includes("slicer") || nameLower.includes("sword") || nameLower.includes("dagger")) {
+    return <Sword size={14} className="text-rose-400" />;
+  }
+  if (nameLower.includes("armor") || nameLower.includes("vest") || nameLower.includes("plate") || nameLower.includes("jacket")) {
+    return <Shield size={14} className="text-emerald-400" />;
+  }
+  if (nameLower.includes("visor") || nameLower.includes("helmet") || nameLower.includes("headgear") || nameLower.includes("chip") || nameLower.includes("processor") || nameLower.includes("deck")) {
+    return <Cpu size={14} className="text-purple-400" />;
+  }
+  if (nameLower.includes("matrix") || nameLower.includes("core") || nameLower.includes("totem") || nameLower.includes("crystal") || nameLower.includes("augment") || nameLower.includes("relic") || nameLower.includes("ring")) {
+    return <Gem size={14} className="text-amber-400" />;
+  }
+  if (nameLower.includes("stim") || nameLower.includes("heal") || nameLower.includes("cell") || nameLower.includes("mana") || nameLower.includes("battery")) {
+    return <Pill size={14} className="text-sky-400" />;
+  }
+  if (nameLower.includes("circuitry") || nameLower.includes("scrap") || nameLower.includes("hardware") || nameLower.includes("parts")) {
+    return <Settings size={14} className="text-slate-400" />;
+  }
+  
+  if (slot === "meleeWeapon") return <Sword size={14} className="text-rose-400" />;
+  if (slot === "rangedWeapon") return <Crosshair size={14} className="text-cyan-400" />;
+  if (slot === "armor") return <Shield size={14} className="text-emerald-400" />;
+  if (slot === "headpiece") return <Cpu size={14} className="text-purple-400" />;
+  if (slot === "trinket") return <Gem size={14} className="text-amber-400" />;
+  if (slot === "consumable") return <Pill size={14} className="text-sky-400" />;
+  if (slot === "valuable") return <Settings size={14} className="text-slate-400" />;
+  
+  return <Briefcase size={14} className="text-slate-400" />;
+};
 
 export default function App() {
   // Screens: "menu" | "game" | "character_select"
@@ -72,6 +116,12 @@ export default function App() {
 
   // Stash Filter for Inventory sorting
   const [stashFilter, setStashFilter] = useState<"all" | "weapons" | "cyberware" | "consumables" | "valuables">("all");
+
+  // State to track which companion is being edited in the detailed gear manager
+  const [editingCompanionName, setEditingCompanionName] = useState<string | null>(null);
+
+  // Shop Filter for buying items
+  const [shopFilter, setShopFilter] = useState<string>("all");
 
   // Active Companion opinion bubble
   const [companionOpinion, setCompanionOpinion] = useState<{ name: string; line: string } | null>(null);
@@ -102,6 +152,26 @@ export default function App() {
     type: "transit" | "loot" | "check_success" | "check_failure" | "action_success";
     text: string;
   } | null>(null);
+
+  // Advanced Shop vendor popup modal
+  const [shopVendorOpen, setShopVendorOpen] = useState(false);
+
+  // Cost calculator helper based on rarity and specific items
+  const getItemCost = (itemName: string, details: any) => {
+    if (itemName.includes("Mantis")) return 120;
+    if (itemName.includes("Ether-deck")) return 140;
+    if (itemName.includes("Heavy Plasma")) return 175;
+    if (itemName.includes("Exo-Plated")) return 130;
+    
+    const itemRarity = details.rarity || "common";
+    switch (itemRarity) {
+      case "common": return 50;
+      case "deluxe": return 90;
+      case "epic": return 130;
+      case "legendary": return 190;
+      default: return 60;
+    }
+  };
 
   // Helper to compute derived stats including active equipment
   const getDerivedStats = () => {
@@ -520,6 +590,132 @@ export default function App() {
       }
     ]);
     triggerToast(`UNEQUIPPED: ${itemName}`);
+  };
+
+  const handleEquipCompanionItem = (companionName: string, slot: "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket", itemName: string) => {
+    if (!gameState) return;
+    let next = { ...gameState };
+    const comp = next.companions.find(c => c.name === companionName);
+    if (!comp) return;
+    
+    if (!comp.equipment) {
+      comp.equipment = {
+        meleeWeapon: null,
+        rangedWeapon: null,
+        armor: null,
+        headpiece: null,
+        trinket: null
+      };
+    }
+    
+    const currentEquipped = comp.equipment[slot];
+    
+    // Remove from player inventory
+    next.inventory = next.inventory.filter((item, idx) => idx !== next.inventory.indexOf(itemName));
+    
+    // Return previous item to player inventory
+    if (currentEquipped) {
+      next.inventory.push(currentEquipped);
+    }
+    
+    comp.equipment[slot] = itemName;
+    setGameState(next);
+    
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `🛡️ MERCENARY GEAR COMPLETED: Equipped ${itemName} on ${companionName.toUpperCase()} into their ${slot.toUpperCase()} slot!`,
+        type: "system",
+        district: next.district,
+        poi: next.poi
+      }
+    ]);
+    triggerToast(`Equipped on ${companionName}: ${itemName}`);
+  };
+
+  const handleUnequipCompanionItem = (companionName: string, slot: "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket") => {
+    if (!gameState) return;
+    let next = { ...gameState };
+    const comp = next.companions.find(c => c.name === companionName);
+    if (!comp || !comp.equipment) return;
+    
+    const currentEquipped = comp.equipment[slot];
+    if (!currentEquipped) return;
+    
+    next.inventory.push(currentEquipped);
+    comp.equipment[slot] = null;
+    setGameState(next);
+    
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `🛡️ MERCENARY GEAR STRIPPED: Unequipped ${currentEquipped} from ${companionName.toUpperCase()}'s ${slot.toUpperCase()} slot. Returned to stash.`,
+        type: "system",
+        district: next.district,
+        poi: next.poi
+      }
+    ]);
+    triggerToast(`Unequipped ${currentEquipped} from ${companionName}`);
+  };
+
+  const handleGiveCompanionItem = (companionName: string, itemName: string) => {
+    if (!gameState) return;
+    let next = { ...gameState };
+    const comp = next.companions.find(c => c.name === companionName);
+    if (!comp) return;
+    
+    if (!comp.inventory) {
+      comp.inventory = [];
+    }
+    
+    next.inventory = next.inventory.filter((item, idx) => idx !== next.inventory.indexOf(itemName));
+    comp.inventory.push(itemName);
+    setGameState(next);
+    
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `📦 ITEM TRANSFERRED: Transferred '${itemName}' from global stash to ${companionName.toUpperCase()}'s combat belt inventory.`,
+        type: "system",
+        district: next.district,
+        poi: next.poi
+      }
+    ]);
+    triggerToast(`Transferred ${itemName} to ${companionName}`);
+  };
+
+  const handleTakeCompanionItem = (companionName: string, itemName: string) => {
+    if (!gameState) return;
+    let next = { ...gameState };
+    const comp = next.companions.find(c => c.name === companionName);
+    if (!comp || !comp.inventory) return;
+    
+    comp.inventory = comp.inventory.filter((item, idx) => idx !== comp.inventory.indexOf(itemName));
+    next.inventory.push(itemName);
+    setGameState(next);
+    
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `📦 ITEM TRANSFERRED: Retrieved '${itemName}' from ${companionName.toUpperCase()}'s combat belt inventory into global stash.`,
+        type: "system",
+        district: next.district,
+        poi: next.poi
+      }
+    ]);
+    triggerToast(`Retrieved ${itemName} from ${companionName}`);
   };
   
   // Success toast indicators
@@ -1304,8 +1500,8 @@ export default function App() {
           nextState.poi = "Mysterious Relic Altar";
           setActivePOIView("relic_altar");
           setActiveDialogue("post_combat_tracker");
-          nextState.activeQuests = ["Prologue: Choose the fate of the dying Tracker and escape to Aurus District Safe-house."];
-          narrative += `\n\n🛡️ AMBUSH SURVIVED: The last corporate enforcer drops. Tracker lies on the bloody steel floor, breathing his final heavy breaths. Vice, wounded and leaning against the altar, gasps: 'That traitor... he was about to sell us out. Check his belt.'\n\nYou retrieve a decrypted datapad proving Tracker was under contract to assassinate you and Vice once the data was secured! Choose Tracker's fate above.`;
+          nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
+          narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
         }
 
         // Check Quest item collection
@@ -1393,6 +1589,54 @@ export default function App() {
 
       // ---- SPECIFIC HOOKS ----
       
+      // Consumables use / consume
+      if (cleanAction.startsWith("consume ")) {
+        const itemToConsume = nextState.inventory.find(item => cleanAction.includes(item.toLowerCase()));
+        if (itemToConsume) {
+          const itemLower = itemToConsume.toLowerCase();
+          const idx = nextState.inventory.indexOf(itemToConsume);
+          if (idx > -1) {
+            nextState.inventory.splice(idx, 1);
+          }
+          
+          let healText = "";
+          if (itemLower.includes("stim") || itemLower.includes("heal")) {
+            const healAmt = 60;
+            const oldHp = nextState.hp;
+            nextState.hp = Math.min(nextState.maxHp, nextState.hp + healAmt);
+            const healed = nextState.hp - oldHp;
+            healText = `💊 BIO-STIMULANT DEPLOYED: You consumed '${itemToConsume}'. Repolarized +${healed} HP! Current: ${nextState.hp}/${nextState.maxHp}`;
+            triggerToast(`Repaired +${healed} HP`);
+          } else if (itemLower.includes("cell") || itemLower.includes("mana")) {
+            const manaAmt = 40;
+            const oldMana = nextState.mana;
+            nextState.mana = Math.min(nextState.maxMana, nextState.mana + manaAmt);
+            const recharged = nextState.mana - oldMana;
+            healText = `⚡ ETHER CHARGE INSTALLED: You consumed '${itemToConsume}'. Recharged +${recharged} Mana! Current: ${nextState.mana}/${nextState.maxMana}`;
+            triggerToast(`Recharged +${recharged} Mana`);
+          } else {
+            healText = `📦 ITEM CONSUMED: You consumed '${itemToConsume}', but its neural effects were neutral.`;
+          }
+          
+          setGameState(nextState);
+          setLogs(prev => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              timestamp: timeString,
+              text: healText,
+              type: "system",
+              district: nextState.district,
+              poi: nextState.poi
+            }
+          ]);
+          setIsLoading(false);
+          return;
+        } else {
+          narrative = `⚠️ USE FAILURE: No matching item found inside inventory stash!`;
+        }
+      }
+
       // Rest at base
       if (cleanAction.includes("rest & recover") || cleanAction.includes("rest and sleep")) {
         nextState.hp = nextState.maxHp;
@@ -1886,14 +2130,32 @@ export default function App() {
           nextState.credits -= 10;
           nextState.mana = Math.min(nextState.maxMana, nextState.mana + 30);
           narrative = "🍸 ORDER DISPENSED: Slipped a glowing magenta synth-cocktail. Bio-ether levels recharged (+30 Mana)!";
+          setActivePopup({
+            title: "SYNTH-COCKTAIL DISPENSED",
+            subtitle: "RECOGNITION FLUID RECEIVED",
+            type: "check_success",
+            text: "You down the glowing magenta synthetic drink. A warm, vibrating bio-ether energy surges through your nervous system!\n\nRecharged +30 Mana!"
+          });
         } else {
           narrative = "❌ INSUFFICIENT LIQUIDITY: The bartender spits on the floor. 'Get some real currency.'";
+          setActivePopup({
+            title: "TRANSACTION REFUSED",
+            subtitle: "LIQUIDITY RUNOUT",
+            type: "check_failure",
+            text: "The bartender looks at your empty ledger and spits on the concrete floor. 'Get some real currency, rookie.'"
+          });
         }
       }
 
       // Eavesdrop on thugs
       else if (cleanAction.includes("eavesdrop")) {
         narrative = "📻 AUDIOWALL HACKED: Overheard conversation feeds:\n- 'Aria at Apex showroom is distributing heavy weapons if you clear out water monsters in the Docks Region...'\n- 'Jax is in a serious pick, the outpatient team got ambushed Downtown inside Shatter Ridge...'";
+        setActivePopup({
+          title: "AUDIOWALL INTERCEPT",
+          subtitle: "EAVESDROP SUCCESS",
+          type: "check_success",
+          text: "📻 SECURE FEED INTERCEPT OVERLAY:\n\n• \"Aria at Apex showroom is distributing heavy weapons if you clear out water monsters in the Docks Region...\"\n\n• \"Jax is in a serious pick, the outpatient team got ambushed Downtown inside Shatter Ridge...\"\n\n• \"I heard the local weapon vendors restocked deluxe/legendary items under the hood!\""
+        });
       }
 
       // Search Booths
@@ -1901,8 +2163,20 @@ export default function App() {
         if (Math.random() > 0.4) {
           nextState.inventory.push("Rusted Circuitry");
           narrative = "🔍 SCAVENGE SUCCESS: Pulled a functional copper piece of 'Rusted Circuitry' scrap from behind leather benches! Sell this at Apex Armory.";
+          setActivePopup({
+            title: "SCRAP RECOVERED",
+            subtitle: "SCAVENGE SUCCESS",
+            type: "loot",
+            text: "You reached deep behind the sticky leather benches and salvaged a piece of functional copper 'Rusted Circuitry' scrap! This can be recycled for credits at the Apex Armory."
+          });
         } else {
           narrative = "🔍 SCAVENGE EMPTY: Only sticky chemical residue and empty drug cylinders detected.";
+          setActivePopup({
+            title: "SCAVENGE DRY",
+            subtitle: "SCAVENGE EMPTY",
+            type: "check_failure",
+            text: "You searched thoroughly underneath the booths but found only sticky chemical residue and empty drug cylinders."
+          });
         }
       }
 
@@ -1920,14 +2194,27 @@ export default function App() {
           nextState.inventory = nextState.inventory.filter(i => i !== "Rusted Circuitry");
           nextState.credits += 30;
           narrative = "💰 TRANS-RECEIVER CLEARED: Disposed of Rusted Circuitry scrap to automated recycler. Recovered +30¤.";
+          setActivePopup({
+            title: "SCRAP RECYCLED",
+            subtitle: "AUTOMATED RECYCLER",
+            type: "loot",
+            text: "You loaded the Rusted Circuitry scrap into the slot. The machine clanks, shreds, and registers a trade. Transfer complete!\n\nEarned +30¤ Credits!"
+          });
         } else {
           narrative = "⚠️ recycler refused: No 'Rusted Circuitry' detected under active equipment list.";
+          setActivePopup({
+            title: "RECYCLER ERROR",
+            subtitle: "SCRAP REJECTED",
+            type: "check_failure",
+            text: "The automated terminal's red scanner flashes. No 'Rusted Circuitry' detected in your stash inventory. Recycler sequence aborted."
+          });
         }
       }
 
       // Buy shop items
       else if (cleanAction.includes("purchase advanced") || cleanAction.includes("purchase item") || cleanAction.includes("gear")) {
-        narrative = "🛒 ELECTRONIC CATALOG OPENED: Select your purchase directly from the physical equipment panels inside the Docks/Aurus terminal slots below!";
+        setShopVendorOpen(true);
+        narrative = "🛒 SHOP VENDOR CONSOLE INITIALIZED: Accessing the localized neural network shop. Complete your equipment upgrades from the interactive terminal modal now!";
       }
 
       // Talk Recruiter
@@ -2971,29 +3258,54 @@ export default function App() {
                                 <div className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl">
                                   <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
                                     <span className="text-red-500 font-extrabold text-[11px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                      <AlertTriangle size={14} /> Traitor's Judgment Scene
+                                      <AlertTriangle size={14} /> Interrogation & Discovery Scene
                                     </span>
-                                    <span className="text-3xs text-slate-500">CONDUIT DATA SECURED</span>
+                                    <span className="text-3xs text-slate-500">BLAST DOORS SECURED</span>
                                   </div>
                                   
-                                  <div className="flex gap-3 items-start">
-                                    <img
-                                      src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                                      alt="Tracker portrait"
-                                      referrerPolicy="no-referrer"
-                                      className="w-14 h-14 object-cover rounded-md border border-red-500/30 filter grayscale flex-shrink-0"
-                                    />
-                                    <div className="text-[10px] space-y-1 text-slate-300 flex-1">
-                                      <p className="text-red-400 font-extrabold uppercase text-left">Tracker (Dying)</p>
-                                      <p className="text-3xs text-slate-500 leading-none text-left">ROLE: Tactical Co-Supervisor (Traitor)</p>
-                                      <p className="text-slate-300 font-sans text-2xs italic leading-relaxed pt-1 text-left">
-                                        "cough... cough... You think... you won, rookie? Ares Biotech... owns Megacity-9. If you don't hand... the data... to them... you're both dead..."
+                                  {/* Interrogation of Ares Security Officer */}
+                                  <div className="bg-slate-900/50 border border-red-500/20 p-3 rounded-lg flex flex-col gap-2">
+                                    <div className="flex gap-3 items-start">
+                                      <img
+                                        src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?auto=format&fit=crop&q=80&w=200"
+                                        alt="Ares Security Officer portrait"
+                                        referrerPolicy="no-referrer"
+                                        className="w-14 h-14 object-cover rounded-md border border-red-500/40 filter grayscale flex-shrink-0"
+                                      />
+                                      <div className="text-[10px] space-y-1 text-slate-300 flex-1">
+                                        <p className="text-red-400 font-extrabold uppercase text-left">Ares Security Officer (Captured)</p>
+                                        <p className="text-3xs text-slate-500 leading-none text-left">FACTION: Ares Biotech Corporate Security</p>
+                                        <p className="text-slate-300 font-sans text-2xs italic leading-relaxed pt-1.5 text-left">
+                                          "P-please! Don't shoot! I'm just a contractor! The secondary assault squads are sealing the upper ventilation shaft... but the heavy service tunnels under Level B4 are still completely clear! Here, I'll bypass the terminal lock... *clank*... look, the heavy magnetic blast doors are fully open now! Just let me live!"
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="border-t border-red-500/10 pt-2 text-3xs text-slate-400 text-left">
+                                      <span className="text-cyan-400 font-bold">📢 PLAYER INTERROGATION:</span> "How many of your squad are left, and where is the safest route out of this complex?"
+                                    </div>
+                                  </div>
+
+                                  {/* Tracker Betrayal Logs Discovery */}
+                                  <div className="bg-cyan-950/25 border border-cyan-500/30 p-3 rounded-lg text-left">
+                                    <p className="text-[10px] font-black text-cyan-400 uppercase leading-none mb-1 flex items-center gap-1.5">
+                                      <span>🎒</span> SALVAGING TRACKER'S GEAR & SECURE DATAPAD
+                                    </p>
+                                    <p className="text-slate-400 text-3xs font-sans leading-relaxed">
+                                      You salvage Tracker's lifeless body, recovering his <strong className="text-slate-200">Electric Baton</strong>, <strong className="text-slate-200">Cheap Combat Armor</strong>, and secure credits.
+                                    </p>
+                                    <div className="mt-2 bg-slate-950/80 border border-cyan-500/20 p-2 rounded font-mono text-[9px] text-cyan-300/90 leading-normal">
+                                      <p className="font-extrabold text-red-400 mb-0.5">📂 SECURE DECRYPTED LOG: "ARES_CONTRACT_PLAN_B"</p>
+                                      <p className="italic">
+                                        "Plan B Protocol: If the hacker group fails or triggers security alarms, initiate containment lockdown. Retrieve decrypted database crystals. Leave the rookie and Vice behind as corporate scapegoats to take the fall. Escape solo via the private shuttle bay."
+                                      </p>
+                                      <p className="text-3xs text-slate-500 mt-1 uppercase font-bold">
+                                        ★ DISCOVERY: Tracker was never on your side. He was Plan B to betray you.
                                       </p>
                                     </div>
                                   </div>
 
                                   <div className="bg-slate-900/40 border border-white/5 p-2 rounded text-3xs text-slate-400 font-sans leading-relaxed text-left">
-                                    Vice leans heavily against the altar, bleeding from a plasma burn: "The tracker pad lists Ares' direct assassination protocol. He was paid to wipe us after the data download. He's dying, but we can't leave witnesses. What are you going to do, rookie?"
+                                    Vice leans heavily against the altar, bleeding from a plasma burn: "The blast doors are open, and now we know the truth about Tracker's betrayal. The cowardly rat was going to leave us to rot. But we have a witness here. What are you going to do with this security officer, rookie?"
                                   </div>
 
                                   {/* Post-combat choices */}
@@ -3003,8 +3315,9 @@ export default function App() {
                                         let next = { ...gameState! };
                                         next.district = "aurus";
                                         next.poi = "Main Headquarters (The Hideout)";
+                                        next.party = [];
                                         next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Traitors Get No Mercy (Killed Tracker)");
+                                        next.completedQuests.push("Traitor Discovered (Ares Security Executed)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView("hideout");
@@ -3015,17 +3328,17 @@ export default function App() {
                                           {
                                             id: crypto.randomUUID(),
                                             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "💥 TRAITOR ELIMINATED: You double-tap Tracker with a clean round. There is no space for traitors in the slums. Carrying the heavy data crystal and helping the wounded Vice, you slip through the cooling vents as the alarm sirens begin blaring. After a grueling trek, you arrive at the Aurus District Safehouse. You split up to bypass scanners, and Vice has gone dark. Chapter 1 Begins.",
+                                            text: "💥 NO WITNESSES: You double-tap the Ares Security Officer. In Megacity-9, loose ends get you killed. Carrying the heavy Ares Data Crystal and Tracker's salvaged gear, you support the wounded Vice, escaping through Level B4's overridden doors. You split up in the slums to evade corporate heat. Chapter 1 Begins.",
                                             type: "narration",
                                             district: "aurus",
                                             poi: "Main Headquarters (The Hideout)"
                                           }
                                         ]);
-                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AUREUS DISTRICT");
+                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AURUS DISTRICT");
                                       }}
-                                      className="bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center"
+                                      className="bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1"
                                     >
-                                      [Double Tap] Kill Tracker
+                                      [Double Tap] Kill Officer
                                     </button>
 
                                     <button
@@ -3033,11 +3346,12 @@ export default function App() {
                                         let next = { ...gameState! };
                                         next.district = "aurus";
                                         next.poi = "Main Headquarters (The Hideout)";
+                                        next.party = [];
                                         if (next.skills) {
                                           next.skills.mindmancer += 1;
                                         }
                                         next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Mind-Shattered Traitor (Subjugated Tracker)");
+                                        next.completedQuests.push("Mind-Shattered Security (Officer Subjugated)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView("hideout");
@@ -3048,7 +3362,7 @@ export default function App() {
                                           {
                                             id: crypto.randomUUID(),
                                             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "🔮 TRACKER SUBJUGATED: Your eyes glow purple with newly awakened Mindmancer power! You reach into Tracker's dying cortex, rewriting his neurons. He overrides the emergency lockdown doors, wipes his own memory of your involvement, and collapses. You escape with the wounded Vice to the Aurus District Safehouse, your Mindmancer skill expanding. Chapter 1 Begins.",
+                                            text: "🔮 SYNAPTIC OVERRIDE: Your eyes glow purple as you rewrite the Officer's memory, erasing his mind of your identities. With Tracker's salvaged gear and decrypted betrayal logs, you escape through Level B4's doors with the wounded Vice. Chapter 1 Begins.",
                                             type: "narration",
                                             district: "aurus",
                                             poi: "Main Headquarters (The Hideout)"
@@ -3056,9 +3370,9 @@ export default function App() {
                                         ]);
                                         triggerToast("CHAPTER 1 BEGUN: MINDMANCER UNLOCKED (+1 Skill)");
                                       }}
-                                      className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center animate-pulse"
+                                      className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1 animate-pulse"
                                     >
-                                      [Mindmance] Subjugate Traitor
+                                      [Mindmance] Subjugate & Wipe Memory
                                     </button>
 
                                     <button
@@ -3066,8 +3380,9 @@ export default function App() {
                                         let next = { ...gameState! };
                                         next.district = "aurus";
                                         next.poi = "Main Headquarters (The Hideout)";
+                                        next.party = [];
                                         next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Pacified Traitor (Sedated Tracker)");
+                                        next.completedQuests.push("Officer Pacified (Sedative Injected)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView("hideout");
@@ -3078,15 +3393,15 @@ export default function App() {
                                           {
                                             id: crypto.randomUUID(),
                                             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "💊 SEDATED & FLED: You inject a high-strength corporate medical sedative into Tracker, silencing his alerts, and quickly flee into the shadows with Vice before the tactical squad breaches. You lay low inside the Aurus District Safehouse. Chapter 1 Begins.",
+                                            text: "💊 CLINICAL SEDATION: You inject a high-strength medical sedative into the Officer, knocking him out cold for 12 hours. Grabbing Tracker's salvaged gear and reading his decrypted betrayal logs, you make a swift escape with Vice through B4. Chapter 1 Begins.",
                                             type: "narration",
                                             district: "aurus",
                                             poi: "Main Headquarters (The Hideout)"
                                           }
                                         ]);
-                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AUREUS DISTRICT");
+                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AURUS DISTRICT");
                                       }}
-                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center"
+                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1"
                                     >
                                       [Sedate] Inject Sedative & Flee
                                     </button>
@@ -3094,28 +3409,30 @@ export default function App() {
                                 </div>
                               ) : (
                                 <div className="bg-slate-900/60 border border-cyan-400/20 rounded-lg p-3 relative flex items-start gap-3">
-                                {/* NPC small avatar */}
-                                <img
-                                  src={
-                                    activeDialogue === "jax"
-                                      ? "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200"
-                                      : activeDialogue === "aria"
-                                        ? "/src/assets/images/npc_aria_portrait_1782169594302.jpg"
-                                        : activeDialogue === "morgana"
-                                          ? "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200"
-                                          : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
-                                  }
-                                  alt="NPC portrait"
-                                  referrerPolicy="no-referrer"
-                                  className="w-12 h-12 object-cover rounded-md border border-white/15 shadow flex-shrink-0"
-                                />
+                                  {/* NPC small avatar */}
+                                  <img
+                                    src={
+                                      activeDialogue === "jax"
+                                        ? "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200"
+                                        : activeDialogue === "aria"
+                                          ? "/src/assets/images/npc_aria_portrait_1782169594302.jpg"
+                                          : activeDialogue === "morgana"
+                                            ? "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200"
+                                            : activeDialogue === "lost_girl"
+                                              ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200"
+                                              : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                                    }
+                                    alt="NPC portrait"
+                                    referrerPolicy="no-referrer"
+                                    className="w-12 h-12 object-cover rounded-md border border-white/15 shadow flex-shrink-0"
+                                  />
 
                                 <div className="space-y-1 font-mono text-[11px] flex-1 text-left">
                                   <p className="text-cyan-400 font-bold uppercase leading-none">
-                                    {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : "Agent Vesper"}
+                                    {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : activeDialogue === "lost_girl" ? "Mia" : "Agent Vesper"}
                                   </p>
                                   <p className="text-[9px] text-slate-500 uppercase font-semibold">
-                                    {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : "Nexus Recruiter"}
+                                    {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : activeDialogue === "lost_girl" ? "Lost Corporate Subject" : "Nexus Recruiter"}
                                   </p>
                                   <span className="h-px bg-white/5 block my-1" />
                                   <p className="text-slate-300 font-sans text-2xs leading-relaxed italic">
@@ -3137,8 +3454,12 @@ export default function App() {
                                             : gameState.completedQuests.some(q => q.includes("Syndicate Catalyst"))
                                               ? "Your neural system is harmonized with the techno-magic flow, initiate. Walk in shadow."
                                               : "Take my uncharged server matrix, traverse to the Cyber-shrine Gardens in Satoshi Square Region, and Meditate with the tech core to charge the Ley-Matrix."
-                                          : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
-                                    }
+                                          : activeDialogue === "lost_girl"
+                                            ? gameState.companions.some(c => c.name === "Mia")
+                                              ? "Mia looks up at you with happy, sparkling eyes: 'Thank you for giving me a home and saving my life, commander! I'll do my absolute best to support you.'"
+                                              : "P-please... don't report me to Ares Biotech security... I escaped when the mainframe crashed. My neural cortex is overloading and I have no credentials, no credits, and nowhere to go... can you help me?"
+                                            : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
+                                      }
                                   </p>
 
                                   {/* Branching Response Action Buttons inside Dialogue Overlay */}
@@ -3245,6 +3566,90 @@ export default function App() {
                                           Accept Initiation
                                         </button>
                                       ) : null
+                                    )}
+
+                                    {activeDialogue === "lost_girl" && !gameState.companions.some(c => c.name === "Mia") && (
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            let next = { ...gameState };
+                                            const mia = {
+                                              name: "Mia",
+                                              fee: 0,
+                                              status: "in_party" as "available" | "hired" | "in_party" | "working",
+                                              role: "Neural Aegis / Support Mage",
+                                              bio: "An escaped corporate lab subject with dormant high-bandwidth neural forcefields. Grateful for your shelter.",
+                                              avatar: "✨",
+                                              equipment: {
+                                                meleeWeapon: null,
+                                                rangedWeapon: null,
+                                                armor: "Tactical Flak Armor",
+                                                headpiece: null,
+                                                trinket: null
+                                              }
+                                            };
+                                            next.companions.push(mia);
+                                            next.party.push("Mia");
+                                            next.experience += 60;
+                                            setGameState(next);
+                                            triggerToast("MIA JOINED YOUR PARTY!");
+                                            setActiveDialogue(null);
+                                          }}
+                                          className="bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-emerald-400"
+                                        >
+                                          🤝 Invite to Hideout (Squad Teammate)
+                                        </button>
+
+                                        <button
+                                          onClick={() => {
+                                            let next = { ...gameState };
+                                            const mia = {
+                                              name: "Mia",
+                                              fee: 0,
+                                              status: "working" as "available" | "hired" | "in_party" | "working",
+                                              role: "Safehouse Maid & Tech Analyst",
+                                              bio: "Her neural implants are synced with your safehouse server nodes. She manages security algorithms and cooks synth-rations.",
+                                              avatar: "🧹",
+                                              equipment: {
+                                                meleeWeapon: null,
+                                                rangedWeapon: null,
+                                                armor: null,
+                                                headpiece: null,
+                                                trinket: null
+                                              }
+                                            };
+                                            next.companions.push(mia);
+                                            next.experience += 80;
+                                            setGameState(next);
+                                            triggerToast("MIA BOUND AS SAFE-HOUSE MAID");
+                                            setActiveDialogue(null);
+                                          }}
+                                          className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                        >
+                                          🔮 [Mindmance] Sync Neural Link (Maid servant)
+                                        </button>
+
+                                        {gameState.credits >= 30 ? (
+                                          <button
+                                            onClick={() => {
+                                              let next = { ...gameState };
+                                              next.credits -= 30;
+                                              next.experience += 100;
+                                              next.inventory.push("Ether Mana-Cell (Mana)");
+                                              setGameState(next);
+                                              triggerToast("SAVED MIA! Gained Ether Mana-Cell");
+                                              setActiveDialogue(null);
+                                            }}
+                                            className="bg-cyan-600 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-cyan-500"
+                                          >
+                                            🪙 Give 30¤ & Guide to Safety
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Need 30¤ to Save Her
+                                          </span>
+                                        )}
+                                      </>
                                     )}
 
                                     <button
@@ -4280,8 +4685,8 @@ export default function App() {
                                 nextState.poi = "Mysterious Relic Altar";
                                 setActivePOIView("relic_altar");
                                 setActiveDialogue("post_combat_tracker");
-                                nextState.activeQuests = ["Prologue: Choose the fate of the dying Tracker and escape to Aurus District Safe-house."];
-                                narrative += `\n\n🛡️ AMBUSH SURVIVED: The last corporate enforcer drops. Tracker lies on the bloody steel floor, breathing his final heavy breaths. Vice, wounded and leaning against the altar, gasps: 'That traitor... he was about to sell us out. Check his belt.'\n\nYou retrieve a decrypted datapad proving Tracker was under contract to assassinate you and Vice once the data was secured! Choose Tracker's fate above.`;
+                                nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
+                                narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
                               }
                               else if (enemyName.includes("Behemoth") && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
                                 nextState.inventory.push("Acid Beast Core");
@@ -4630,9 +5035,14 @@ export default function App() {
                                 const alreadyIn = gameState.inventory.includes(item.name);
                                 return (
                                   <div key={item.name} className="flex justify-between items-center text-3xs border-b border-white/5 pb-2">
-                                    <div className="text-left w-2/3">
-                                      <p className="font-bold text-white uppercase">{item.name}</p>
-                                      <p className="text-[8.5px] text-slate-400 font-sans mt-0.5 leading-none">{item.desc}</p>
+                                    <div className="text-left w-2/3 flex items-start gap-1.5">
+                                      <div className="mt-0.5 shrink-0">
+                                        {getItemIcon(item.name, ITEM_METADATA[item.name]?.slot)}
+                                      </div>
+                                      <div>
+                                        <p className="font-bold text-white uppercase">{item.name}</p>
+                                        <p className="text-[8.5px] text-slate-400 font-sans mt-0.5 leading-none">{item.desc}</p>
+                                      </div>
                                     </div>
                                     <button
                                       onClick={() => handleBuyItemDirectly(item)}
@@ -4704,19 +5114,65 @@ export default function App() {
                                     subtitle = `${slotDisplay.toUpperCase()} HARDWARE`;
                                   }
 
+                                  const rarity = details?.rarity || "common";
+
                                   return (
                                     <div
                                       key={index}
-                                      className="p-3 bg-slate-950/80 border border-white/10 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all hover:border-white/20"
+                                      className={`p-3.5 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all border ${
+                                        rarity === "legendary"
+                                          ? "bg-amber-950/10 border-amber-500/30 hover:border-amber-400/50 hover:shadow-[0_0_15px_rgba(234,179,8,0.1)]"
+                                          : rarity === "epic"
+                                            ? "bg-purple-950/10 border-purple-500/30 hover:border-purple-400/50 hover:shadow-[0_0_15px_rgba(168,85,247,0.1)]"
+                                            : rarity === "deluxe"
+                                              ? "bg-blue-950/10 border-blue-500/30 hover:border-blue-400/50 hover:shadow-[0_0_15px_rgba(59,130,246,0.1)]"
+                                              : "bg-slate-950/80 border-white/10 hover:border-white/20"
+                                      }`}
                                     >
-                                      <div className="text-left">
-                                        <p className="font-bold text-slate-200 text-2xs uppercase leading-none">{item}</p>
+                                      <div className="text-left w-full sm:w-auto">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className={`font-black text-xs uppercase leading-none tracking-tight flex items-center gap-1.5 ${
+                                            rarity === "legendary"
+                                              ? "text-amber-400"
+                                              : rarity === "epic"
+                                                ? "text-purple-400"
+                                                : rarity === "deluxe"
+                                                  ? "text-blue-400"
+                                                  : "text-slate-200"
+                                          }`}>
+                                            {getItemIcon(item, details?.slot)}
+                                            <span>{item}</span>
+                                          </p>
+                                          
+                                          {details?.rarity && (
+                                            <span className={`text-[7px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                              rarity === "legendary"
+                                                ? "bg-amber-950/80 text-amber-300 border border-amber-500/20"
+                                                : rarity === "epic"
+                                                  ? "bg-purple-950/80 text-purple-300 border border-purple-500/20"
+                                                  : rarity === "deluxe"
+                                                    ? "bg-blue-950/80 text-blue-300 border border-blue-500/20"
+                                                    : "bg-slate-800 text-slate-400 border border-slate-700"
+                                            }`}>
+                                              {rarity}
+                                            </span>
+                                          )}
+                                        </div>
+                                        
                                         <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-wider">
                                           {subtitle}
                                         </p>
+                                        
                                         {details?.desc && (
                                           <p className="text-slate-400 font-sans text-3xs mt-1.5 leading-snug max-w-md">
                                             {details.desc}
+                                          </p>
+                                        )}
+
+                                        {details?.specialEffect && (
+                                          <p className="text-rose-400 font-mono text-[9px] mt-1.5 bg-rose-950/10 border border-rose-500/10 rounded px-2 py-0.5 max-w-md flex items-center gap-1">
+                                            <Sparkles size={10} className="shrink-0" />
+                                            <span><strong>Effect:</strong> {details.specialEffect}</span>
                                           </p>
                                         )}
                                       </div>
@@ -4779,91 +5235,120 @@ export default function App() {
                         </p>
 
                         <div className="space-y-2.5">
-                          {gameState.companions.map((comp) => {
-                            const isHired = gameState.party.includes(comp.name);
-                            const isWorking = comp.status === "working";
-                            const isAvailable = comp.status === "available";
+                          {(() => {
+                            const isPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+                            const filteredCompanions = gameState.companions.filter(comp => {
+                              if (isPrologue) {
+                                return comp.name === "Vice" || comp.name === "Tracker";
+                              } else {
+                                return comp.name !== "Vice" && comp.name !== "Tracker";
+                              }
+                            });
 
-                            return (
-                              <div
-                                key={comp.name}
-                                className={`p-3 rounded-lg border text-left font-mono text-xs transition-all ${
-                                  isWorking
-                                    ? "bg-amber-950/20 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.05)]"
-                                    : isHired
-                                      ? "bg-slate-950/80 border-cyan-500/20"
-                                      : "bg-slate-950/40 border-white/5 opacity-80"
-                                }`}
-                              >
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <p className="font-extrabold text-slate-200 uppercase flex items-center gap-1 text-2xs leading-none">
-                                      {comp.name} <span className="text-3xs text-slate-500 font-normal">({comp.role})</span>
-                                    </p>
-                                    <p className="text-[9px] text-slate-500 mt-1 italic font-sans">{comp.bio}</p>
-                                  </div>
-                                  
-                                  {/* Payout Tag */}
-                                  {isWorking && (
-                                    <span className="bg-amber-950 border border-amber-500/30 text-amber-300 font-black px-1.5 py-0.5 rounded text-[8px] animate-pulse">
-                                      WORK: +35¤/rest
-                                    </span>
-                                  )}
-                                </div>
+                            if (filteredCompanions.length === 0) {
+                              return (
+                                <p className="text-slate-500 text-center py-6 text-2xs italic border border-dashed border-white/5 rounded-lg">
+                                  No companions currently recorded in this district sector database.
+                                </p>
+                              );
+                            }
 
-                                <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-3xs">
-                                  {isAvailable && (
-                                    <button
-                                      onClick={() => {
-                                        // Auto-travel to agency to hire
-                                        setActivePOIView("agency");
-                                        triggerToast(`Opening Nexus Agency desk to negotiate`);
-                                      }}
-                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 px-2 py-1 rounded cursor-pointer"
-                                    >
-                                      Not Hired (Costs {comp.fee}¤)
-                                    </button>
-                                  )}
+                            return filteredCompanions.map((comp) => {
+                              const isHired = gameState.party.includes(comp.name);
+                              const isWorking = comp.status === "working";
+                              const isAvailable = comp.status === "available";
 
-                                  {isHired && (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      <button
-                                        onClick={() => handleTalkCompanion(comp)}
-                                        className="bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
-                                      >
-                                        💬 Talk / Opinion
-                                      </button>
-                                      <button
-                                        onClick={() => handleAssignCompanionTask(comp.name, "Hacking Financial Databases")}
-                                        className="bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
-                                      >
-                                        💼 Assign Job
-                                      </button>
-                                      <button
-                                        onClick={() => handleDismissCompanion(comp.name)}
-                                        className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
-                                      >
-                                        ❌ Dismiss
-                                      </button>
+                              return (
+                                <div
+                                  key={comp.name}
+                                  className={`p-3 rounded-lg border text-left font-mono text-xs transition-all ${
+                                    isWorking
+                                      ? "bg-amber-950/20 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.05)]"
+                                      : isHired
+                                        ? "bg-slate-950/80 border-cyan-500/20"
+                                        : "bg-slate-950/40 border-white/5 opacity-80"
+                                  }`}
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <p className="font-extrabold text-slate-200 uppercase flex items-center gap-1 text-2xs leading-none">
+                                        {comp.name} <span className="text-3xs text-slate-500 font-normal">({comp.role})</span>
+                                      </p>
+                                      <p className="text-[9px] text-slate-500 mt-1 italic font-sans">{comp.bio}</p>
                                     </div>
-                                  )}
+                                    
+                                    {/* Payout Tag */}
+                                    {isWorking && (
+                                      <span className="bg-amber-950 border border-amber-500/30 text-amber-300 font-black px-1.5 py-0.5 rounded text-[8px] animate-pulse">
+                                        WORK: +35¤/rest
+                                      </span>
+                                    )}
+                                  </div>
 
-                                  {isWorking && (
-                                    <button
-                                      onClick={() => handleRecallCompanion(comp.name)}
-                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 px-2.5 py-1 rounded cursor-pointer uppercase"
-                                    >
-                                      Recall to Squad Team
-                                    </button>
-                                  )}
+                                  <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-3xs">
+                                    {isAvailable && (
+                                      <button
+                                        onClick={() => {
+                                          // Auto-travel to agency to hire
+                                          setActivePOIView("agency");
+                                          triggerToast(`Opening Nexus Agency desk to negotiate`);
+                                        }}
+                                        className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 px-2 py-1 rounded cursor-pointer"
+                                      >
+                                        Not Hired (Costs {comp.fee}¤)
+                                      </button>
+                                    )}
 
-                                  <span className="text-[8px] uppercase tracking-wider text-slate-500 font-extrabold">
-                                    {comp.status.replace("_", " ")}
-                                  </span>
+                                    {isHired && (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        <button
+                                          onClick={() => setEditingCompanionName(comp.name)}
+                                          className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-2 py-1 rounded cursor-pointer uppercase font-black"
+                                        >
+                                          ⚙️ Gear & Inv
+                                        </button>
+                                        <button
+                                          onClick={() => handleTalkCompanion(comp)}
+                                          className="bg-purple-950 hover:bg-purple-900 text-purple-300 border border-purple-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
+                                        >
+                                          💬 Talk / Opinion
+                                        </button>
+                                        {!isPrologue && (
+                                          <>
+                                            <button
+                                              onClick={() => handleAssignCompanionTask(comp.name, "Hacking Financial Databases")}
+                                              className="bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
+                                            >
+                                              💼 Assign Job
+                                            </button>
+                                            <button
+                                              onClick={() => handleDismissCompanion(comp.name)}
+                                              className="bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-500/30 px-2 py-1 rounded cursor-pointer uppercase font-bold"
+                                            >
+                                              ❌ Dismiss
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {isWorking && (
+                                      <button
+                                        onClick={() => handleRecallCompanion(comp.name)}
+                                        className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 px-2.5 py-1 rounded cursor-pointer uppercase"
+                                      >
+                                        Recall to Squad Team
+                                      </button>
+                                    )}
+
+                                    <span className="text-[8px] uppercase tracking-wider text-slate-500 font-extrabold">
+                                      {comp.status.replace("_", " ")}
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            });
+                          })()}
                         </div>
                       </motion.div>
                     )}
@@ -5067,6 +5552,610 @@ export default function App() {
               </motion.div>
             </motion.div>
           )}
+        </AnimatePresence>
+
+        {/* Advanced Shop Vendor Modal */}
+        <AnimatePresence>
+          {shopVendorOpen && gameState && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 20 }}
+                className="relative w-full max-w-4xl max-h-[90vh] bg-slate-900 border border-cyan-500/30 rounded-xl overflow-hidden shadow-[0_0_50px_rgba(6,182,212,0.15)] flex flex-col z-50"
+              >
+                {/* Visual Scanner Line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-cyan-500 animate-pulse" />
+
+                {/* Modal Header */}
+                <div className="p-4 sm:p-5 border-b border-white/10 flex flex-wrap justify-between items-center bg-slate-950/40 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 rounded-lg">
+                      <ShoppingCart size={20} className="animate-pulse" />
+                    </div>
+                    <div className="text-left">
+                      <span className="text-[9px] text-cyan-500 tracking-widest font-mono uppercase block font-bold">
+                        SECURE MERCHANT NET v8.4
+                      </span>
+                      <h2 className="text-base sm:text-lg font-black tracking-tight text-white uppercase">
+                        APEX ARMORY & ADVANCED GEAR STORE
+                      </h2>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    {/* Credits Tracker */}
+                    <div className="bg-slate-950/60 border border-white/10 px-3.5 py-1.5 rounded-lg flex items-center gap-2 font-mono">
+                      <Coins className="text-amber-400" size={16} />
+                      <span className="text-slate-400 text-[9px] uppercase font-bold">CREDITS:</span>
+                      <span className="text-amber-300 text-xs sm:text-sm font-black tracking-wide">{gameState.credits}¤</span>
+                    </div>
+
+                    <button
+                      onClick={() => setShopVendorOpen(false)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Shop Sub-header with Fast Action Recycler */}
+                <div className="px-4 py-2.5 bg-cyan-950/20 border-b border-cyan-500/10 flex flex-wrap justify-between items-center gap-3 text-xs font-mono">
+                  <div className="text-slate-400 flex items-center gap-1.5 text-[11px]">
+                    <Sparkles size={14} className="text-cyan-400" />
+                    <span>Purchase deluxe and legendary gear to receive special stats and special effects!</span>
+                  </div>
+
+                  {gameState.inventory.includes("Rusted Circuitry") ? (
+                    <button
+                      onClick={() => {
+                        let nextState = { ...gameState };
+                        nextState.inventory = nextState.inventory.filter(i => i !== "Rusted Circuitry");
+                        nextState.credits += 30;
+                        setGameState(nextState);
+                        setLogs(prev => [
+                          ...prev,
+                          {
+                            id: crypto.randomUUID(),
+                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            text: "💰 VENDOR TRANSACTION: Recycled Rusted Circuitry directly at the store terminal counter! Received +30¤.",
+                            type: "system",
+                            district: nextState.district,
+                            poi: nextState.poi
+                          }
+                        ]);
+                        triggerToast("RECYCLED SCRAP: +30¤ CREDITS");
+                      }}
+                      className="px-3 py-1 rounded bg-emerald-950 border border-emerald-500/30 text-emerald-400 font-bold hover:bg-emerald-900 transition-all uppercase text-[10px] tracking-wider animate-pulse cursor-pointer"
+                    >
+                      ♻️ Quick Recycle 'Rusted Circuitry' (+30¤)
+                    </button>
+                  ) : (
+                    <div className="text-slate-500 text-[10px] uppercase">No circuitry scrap in backpack</div>
+                  )}
+                </div>
+
+                {/* Shop Categories & Catalog Grid */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-slate-950/20 grid grid-cols-1 md:grid-cols-4 gap-5 min-h-[40vh]">
+                  {/* Category Sidebar */}
+                  <div className="md:col-span-1 space-y-2.5">
+                    <span className="text-[9px] text-slate-500 uppercase tracking-widest font-mono block font-black text-left mb-1">
+                      FILTER CATALOG
+                    </span>
+                    {[
+                      { id: "all", label: "ALL HARDWARE" },
+                      { id: "weapon", label: "WEAPONS" },
+                      { id: "armor", label: "ARMOR SUITS" },
+                      { id: "headpiece", label: "INTEGRATIONS" },
+                      { id: "trinket", label: "TRINKETS & CORES" }
+                    ].map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setShopFilter(cat.id)}
+                        className={`w-full text-left px-3.5 py-2 rounded-lg text-xs font-bold font-mono transition-all flex justify-between items-center cursor-pointer ${
+                          (cat.id === "all" ? shopFilter === "all" || !["weapon", "armor", "headpiece", "trinket"].includes(shopFilter) : shopFilter === cat.id)
+                            ? "bg-cyan-950/60 text-cyan-400 border border-cyan-500/30 shadow-[0_0_12px_rgba(34,211,238,0.1)]"
+                            : "bg-slate-900/60 border border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10"
+                        }`}
+                      >
+                        <span>{cat.label}</span>
+                        <ChevronRight size={14} className="opacity-60" />
+                      </button>
+                    ))}
+
+                    <div className="pt-4 border-t border-white/5">
+                      <div className="bg-slate-900/40 border border-white/5 rounded-lg p-3 text-left font-mono text-[10px] text-slate-500 space-y-1.5">
+                        <span className="font-extrabold text-slate-400 block uppercase tracking-wider">RARITY GUIDELINES:</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded bg-slate-200" />
+                          <span className="text-slate-300">White: Common (+stats)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded bg-blue-500 animate-pulse" />
+                          <span className="text-blue-400">Blue: Deluxe (+stats, fx)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded bg-purple-500 animate-pulse" />
+                          <span className="text-purple-400">Purple: Epic (+high, fx)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded bg-amber-500 animate-pulse" />
+                          <span className="text-amber-400">Gold: Legendary (Unrivaled fx)</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Items Grid */}
+                  <div className="md:col-span-3 overflow-y-auto pr-1 space-y-4 max-h-[50vh]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {Object.entries(ITEM_METADATA)
+                        .filter(([name, details]) => {
+                          if (details.slot === "consumable" || details.slot === "valuable" || details.slot === "weapon") return false;
+                          if (shopFilter === "all" || !shopFilter) return true;
+                          if (shopFilter === "weapon") return details.slot === "meleeWeapon" || details.slot === "rangedWeapon";
+                          return details.slot === shopFilter;
+                        })
+                        .map(([name, details]) => {
+                          const cost = getItemCost(name, details);
+                          const isAffordable = gameState.credits >= cost;
+                          const rarity = details.rarity || "common";
+
+                          return (
+                            <div
+                              key={name}
+                              className={`rounded-xl border p-4 font-mono text-left relative flex flex-col justify-between transition-all duration-300 ${
+                                rarity === "legendary"
+                                  ? "bg-amber-950/10 border-amber-500/30 hover:border-amber-400/60 shadow-[inset_0_0_15px_rgba(234,179,8,0.05)] hover:shadow-[0_0_20px_rgba(234,179,8,0.15)]"
+                                  : rarity === "epic"
+                                    ? "bg-purple-950/10 border-purple-500/30 hover:border-purple-400/60 shadow-[inset_0_0_15px_rgba(168,85,247,0.05)] hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]"
+                                    : rarity === "deluxe"
+                                      ? "bg-blue-950/10 border-blue-500/30 hover:border-blue-400/60 shadow-[inset_0_0_15px_rgba(59,130,246,0.05)] hover:shadow-[0_0_20px_rgba(59,130,246,0.15)]"
+                                      : "bg-slate-900/50 border-slate-700/60 hover:border-slate-500 hover:bg-slate-900/80"
+                              }`}
+                            >
+                              <div>
+                                {/* Card Header with Rarity and Slot */}
+                                <div className="flex justify-between items-center mb-2">
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-widest ${
+                                    rarity === "legendary"
+                                      ? "bg-amber-950 text-amber-300 border border-amber-500/20"
+                                      : rarity === "epic"
+                                        ? "bg-purple-950 text-purple-300 border border-purple-500/20"
+                                        : rarity === "deluxe"
+                                          ? "bg-blue-950 text-blue-300 border border-blue-500/20"
+                                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                                  }`}>
+                                    {rarity}
+                                  </span>
+
+                                  <span className="text-[8px] text-slate-500 uppercase font-bold">
+                                    {details.slot === "meleeWeapon"
+                                      ? "Melee Weapon"
+                                      : details.slot === "rangedWeapon"
+                                        ? "Ranged Weapon"
+                                        : details.slot}
+                                  </span>
+                                </div>
+
+                                {/* Item Name */}
+                                <h4 className={`text-sm font-black tracking-tight mb-1.5 flex items-center gap-1.5 ${
+                                  rarity === "legendary"
+                                    ? "text-amber-400 font-extrabold"
+                                    : rarity === "epic"
+                                      ? "text-purple-400"
+                                      : rarity === "deluxe"
+                                        ? "text-blue-400"
+                                        : "text-slate-200"
+                                }`}>
+                                  {getItemIcon(name, details.slot)}
+                                  <span>{name}</span>
+                                </h4>
+
+                                {/* Item description */}
+                                <p className="text-[10px] text-slate-400 leading-normal mb-3">
+                                  {details.desc}
+                                </p>
+
+                                {/* Stat modifiers */}
+                                {details.stats && Object.keys(details.stats).length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-950/40 p-2 rounded-md border border-white/5">
+                                    {Object.entries(details.stats).map(([stat, val]) => (
+                                      <span key={stat} className="text-[9px] text-cyan-400 font-bold bg-cyan-950/40 px-1.5 py-0.5 rounded">
+                                        {stat === "meleeAtk" ? "⚔️ Melee" : stat === "rangeAtk" ? "🔫 Ranged" : stat === "maxHp" ? "❤️ HP" : stat === "maxMana" ? "⚡ Mana" : stat === "startingShields" ? "🛡️ Shields" : stat.toUpperCase()}: +{val}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Special effect */}
+                                {details.specialEffect && (
+                                  <div className="text-[9px] text-rose-300 border border-rose-500/20 bg-rose-950/10 p-2 rounded-md mb-4 flex items-start gap-1">
+                                    <Sparkles size={11} className="text-rose-400 shrink-0 mt-0.5" />
+                                    <span>
+                                      <strong className="text-rose-400 uppercase tracking-wide">Effect:</strong> {details.specialEffect}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Price and Buy Button */}
+                              <div className="pt-3 border-t border-white/5 flex items-center justify-between mt-auto">
+                                <div className="flex items-center gap-1">
+                                  <Coins size={14} className="text-amber-400" />
+                                  <span className="text-amber-300 font-black text-xs sm:text-sm">{cost}¤</span>
+                                </div>
+
+                                <button
+                                  onClick={() => {
+                                    if (isAffordable) {
+                                      let nextState = { ...gameState };
+                                      nextState.credits -= cost;
+                                      nextState.inventory.push(name);
+                                      setGameState(nextState);
+                                      setLogs(prev => [
+                                        ...prev,
+                                        {
+                                          id: crypto.randomUUID(),
+                                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                          text: `🛒 PURCHASE SUCCESS: Transferred ${cost}¤ credits. Added deluxe/legendary grade [${name}] to inventory stash!`,
+                                          type: "system",
+                                          district: nextState.district,
+                                          poi: nextState.poi
+                                        }
+                                      ]);
+                                      triggerToast(`BOUGHT: ${name}`);
+                                    } else {
+                                      triggerToast("INSUFFICIENT CREDITS");
+                                    }
+                                  }}
+                                  disabled={!isAffordable}
+                                  className={`px-3 py-1.5 rounded text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                    isAffordable
+                                      ? "bg-cyan-950 hover:bg-cyan-900 text-cyan-400 border border-cyan-500/30 hover:shadow-[0_0_10px_rgba(6,182,212,0.25)]"
+                                      : "bg-slate-900 border border-white/5 text-slate-500 cursor-not-allowed"
+                                  }`}
+                                >
+                                  {isAffordable ? "Deploy Hardware" : "Credits Short"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 bg-slate-950 border-t border-white/10 flex justify-between items-center text-xs font-mono">
+                  <span className="text-slate-500 uppercase">Secure encrypted transaction logs</span>
+                  <button
+                    onClick={() => setShopVendorOpen(false)}
+                    className="px-4 py-2 bg-gradient-to-r from-cyan-950 to-slate-900 hover:from-cyan-900 hover:to-cyan-950 border border-cyan-500/30 hover:border-cyan-400 text-cyan-400 font-bold uppercase rounded-lg tracking-wider transition-all cursor-pointer"
+                  >
+                    CLOSE SHOP CONSOLE
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Companion Equipment & Inventory Editor Modal */}
+        <AnimatePresence>
+          {editingCompanionName && gameState && (() => {
+            const companion = gameState.companions.find(c => c.name === editingCompanionName);
+            if (!companion) return null;
+            
+            // Make sure the companion has initialized equipment
+            const compEquipment = companion.equipment || {
+              meleeWeapon: null,
+              rangedWeapon: null,
+              armor: null,
+              headpiece: null,
+              trinket: null
+            };
+
+            const companionInv = companion.inventory || [];
+
+            return (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md font-mono text-xs"
+              >
+                <motion.div
+                  initial={{ scale: 0.95, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.95, y: 20 }}
+                  className="relative w-full max-w-5xl max-h-[92vh] bg-slate-900 border border-purple-500/30 rounded-xl overflow-hidden shadow-[0_0_50px_rgba(168,85,247,0.15)] flex flex-col z-50 text-slate-200"
+                >
+                  {/* Visual Scanner Line */}
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-purple-500 animate-pulse" />
+
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 border-b border-white/10 flex flex-wrap justify-between items-center bg-slate-950/40 gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-purple-950/50 border border-purple-500/30 text-purple-400 rounded-lg">
+                        <UserCog size={20} className="animate-pulse" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-[9px] text-purple-500 tracking-widest font-mono uppercase block font-bold">
+                          SQUAD INTERACTION PROTOCOL v9.1
+                        </span>
+                        <h2 className="text-base sm:text-lg font-black tracking-tight text-white uppercase flex items-center gap-2">
+                          Manage Companion: {companion.name}
+                        </h2>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="bg-slate-950/60 border border-white/10 px-3 py-1 rounded text-[10px] text-slate-400">
+                        Role: <span className="text-purple-400 font-extrabold uppercase">{companion.role}</span>
+                      </div>
+                      <button
+                        onClick={() => setEditingCompanionName(null)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Two Column Content Area */}
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 grid grid-cols-1 md:grid-cols-12 gap-5 bg-slate-950/15">
+                    
+                    {/* LEFT COLUMN: BIO & PERSONAL INVENTORY */}
+                    <div className="md:col-span-5 space-y-4">
+                      {/* Companion Card */}
+                      <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 text-left space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-lg bg-purple-950/30 border border-purple-500/20 overflow-hidden flex items-center justify-center text-xl shrink-0">
+                            {companion.avatar || "👤"}
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-white text-sm uppercase">{companion.name}</h3>
+                            <p className="text-[10px] text-purple-400 font-semibold uppercase">{companion.role}</p>
+                          </div>
+                        </div>
+                        <p className="text-slate-400 text-3xs italic leading-relaxed font-sans border-t border-white/5 pt-2">
+                          "{companion.bio}"
+                        </p>
+                      </div>
+
+                      {/* Companion Personal Inventory (Combat Belt) */}
+                      <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 text-left space-y-3 flex flex-col">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold flex items-center gap-1">
+                            <Briefcase size={12} className="text-purple-400" />
+                            Personal Combat Belt ({companionInv.length}/4)
+                          </span>
+                        </div>
+
+                        {/* Inventory List */}
+                        {companionInv.length === 0 ? (
+                          <p className="py-4 text-slate-500 text-center text-2xs italic border border-dashed border-white/5 rounded-lg">
+                            Belt is empty. Transfer items to support this companion.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {companionInv.map((item, index) => {
+                              const details = ITEM_METADATA[item];
+                              return (
+                                <div key={index} className="flex justify-between items-center bg-slate-900/60 border border-white/5 p-2 rounded text-3xs">
+                                  <div className="flex items-center gap-1.5">
+                                    {getItemIcon(item, details?.slot)}
+                                    <span className="font-extrabold text-slate-200 uppercase">{item}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleTakeCompanionItem(companion.name, item)}
+                                    className="px-2 py-1 bg-purple-950/50 hover:bg-purple-900/50 text-purple-300 rounded border border-purple-500/20 transition-all font-bold uppercase text-[9px] cursor-pointer"
+                                  >
+                                    Take to Stash
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Transfer/Give from Player Stash */}
+                        <div className="pt-3 border-t border-white/5 space-y-2">
+                          <p className="text-[9px] text-slate-400 uppercase font-black">Give Consumable from Your Locker:</p>
+                          {(() => {
+                            const transferables = gameState.inventory.filter(item => 
+                              item.includes("Stim") || item.includes("Cell") || item.includes("Circuitry") || item.includes("battery")
+                            );
+                            
+                            if (transferables.length === 0) {
+                              return <p className="text-[9px] text-slate-600 italic">No transferable consumables in your stash.</p>;
+                            }
+
+                            return (
+                              <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1">
+                                {transferables.map((item, idx) => (
+                                  <button
+                                    key={idx}
+                                    onClick={() => handleGiveCompanionItem(companion.name, item)}
+                                    className="px-2 py-1 bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-white rounded border border-white/5 text-[9px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                  >
+                                    {getItemIcon(item, "consumable")}
+                                    <span>+ {item.replace(" (Heal)", "").replace(" (Mana)", "")}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN: EQUIPMENT INTEGRATIONS */}
+                    <div className="md:col-span-7 space-y-3">
+                      <p className="text-left font-bold text-slate-400 uppercase tracking-wider text-[10px]">
+                        Active Slot Hardware Integrations
+                      </p>
+
+                      {([
+                        { key: "meleeWeapon", label: "Melee Weapon Input", icon: <Sword size={14} className="text-rose-400" /> },
+                        { key: "rangedWeapon", label: "Ranged Weapon Array", icon: <Crosshair size={14} className="text-cyan-400" /> },
+                        { key: "armor", label: "Body Armor Suit", icon: <Shield size={14} className="text-emerald-400" /> },
+                        { key: "headpiece", label: "Neural integration visor", icon: <Cpu size={14} className="text-purple-400" /> },
+                        { key: "trinket", label: "Sub-Cortex Battery Core", icon: <Gem size={14} className="text-amber-400" /> }
+                      ] as const).map((slotInfo) => {
+                        const equippedItemName = compEquipment[slotInfo.key];
+                        const itemDetails = equippedItemName ? ITEM_METADATA[equippedItemName] : null;
+                        const rarity = itemDetails?.rarity || "common";
+
+                        // Find compatible items in player's inventory
+                        const compatibleItems = gameState.inventory.filter(item => {
+                          const met = ITEM_METADATA[item];
+                          return met && met.slot === slotInfo.key;
+                        });
+
+                        return (
+                          <div
+                            key={slotInfo.key}
+                            className={`p-3 rounded-lg border text-left flex flex-col gap-2 transition-all ${
+                              equippedItemName
+                                ? rarity === "legendary"
+                                  ? "bg-amber-950/10 border-amber-500/30"
+                                  : rarity === "epic"
+                                    ? "bg-purple-950/10 border-purple-500/30"
+                                    : rarity === "deluxe"
+                                      ? "bg-blue-950/10 border-blue-500/30"
+                                      : "bg-slate-900 border-white/10"
+                                : "bg-slate-900/40 border-dashed border-white/5 opacity-70"
+                            }`}
+                          >
+                            {/* Slot Header */}
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                              <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 flex items-center gap-1.5">
+                                {slotInfo.icon}
+                                {slotInfo.label}
+                              </span>
+                              {equippedItemName && (
+                                <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                  rarity === "legendary"
+                                    ? "bg-amber-950 text-amber-300"
+                                    : rarity === "epic"
+                                      ? "bg-purple-950 text-purple-300"
+                                      : rarity === "deluxe"
+                                        ? "bg-blue-950 text-blue-300"
+                                        : "bg-slate-800 text-slate-400"
+                                }`}>
+                                  {rarity}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Equipped Item Details */}
+                            {equippedItemName ? (
+                              <div className="flex justify-between items-start gap-3">
+                                <div className="space-y-1">
+                                  <h4 className={`text-xs font-black uppercase flex items-center gap-1.5 ${
+                                    rarity === "legendary"
+                                      ? "text-amber-400"
+                                      : rarity === "epic"
+                                        ? "text-purple-400"
+                                        : rarity === "deluxe"
+                                          ? "text-blue-400"
+                                          : "text-slate-200"
+                                  }`}>
+                                    {getItemIcon(equippedItemName, slotInfo.key)}
+                                    {equippedItemName}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-400 leading-normal font-sans">{itemDetails?.desc}</p>
+                                  
+                                  {/* Stats */}
+                                  {itemDetails?.stats && Object.keys(itemDetails.stats).length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {Object.entries(itemDetails.stats).map(([st, val]) => (
+                                        <span key={st} className="text-[8px] font-bold bg-slate-950/60 border border-white/5 px-1 rounded text-cyan-400">
+                                          {st === "meleeAtk" ? "⚔️ Melee" : st === "rangeAtk" ? "🔫 Ranged" : st === "maxHp" ? "❤️ HP" : st === "maxMana" ? "⚡ Mana" : st === "startingShields" ? "🛡️ Shields" : st.toUpperCase()}: +{val}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Special FX */}
+                                  {itemDetails?.specialEffect && (
+                                    <p className="text-rose-400 text-[8.5px] mt-1 italic flex items-center gap-1">
+                                      <Sparkles size={10} />
+                                      <span><strong>Effect:</strong> {itemDetails.specialEffect}</span>
+                                    </p>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() => handleUnequipCompanionItem(companion.name, slotInfo.key)}
+                                  className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 border border-rose-500/20 hover:border-rose-400 text-rose-300 hover:text-white rounded text-[9px] transition-all font-black uppercase cursor-pointer shrink-0"
+                                >
+                                  Unequip
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="text-[9.5px] text-slate-500 italic">No gear equipped in this slot integration.</p>
+                            )}
+
+                            {/* Equip Dropdown list alternative (Direct Buttons to Equip) */}
+                            {compatibleItems.length > 0 && (
+                              <div className="mt-1 pt-2 border-t border-white/5 space-y-1">
+                                <span className="text-[8.5px] text-slate-400 uppercase font-black block">Swap with Stash hardware:</span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {compatibleItems.map((item, idx) => {
+                                    const details = ITEM_METADATA[item];
+                                    const iRarity = details?.rarity || "common";
+                                    return (
+                                      <button
+                                        key={idx}
+                                        onClick={() => handleEquipCompanionItem(companion.name, slotInfo.key, item)}
+                                        className={`px-2 py-1 text-[8.5px] font-extrabold uppercase rounded border transition-all cursor-pointer flex items-center gap-1 ${
+                                          iRarity === "legendary"
+                                            ? "bg-amber-950/40 border-amber-500/30 text-amber-300 hover:bg-amber-900/40"
+                                            : iRarity === "epic"
+                                              ? "bg-purple-950/40 border-purple-500/30 text-purple-300 hover:bg-purple-900/40"
+                                              : iRarity === "deluxe"
+                                                ? "bg-blue-950/40 border-blue-500/30 text-blue-300 hover:bg-blue-900/40"
+                                                : "bg-slate-800 border-white/5 text-slate-300 hover:bg-slate-750"
+                                        }`}
+                                      >
+                                        {getItemIcon(item, slotInfo.key)}
+                                        <span>Equip {item}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 bg-slate-950 border-t border-white/10 flex justify-between items-center text-xs font-mono">
+                    <span className="text-slate-500 uppercase">Equipped stat bonuses apply instantly to companion battles</span>
+                    <button
+                      onClick={() => setEditingCompanionName(null)}
+                      className="px-4 py-2 bg-gradient-to-r from-purple-950 to-slate-900 hover:from-purple-900 hover:to-purple-950 border border-purple-500/30 hover:border-purple-400 text-purple-400 font-bold uppercase rounded-lg tracking-wider transition-all cursor-pointer"
+                    >
+                      CLOSE COMPANION SHELL
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            );
+          })()}
         </AnimatePresence>
 
       </main>

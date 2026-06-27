@@ -4,6 +4,9 @@ export interface CompanionState {
   status: "available" | "hired" | "in_party" | "working";
   bio: string;
   role: string;
+  equipment?: EquipmentState;
+  avatar?: string;
+  inventory?: string[];
 }
 
 export interface CombatState {

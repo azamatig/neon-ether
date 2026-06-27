@@ -84,6 +84,8 @@ export interface ItemDetails {
   name: string;
   slot: "weapon" | "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket" | "consumable" | "valuable";
   desc: string;
+  rarity?: "common" | "deluxe" | "epic" | "legendary";
+  specialEffect?: string;
   stats?: {
     maxHp?: number;
     maxMana?: number;
@@ -99,114 +101,253 @@ export interface ItemDetails {
 }
 
 export const ITEM_METADATA: Record<string, ItemDetails> = {
+  // --- NEW COMMON ITEMS (WHITE) ---
+  "Electric Baton": {
+    name: "Electric Baton",
+    slot: "meleeWeapon",
+    rarity: "common",
+    desc: "A low-cost shock baton designed to subdue targets (+6 melee damage, +1 Str).",
+    stats: { meleeAtk: 6, str: 1 }
+  },
+  "Cheap Combat Armor": {
+    name: "Cheap Combat Armor",
+    slot: "armor",
+    rarity: "common",
+    desc: "Mass-produced corporate surplus armored vest (+15 Max HP, +5 Shields).",
+    stats: { maxHp: 15, startingShields: 5 }
+  },
+  "Recruit's Shock-Baton": {
+    name: "Recruit's Shock-Baton",
+    slot: "meleeWeapon",
+    rarity: "common",
+    desc: "A standard security force baton. Delivers brief electrostatic discharge (+5 melee damage, +1 Str).",
+    stats: { meleeAtk: 5, str: 1 }
+  },
+  "Corpo Security Pistol": {
+    name: "Corpo Security Pistol",
+    slot: "rangedWeapon",
+    rarity: "common",
+    desc: "Standard issue light semi-automatic pistol (+4 range damage, +1 Dex).",
+    stats: { rangeAtk: 4, dex: 1 }
+  },
+  "Reinforced Kevlar Jacket": {
+    name: "Reinforced Kevlar Jacket",
+    slot: "armor",
+    rarity: "common",
+    desc: "A common protective vest lined with light alloy sheets (+15 Max HP, +5 Shields).",
+    stats: { maxHp: 15, startingShields: 5 }
+  },
+  "Carbon-Mesh Visor": {
+    name: "Carbon-Mesh Visor",
+    slot: "headpiece",
+    rarity: "common",
+    desc: "A basic glare-shielding scanner visor (+5 Max Mana, +1 Int).",
+    stats: { maxMana: 5, int: 1 }
+  },
+  "Copper-Wire Ring": {
+    name: "Copper-Wire Ring",
+    slot: "trinket",
+    rarity: "common",
+    desc: "A simple ring constructed from scrap wiring (+5 Max Mana, +1 Eth).",
+    stats: { maxMana: 5, eth: 1 }
+  },
+
+  // --- EXISTING DELUXE ITEMS (BLUE) ---
+  "Vibroblade": {
+    name: "Vibroblade",
+    slot: "meleeWeapon",
+    rarity: "deluxe",
+    desc: "A high-frequency vibrational blade that slices through heavy composite armor with ease (+12 melee damage, +2 Str, +2 Dex).",
+    stats: { meleeAtk: 12, str: 2, dex: 2 }
+  },
+  "Battle Pistol BP132": {
+    name: "Battle Pistol BP132",
+    slot: "rangedWeapon",
+    rarity: "deluxe",
+    desc: "A heavy-caliber kinetic handgun known for its reliability and stopping power (+10 range damage, +2 Dex).",
+    stats: { rangeAtk: 10, dex: 2 }
+  },
+  "Light Neon Leather Armor": {
+    name: "Light Neon Leather Armor",
+    slot: "armor",
+    rarity: "deluxe",
+    desc: "Stylish protective leather laced with glow-strips and kinetic dispersion fiber (+20 Max HP, +10 Shields).",
+    stats: { maxHp: 20, startingShields: 10 }
+  },
   "Nano-alloy Katana": {
     name: "Nano-alloy Katana",
     slot: "meleeWeapon",
+    rarity: "deluxe",
     desc: "A carbon-folded edge with localized induction heating (+15 melee damage, +3 Str, +3 Dex).",
+    specialEffect: "Monomolecular edge: Ignites a brief electrical spark on landing an AP strike.",
     stats: { meleeAtk: 15, str: 3, dex: 3 }
   },
   "Coven Spell-Slicing Focus": {
     name: "Coven Spell-Slicing Focus",
     slot: "meleeWeapon",
+    rarity: "deluxe",
     desc: "An organic ether tuning matrix that aligns synaptic currents (+20 max mana, +4 Eth, +3 Int).",
+    specialEffect: "Spell resonance: Direct magic spells cast cost 2 less Mana.",
     stats: { maxMana: 20, eth: 4, int: 3 }
   },
   "Horizon Smart-Pistol": {
     name: "Horizon Smart-Pistol",
     slot: "rangedWeapon",
+    rarity: "deluxe",
     desc: "A tactical pistol linked directly to your ocular nodes (+12 range damage, +4 Dex).",
+    specialEffect: "Target-Lock HUD: Reveals cloaked grid outlaws.",
     stats: { rangeAtk: 12, dex: 4 }
-  },
-  "Tactical Cyber-SMG": {
-    name: "Tactical Cyber-SMG",
-    slot: "rangedWeapon",
-    desc: "A rapid-firing firearm with smart telemetry recoil dampeners (+18 range damage, +3 Dex, +2 Int).",
-    stats: { rangeAtk: 18, dex: 3, int: 2 }
-  },
-  "Apex Mantis electro-blade": {
-    name: "Apex Mantis electro-blade",
-    slot: "meleeWeapon",
-    desc: "Surgical lightning weapon that cuts armor plates (+25 melee damage, +5 Str, +3 Dex).",
-    stats: { meleeAtk: 25, str: 5, dex: 3 }
-  },
-  "Coven Ether-deck v3": {
-    name: "Coven Ether-deck v3",
-    slot: "meleeWeapon",
-    desc: "Magical amplification cyberdeck (+30 max mana, +6 Eth, +5 Int).",
-    stats: { maxMana: 30, eth: 6, int: 5 }
-  },
-  "Heavy Plasma Cannon": {
-    name: "Heavy Plasma Cannon",
-    slot: "rangedWeapon",
-    desc: "Syndicate demolition railgun (+35 physical damage, -3 Dex, +5 Str).",
-    stats: { rangeAtk: 35, dex: -3, str: 5 }
-  },
-  "Exo-Plated Mesh Armor": {
-    name: "Exo-Plated Mesh Armor",
-    slot: "armor",
-    desc: "Nanotube composite armor with high density plating (+40 Max HP, +30 Shields, +4 Str).",
-    stats: { maxHp: 40, startingShields: 30, str: 4 }
-  },
-  "Syndicate Heavy Armor": {
-    name: "Syndicate Heavy Armor",
-    slot: "armor",
-    desc: "Slab alloy protection used by corporate enforcers (+60 Max HP, +40 Shields, -2 Dex).",
-    stats: { maxHp: 60, startingShields: 40, dex: -2 }
   },
   "Nanoshell Vest": {
     name: "Nanoshell Vest",
     slot: "armor",
+    rarity: "deluxe",
     desc: "Flexible kinetic dispersal wear (+25 Max HP, +15 Shields).",
+    specialEffect: "Kinetic absorption: Absorbs 10% of standard grid-combat impact.",
     stats: { maxHp: 25, startingShields: 15 }
   },
   "Smart-Targeting Visor": {
     name: "Smart-Targeting Visor",
     slot: "headpiece",
+    rarity: "deluxe",
     desc: "Adds telemetry targeters (+15 Max Mana, +4 Dex, +4 Int).",
+    specialEffect: "Optic zoom: Range attacks gain +1 grid unit targeting distance.",
     stats: { maxMana: 15, dex: 4, int: 4 }
   },
   "Technical Signal Core": {
     name: "Technical Signal Core",
     slot: "headpiece",
+    rarity: "deluxe",
     desc: "Ocular HUD decryptor (+10 Max Mana, +4 Int, +3 Eth).",
+    specialEffect: "Signal Boost: Decoupled code channels grant +2 Intellect.",
     stats: { maxMana: 10, int: 4, eth: 3 }
   },
   "Titanium Alloy Headgear": {
     name: "Titanium Alloy Headgear",
     slot: "headpiece",
+    rarity: "deluxe",
     desc: "Heavily reinforced helmet protecting brain co-processors (+20 Max HP, +5 Str, +3 Will).",
+    specialEffect: "Impact buffer: Reduces incoming head-shatter stun chances by 50%.",
     stats: { maxHp: 20, str: 5, will: 3 }
   },
   "Charged Ley-Matrix": {
     name: "Charged Ley-Matrix",
     slot: "trinket",
+    rarity: "deluxe",
     desc: "High-grade ley-line battery capturing ambient stray ether (+25 Max Mana, +5 Eth).",
+    specialEffect: "Ley siphon: Reclaims +4 Mana at the beginning of each player combat turn.",
     stats: { maxMana: 25, eth: 5 }
   },
   "Icebreaker Override Core": {
     name: "Icebreaker Override Core",
     slot: "trinket",
+    rarity: "deluxe",
     desc: "Hacks network gate barriers (+10 Max Mana, +3 Int, +3 Eth).",
+    specialEffect: "Icebreaker: Slicing secure firewalls becomes twice as efficient.",
     stats: { maxMana: 10, int: 3, eth: 3 }
   },
   "Cyber-Totem of Outcasts": {
     name: "Cyber-Totem of Outcasts",
     slot: "trinket",
+    rarity: "deluxe",
     desc: "A token constructed from broken motherboard circuits (+15 Max HP, +15 Max Mana, +3 Will).",
+    specialEffect: "Outcast resolve: Restores +5 HP upon triggering any terminal lock.",
     stats: { maxHp: 15, maxMana: 15, will: 3 }
   },
   "Prismatic Ether Crystal": {
     name: "Prismatic Ether Crystal",
     slot: "trinket",
+    rarity: "deluxe",
     desc: "Crystalline matrix glowing with neon magic power (+25 Max Mana, +5 Eth).",
+    specialEffect: "Rainbow pulse: Increases magic spell range by +1 grid tile.",
     stats: { maxMana: 25, eth: 5 }
   },
   "Unstable Plasma Core": {
     name: "Unstable Plasma Core",
     slot: "trinket",
+    rarity: "deluxe",
     desc: "Volatile containment cell pulsating energy (+10 Max HP, +10 Max Mana, +4 Str, +4 Dex).",
+    specialEffect: "Plasma leakage: Combat strikes deal +3 extra volatile heat damage.",
     stats: { maxHp: 10, maxMana: 10, str: 4, dex: 4 }
   },
+
+  // --- EXISTING EPIC ITEMS (PURPLE) ---
+  "Tactical Cyber-SMG": {
+    name: "Tactical Cyber-SMG",
+    slot: "rangedWeapon",
+    rarity: "epic",
+    desc: "A rapid-firing firearm with smart telemetry recoil dampeners (+18 range damage, +3 Dex, +2 Int).",
+    specialEffect: "Burst-fire: Deals +15% more damage to outlaws on consecutive hits.",
+    stats: { rangeAtk: 18, dex: 3, int: 2 }
+  },
+  "Apex Mantis electro-blade": {
+    name: "Apex Mantis electro-blade",
+    slot: "meleeWeapon",
+    rarity: "epic",
+    desc: "Surgical lightning weapon that cuts armor plates (+25 melee damage, +5 Str, +3 Dex).",
+    specialEffect: "Armor melting: Decreases enemy armor ratings by 5 upon hit.",
+    stats: { meleeAtk: 25, str: 5, dex: 3 }
+  },
+  "Coven Ether-deck v3": {
+    name: "Coven Ether-deck v3",
+    slot: "meleeWeapon",
+    rarity: "epic",
+    desc: "Magical amplification cyberdeck (+30 max mana, +6 Eth, +5 Int).",
+    specialEffect: "Overdrive: Fully charges magic attributes, granting +2 Action Points at start.",
+    stats: { maxMana: 30, eth: 6, int: 5 }
+  },
+  "Exo-Plated Mesh Armor": {
+    name: "Exo-Plated Mesh Armor",
+    slot: "armor",
+    rarity: "epic",
+    desc: "Nanotube composite armor with high density plating (+40 Max HP, +30 Shields, +4 Str).",
+    specialEffect: "Aegis mesh: Regenerates +10 shields per turn under cover.",
+    stats: { maxHp: 40, startingShields: 30, str: 4 }
+  },
+  "Syndicate Heavy Armor": {
+    name: "Syndicate Heavy Armor",
+    slot: "armor",
+    rarity: "epic",
+    desc: "Slab alloy protection used by corporate enforcers (+60 Max HP, +40 Shields, -2 Dex).",
+    specialEffect: "Lead plating: Gain immunity to stun and paralysis effects.",
+    stats: { maxHp: 60, startingShields: 40, dex: -2 }
+  },
+
+  // --- EXISTING & NEW LEGENDARY ITEMS (GOLD) ---
+  "Heavy Plasma Cannon": {
+    name: "Heavy Plasma Cannon",
+    slot: "rangedWeapon",
+    rarity: "legendary",
+    desc: "Syndicate demolition railgun (+35 physical damage, -3 Dex, +5 Str).",
+    specialEffect: "Singularity: Attacks deal heavy area of effect damage on a 4-tile distance.",
+    stats: { rangeAtk: 35, dex: -3, str: 5 }
+  },
+  "Legendary 'Doomsday' Singularity Core": {
+    name: "Legendary 'Doomsday' Singularity Core",
+    slot: "trinket",
+    rarity: "legendary",
+    desc: "Volatile miniature black hole generator (+40 Max Mana, +5 Int, +5 Eth).",
+    specialEffect: "Singularity: Direct spells hit with +50% explosive feedback.",
+    stats: { maxMana: 40, int: 5, eth: 5 }
+  },
+  "Legendary 'Chrono-Shift' Reflex Augment": {
+    name: "Legendary 'Chrono-Shift' Reflex Augment",
+    slot: "headpiece",
+    rarity: "legendary",
+    desc: "Quantum cerebral accelerator syncing with nervous pathways (+25 Max HP, +6 Dex, +4 Str).",
+    specialEffect: "Time Dilation: Start grid combat with +1 extra Action Point (AP).",
+    stats: { maxHp: 25, dex: 6, str: 4 }
+  },
+  "Archon's Kinetic Shock-Plate": {
+    name: "Archon's Kinetic Shock-Plate",
+    slot: "armor",
+    rarity: "legendary",
+    desc: "Experimental force-field absorption chestplate (+80 Max HP, +50 Shields, +5 Str, +5 Will).",
+    specialEffect: "Static Shielding: Take -5 damage from all enemy grid-attacks.",
+    stats: { maxHp: 80, startingShields: 50, str: 5, will: 5 }
+  },
+
+  // --- CONSUMABLES & VALUABLES ---
   "Nano Med-Stim (Heal)": {
     name: "Nano Med-Stim (Heal)",
     slot: "consumable",
@@ -484,6 +625,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "social",
     buttons: [
       "Talk to Agent Jax",
+      "Approach Lost, Frightened Girl",
       "Order Spell-Enhanced Cocktail (-10¤)",
       "Eavesdrop on Mercs",
       "Search Booths for Trash Scrap"
@@ -735,11 +877,45 @@ export function getInitialState(archetype: Archetype): GameState {
     mana: archetype.maxMana,
     maxMana: archetype.maxMana,
     credits: archetype.credits,
-    party: [],
+    party: ["Vice", "Tracker"],
     activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
     completedQuests: [],
     inventory: [...archetype.startingEquipment],
-    companions: [...INITIAL_COMPANIONS],
+    companions: [
+      {
+        name: "Vice",
+        fee: 0,
+        status: "in_party",
+        role: "Tactical Leader",
+        bio: "The veteran leader of your shadow-running cell. Armed with years of combat telemetry, tactical insight, and a modified plasma sidearm.",
+        avatar: "🔫",
+        equipment: {
+          meleeWeapon: "Vibroblade",
+          rangedWeapon: "Battle Pistol BP132",
+          armor: "Light Neon Leather Armor",
+          headpiece: null,
+          trinket: null
+        },
+        inventory: []
+      },
+      {
+        name: "Tracker",
+        fee: 0,
+        status: "in_party",
+        role: "Vanguard Operator",
+        bio: "Your squad's scout and electronic warfare specialist. Cynical, precise, and obsessed with tracing optimal infiltration vectors.",
+        avatar: "📟",
+        equipment: {
+          meleeWeapon: "Electric Baton",
+          rangedWeapon: null,
+          armor: "Cheap Combat Armor",
+          headpiece: null,
+          trinket: null
+        },
+        inventory: []
+      },
+      ...INITIAL_COMPANIONS
+    ],
     combatState: null,
     archetype: archetype.name,
     level: 1,

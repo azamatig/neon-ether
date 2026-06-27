@@ -1,0 +1,6 @@
+{
+  "name": "Neon & Ether",
+  "description": "Text-based, dark cyberpunk-fantasy sandbox RPG app where you navigate districts, complete quests, manage companions, and survive Megacity-9.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

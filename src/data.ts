@@ -61,6 +61,13 @@ export const INITIAL_COMPANIONS: CompanionState[] = [
     status: "available",
     role: "Heavy Cyber-Orc Mercenary",
     bio: "A bio-engineered street enforcer measuring seven feet of alloy, muscle, and malice. Brings massive damage mitigation and heavy firearms."
+  },
+  {
+    name: "Trigger",
+    fee: 95,
+    status: "available",
+    role: "Vanguard Gunner / Heavy Marksman",
+    bio: "Former syndicate heavy weapons expert. Carries a modified plasma rifle with long-range armor-piercing rounds."
   }
 ];
 
@@ -72,6 +79,180 @@ export const SHOP_ITEMS = [
   { name: "Nano Med-Stim (Heal)", cost: 30, slot: "Consumable", desc: "Fully restores 60 HP instantly." },
   { name: "Ether Mana-Cell (Mana)", cost: 30, slot: "Consumable", desc: "Fully restores 50 Mana instantly." }
 ];
+
+export interface ItemDetails {
+  name: string;
+  slot: "weapon" | "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket" | "consumable" | "valuable";
+  desc: string;
+  stats?: {
+    maxHp?: number;
+    maxMana?: number;
+    str?: number;
+    dex?: number;
+    int?: number;
+    will?: number;
+    eth?: number;
+    meleeAtk?: number;
+    rangeAtk?: number;
+    startingShields?: number;
+  };
+}
+
+export const ITEM_METADATA: Record<string, ItemDetails> = {
+  "Nano-alloy Katana": {
+    name: "Nano-alloy Katana",
+    slot: "meleeWeapon",
+    desc: "A carbon-folded edge with localized induction heating (+15 melee damage, +3 Str, +3 Dex).",
+    stats: { meleeAtk: 15, str: 3, dex: 3 }
+  },
+  "Coven Spell-Slicing Focus": {
+    name: "Coven Spell-Slicing Focus",
+    slot: "meleeWeapon",
+    desc: "An organic ether tuning matrix that aligns synaptic currents (+20 max mana, +4 Eth, +3 Int).",
+    stats: { maxMana: 20, eth: 4, int: 3 }
+  },
+  "Horizon Smart-Pistol": {
+    name: "Horizon Smart-Pistol",
+    slot: "rangedWeapon",
+    desc: "A tactical pistol linked directly to your ocular nodes (+12 range damage, +4 Dex).",
+    stats: { rangeAtk: 12, dex: 4 }
+  },
+  "Tactical Cyber-SMG": {
+    name: "Tactical Cyber-SMG",
+    slot: "rangedWeapon",
+    desc: "A rapid-firing firearm with smart telemetry recoil dampeners (+18 range damage, +3 Dex, +2 Int).",
+    stats: { rangeAtk: 18, dex: 3, int: 2 }
+  },
+  "Apex Mantis electro-blade": {
+    name: "Apex Mantis electro-blade",
+    slot: "meleeWeapon",
+    desc: "Surgical lightning weapon that cuts armor plates (+25 melee damage, +5 Str, +3 Dex).",
+    stats: { meleeAtk: 25, str: 5, dex: 3 }
+  },
+  "Coven Ether-deck v3": {
+    name: "Coven Ether-deck v3",
+    slot: "meleeWeapon",
+    desc: "Magical amplification cyberdeck (+30 max mana, +6 Eth, +5 Int).",
+    stats: { maxMana: 30, eth: 6, int: 5 }
+  },
+  "Heavy Plasma Cannon": {
+    name: "Heavy Plasma Cannon",
+    slot: "rangedWeapon",
+    desc: "Syndicate demolition railgun (+35 physical damage, -3 Dex, +5 Str).",
+    stats: { rangeAtk: 35, dex: -3, str: 5 }
+  },
+  "Exo-Plated Mesh Armor": {
+    name: "Exo-Plated Mesh Armor",
+    slot: "armor",
+    desc: "Nanotube composite armor with high density plating (+40 Max HP, +30 Shields, +4 Str).",
+    stats: { maxHp: 40, startingShields: 30, str: 4 }
+  },
+  "Syndicate Heavy Armor": {
+    name: "Syndicate Heavy Armor",
+    slot: "armor",
+    desc: "Slab alloy protection used by corporate enforcers (+60 Max HP, +40 Shields, -2 Dex).",
+    stats: { maxHp: 60, startingShields: 40, dex: -2 }
+  },
+  "Nanoshell Vest": {
+    name: "Nanoshell Vest",
+    slot: "armor",
+    desc: "Flexible kinetic dispersal wear (+25 Max HP, +15 Shields).",
+    stats: { maxHp: 25, startingShields: 15 }
+  },
+  "Smart-Targeting Visor": {
+    name: "Smart-Targeting Visor",
+    slot: "headpiece",
+    desc: "Adds telemetry targeters (+15 Max Mana, +4 Dex, +4 Int).",
+    stats: { maxMana: 15, dex: 4, int: 4 }
+  },
+  "Technical Signal Core": {
+    name: "Technical Signal Core",
+    slot: "headpiece",
+    desc: "Ocular HUD decryptor (+10 Max Mana, +4 Int, +3 Eth).",
+    stats: { maxMana: 10, int: 4, eth: 3 }
+  },
+  "Titanium Alloy Headgear": {
+    name: "Titanium Alloy Headgear",
+    slot: "headpiece",
+    desc: "Heavily reinforced helmet protecting brain co-processors (+20 Max HP, +5 Str, +3 Will).",
+    stats: { maxHp: 20, str: 5, will: 3 }
+  },
+  "Charged Ley-Matrix": {
+    name: "Charged Ley-Matrix",
+    slot: "trinket",
+    desc: "High-grade ley-line battery capturing ambient stray ether (+25 Max Mana, +5 Eth).",
+    stats: { maxMana: 25, eth: 5 }
+  },
+  "Icebreaker Override Core": {
+    name: "Icebreaker Override Core",
+    slot: "trinket",
+    desc: "Hacks network gate barriers (+10 Max Mana, +3 Int, +3 Eth).",
+    stats: { maxMana: 10, int: 3, eth: 3 }
+  },
+  "Cyber-Totem of Outcasts": {
+    name: "Cyber-Totem of Outcasts",
+    slot: "trinket",
+    desc: "A token constructed from broken motherboard circuits (+15 Max HP, +15 Max Mana, +3 Will).",
+    stats: { maxHp: 15, maxMana: 15, will: 3 }
+  },
+  "Prismatic Ether Crystal": {
+    name: "Prismatic Ether Crystal",
+    slot: "trinket",
+    desc: "Crystalline matrix glowing with neon magic power (+25 Max Mana, +5 Eth).",
+    stats: { maxMana: 25, eth: 5 }
+  },
+  "Unstable Plasma Core": {
+    name: "Unstable Plasma Core",
+    slot: "trinket",
+    desc: "Volatile containment cell pulsating energy (+10 Max HP, +10 Max Mana, +4 Str, +4 Dex).",
+    stats: { maxHp: 10, maxMana: 10, str: 4, dex: 4 }
+  },
+  "Nano Med-Stim (Heal)": {
+    name: "Nano Med-Stim (Heal)",
+    slot: "consumable",
+    desc: "Fully restores 60 HP instantly."
+  },
+  "Ether Mana-Cell (Mana)": {
+    name: "Ether Mana-Cell (Mana)",
+    slot: "consumable",
+    desc: "Fully restores 50 Mana instantly."
+  },
+  "Auxiliary Stimulant x2": {
+    name: "Auxiliary Stimulant x2",
+    slot: "consumable",
+    desc: "Double dose of adrenaline boosters."
+  },
+  "Auxiliary Stimulant": {
+    name: "Auxiliary Stimulant",
+    slot: "consumable",
+    desc: "Adrenaline booster."
+  },
+  "Ether battery x3": {
+    name: "Ether battery x3",
+    slot: "consumable",
+    desc: "Three high-density energy packs."
+  },
+  "Ether battery": {
+    name: "Ether battery",
+    slot: "consumable",
+    desc: "High-density energy pack."
+  },
+  "Rusted Circuitry": {
+    name: "Rusted Circuitry",
+    slot: "valuable",
+    desc: "Valuable system parts salvageable for scrap."
+  },
+  "Ares Keycard": {
+    name: "Ares Keycard",
+    slot: "valuable",
+    desc: "Corporate security passcard."
+  },
+  "Shatter-Ridge Scrap Metal": {
+    name: "Shatter-Ridge Scrap Metal",
+    slot: "valuable",
+    desc: "Dense alloy fragments from broken structural walls."
+  }
+};
 
 export interface Region {
   id: string;
@@ -150,7 +331,9 @@ export const MAP_POIS: MapPOI[] = [
     type: "quest",
     buttons: [
       "Slip through Vent (DEX Check)",
-      "Talk to Vice & Tracker"
+      "Talk to Vice & Tracker",
+      "Scavenge Rusted Emergency Locker (Find Cyber-Ammo & Health Stimpack)",
+      "Dismantle ventilation casing (Acquire Carbon Fiber Armor Plates)"
     ]
   },
   {
@@ -164,7 +347,9 @@ export const MAP_POIS: MapPOI[] = [
     type: "quest",
     buttons: [
       "Bypass Sub-Terminal (INT Check)",
-      "Search terminal wreckage for scrap"
+      "Search terminal wreckage for scrap",
+      "Hack Secure Weapons Locker (Acquire Tactical Cyber-SMG!)",
+      "Siphon auxiliary thermal battery (Recover +35 Mana)"
     ]
   },
   {
@@ -178,7 +363,9 @@ export const MAP_POIS: MapPOI[] = [
     type: "quest",
     buttons: [
       "Pry Open Valve (STR Check)",
-      "Banter with Vice and Tracker"
+      "Banter with Vice and Tracker",
+      "Raid security guard barracks (Loot Nano Med-Stim & Flak Guard Armor)",
+      "Interface with corporate supply bin (Extract Energy Batteries)"
     ]
   },
   {
@@ -197,13 +384,45 @@ export const MAP_POIS: MapPOI[] = [
 
   // ---- MAP 2: CORE ARRAY SHATTER-RIDGE ----
   {
+    id: "shatter_ridge_security_post",
+    name: "Shatter-Ridge Security Checkpoint",
+    district: "shatter_ridge_core",
+    description: "A fortified cyber-barrier flashing defensive warnings. Heavy steel lockers line the checkpoint walls. To advance deeper, you must find a way to disable the barrier or search the lockers. Vice keeps a steady hand on his weapon: 'Corporate security was here recently. Watch the tripwires.'",
+    image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=600",
+    x: 20,
+    y: 70,
+    type: "quest",
+    buttons: [
+      "Overclock Security Gate (INT Check)",
+      "Scavenge Security Chest (Find Exo-Plated Mesh Armor & Nano Med-Stim)",
+      "Pep-Talk Vice & Tracker (Inspiration Dialogue)",
+      "Move to Reactor Well (Proceed)"
+    ]
+  },
+  {
+    id: "shatter_ridge_reactor_well",
+    name: "Shatter-Ridge Reactor Well",
+    district: "shatter_ridge_core",
+    description: "A boiling pool of toxic bio-coolant fluid casting eerie turquoise shadows. A suspended hydraulic arm holds a locked cargo crate directly over the pool. Tracker points: 'That crate was scheduled for shipping to Ares Elite Headquarters. It has premium tech inside if we can lower it.'",
+    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
+    x: 50,
+    y: 45,
+    type: "quest",
+    buttons: [
+      "Pull Cargo Lever (STR Check)",
+      "Salvage Bio-Reactor Core (Find Smart-Targeting Visor)",
+      "Consult Squad on Tactics",
+      "Proceed to Main Array (Transit)"
+    ]
+  },
+  {
     id: "main_array_core",
     name: "Core Array Shatter-Ridge",
     district: "shatter_ridge_core",
     description: "A majestic array of glowing blue power cells humming in vertical columns. As Tracker begins a manual security check bypass, his terminal flashes a critical red warning! Tracker yells: 'System fault! The corporate mainframe rejected my encryption key! Hostile drones are deploying!' Vice unsheathes his plasma pistol: 'Engage combat systems!'",
     image: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=600",
-    x: 50,
-    y: 50,
+    x: 80,
+    y: 30,
     type: "combat",
     buttons: [
       "Defend Core Array (Triggers Combat!)"
@@ -538,7 +757,15 @@ export function getInitialState(archetype: Archetype): GameState {
       cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
       netSlicer: isBlade ? 1 : isMage ? 2 : 3,
       heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
-      mindmancer: 0
-    }
+      mindmancer: isMage ? 1 : 0
+    },
+    equipment: {
+      meleeWeapon: null,
+      rangedWeapon: null,
+      armor: null,
+      headpiece: null,
+      trinket: null
+    },
+    completedPOIActions: []
   };
 }

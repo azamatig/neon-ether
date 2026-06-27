@@ -16,6 +16,14 @@ export interface CombatState {
   turnLog: string;
 }
 
+export interface EquipmentState {
+  meleeWeapon?: string | null;
+  rangedWeapon?: string | null;
+  armor?: string | null;
+  headpiece?: string | null;
+  trinket?: string | null;
+}
+
 export interface GameState {
   district: string;
   poi: string;
@@ -48,6 +56,8 @@ export interface GameState {
     heavyChrome: number;
     mindmancer: number;
   };
+  equipment?: EquipmentState;
+  completedPOIActions?: string[];
 }
 
 export interface LogMessage {

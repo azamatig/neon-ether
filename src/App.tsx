@@ -44,7 +44,9 @@ import {
   REGIONS,
   ENEMIES,
   MapPOI,
-  Region
+  Region,
+  ITEM_METADATA,
+  ItemDetails
 } from "./data";
 
 export default function App() {
@@ -86,6 +88,439 @@ export default function App() {
   
   // Dialogue state: ID of active NPC dialogue ("jax" | "aria" | "morgana" | "recruiter" | null)
   const [activeDialogue, setActiveDialogue] = useState<string | null>(null);
+
+  // Squad dialogue state for conversations with Vice & Tracker
+  const [squadDialogue, setSquadDialogue] = useState<{
+    sceneId: "banter" | "peptalk" | "tactics";
+    nodeId: string;
+  } | null>(null);
+
+  // In-your-face beautiful HUD notification popup
+  const [activePopup, setActivePopup] = useState<{
+    title: string;
+    subtitle?: string;
+    type: "transit" | "loot" | "check_success" | "check_failure" | "action_success";
+    text: string;
+  } | null>(null);
+
+  // Helper to compute derived stats including active equipment
+  const getDerivedStats = () => {
+    if (!gameState) {
+      return {
+        maxHp: 100,
+        maxMana: 50,
+        startingShields: 0,
+        str: 10,
+        dex: 10,
+        int: 10,
+        will: 10,
+        eth: 10,
+        meleeAtk: 0,
+        rangeAtk: 0
+      };
+    }
+    let maxHp = gameState.maxHp || 100;
+    let maxMana = gameState.maxMana || 50;
+    let startingShields = 0;
+    
+    let str = gameState.attributes?.str || 10;
+    let dex = gameState.attributes?.dex || 10;
+    let int = gameState.attributes?.int || 10;
+    let will = gameState.attributes?.will || 10;
+    let eth = gameState.attributes?.eth || 10;
+
+    let meleeAtk = 0;
+    let rangeAtk = 0;
+
+    const eq = gameState.equipment;
+    if (eq) {
+      const slots = ["meleeWeapon", "rangedWeapon", "armor", "headpiece", "trinket"] as const;
+      slots.forEach(slot => {
+        const itemName = eq[slot];
+        if (itemName) {
+          const details = ITEM_METADATA[itemName];
+          if (details && details.stats) {
+            const st = details.stats;
+            if (st.maxHp) maxHp += st.maxHp;
+            if (st.maxMana) maxMana += st.maxMana;
+            if (st.startingShields) startingShields += st.startingShields;
+            if (st.str) str += st.str;
+            if (st.dex) dex += st.dex;
+            if (st.int) int += st.int;
+            if (st.will) will += st.will;
+            if (st.eth) eth += st.eth;
+            if (st.meleeAtk) meleeAtk += st.meleeAtk;
+            if (st.rangeAtk) rangeAtk += st.rangeAtk;
+          }
+        }
+      });
+    }
+
+    return {
+      maxHp,
+      maxMana,
+      startingShields,
+      str,
+      dex,
+      int,
+      will,
+      eth,
+      meleeAtk,
+      rangeAtk
+    };
+  };
+
+  // Squad dialogue system configurations with companions Vice and Tracker
+  const SQUAD_DIALOGUES: Record<
+    "banter" | "peptalk" | "tactics",
+    Record<
+      string,
+      {
+        speakerName: string;
+        speakerRole: string;
+        portrait: string;
+        text: string;
+        choices: {
+          text: string;
+          nodeId: string | null;
+          effect?: (state: any) => any;
+        }[];
+      }
+    >
+  > = {
+    banter: {
+      start: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "We're almost at the core, recruit. Tracker is sweating bullets and my plasma battery is only at seventy percent. How's your gear holding up?",
+        choices: [
+          {
+            text: "My cybernetics are primed. We can handle whatever Ares throws at us.",
+            nodeId: "vesper_confident"
+          },
+          {
+            text: "This operation is getting hot. Is the payout really worth the risk?",
+            nodeId: "vesper_worried"
+          },
+          {
+            text: "Let's keep chatter on silent channels. Corporate scanners are active.",
+            nodeId: "tracker_agrees"
+          }
+        ]
+      },
+      vesper_confident: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Confidence is cheap, kid. But I like the fire in your circuit board. Keep that SMG ready—I'm getting faint energy spikes ahead. We're not alone in these shafts.",
+        choices: [
+          { text: "Roger that. Let's advance. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      vesper_worried: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Always is, rookie. The Ares database crystals contain bio-synthetic schemas that the Outcast union will buy for ten thousand credits. We split that, and we can finally afford tickets out of Megacity-9 slums. Hang tight.",
+        choices: [
+          { text: "Understood. Let's get it done. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      tracker_agrees: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "The kid is right, Vice. Shut your grill. If their auditory arrays pick up your voice, we'll have an entire squad of Ares Enforcers sealing the vents. Focus on prying that valve.",
+        choices: [
+          { text: "Acknowledged. Staying silent. (Exit Conversation)", nodeId: null }
+        ]
+      }
+    },
+    peptalk: {
+      start: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Damn, look at those energy tripwires flashing. If we step on those, the defensive system will slice us into cyber-scrap. Tracker, can you hack it?",
+        choices: [
+          {
+            text: "We've survived this far. Tracker, take your time. Vice and I have your back.",
+            nodeId: "pep_trust"
+          },
+          {
+            text: "If we panic, we're dead. Take a deep breath and clear your mind.",
+            nodeId: "pep_calm",
+            effect: (state) => {
+              state.mana = Math.min(state.maxMana || 50, state.mana + 15);
+              return state;
+            }
+          },
+          {
+            text: "Remember who we're doing this for. The Outcasts are counting on us.",
+            nodeId: "pep_outcasts",
+            effect: (state) => {
+              state.hp = Math.min(state.maxHp || 100, state.hp + 15);
+              return state;
+            }
+          }
+        ]
+      },
+      pep_trust: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Damn straight. I've got my railgun locked on the main corridor. No corporate drone is getting past me while Tracker does his magic. Let's do this!",
+        choices: [
+          { text: "Prepare yourself. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      pep_calm: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Appreciate the neural grounding, kid. The ionization level is dropping in my sensors. Bypassing the security gate registers now... (You feel your own cognitive deck stabilize, gaining +15 Mana!)",
+        choices: [
+          { text: "Excellent. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      pep_outcasts: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "For the Union! Those suits in Megacity-9 towers think we're just scrap metal. Let's show them what outcast grit can do. I feel a surge of overdrive in my chassis! (Your squad is inspired, restoring +15 HP!)",
+        choices: [
+          { text: "For the Union. (Exit Conversation)", nodeId: null }
+        ]
+      }
+    },
+    tactics: {
+      start: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "The main array core is just behind the next bulk door. The terminal registers show three heavy sentry drones patrolling the column. If we charge in blind, we'll be surrounded in seconds. What's the plan, recruit?",
+        choices: [
+          {
+            text: "I'll lead the charge as a distraction. You two flank them.",
+            nodeId: "tac_charge"
+          },
+          {
+            text: "Let's siphon the bio-reactor core to cause a localized power blackout first.",
+            nodeId: "tac_sabotage"
+          },
+          {
+            text: "We set up an ambush right here, drawing them into this narrow reactor well.",
+            nodeId: "tac_ambush"
+          }
+        ]
+      },
+      tac_charge: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Bold. Insane, but bold. I'll cover you with high-caliber plasma suppressive fire. The moment they target you, I'll melt their sensor lenses from the dark.",
+        choices: [
+          { text: "Sounds like a plan. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      tac_sabotage: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Incredibly smart. Siphoning the reactor well will overload their recharge docks, shutting down their auxiliary energy shields! That gives us a massive combat advantage.",
+        choices: [
+          { text: "Let's execute it. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      tac_ambush: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "A tactical choke point. Yes, the narrow bridge of the reactor well restricts their flight patterns. We'll bottleneck them easily. You've got a sharp tactical processor, Vesper.",
+        choices: [
+          { text: "Agreed. Let's move. (Exit Conversation)", nodeId: null }
+        ]
+      }
+    }
+  };
+
+  // Helper function to dynamically modify POI descriptions based on actions done
+  const getPOIDescription = (poiId: string | null) => {
+    if (!poiId || !gameState) return "";
+    const basePOI = MAP_POIS.find(p => p.id === poiId);
+    if (!basePOI) return "";
+
+    const completed = gameState.completedPOIActions || [];
+
+    if (poiId === "ventilation_shaft") {
+      const scavDone = completed.includes("ventilation_shaft:scavenge");
+      const casingDone = completed.includes("ventilation_shaft:casing");
+      if (scavDone && casingDone) {
+        return "A dark, cramped aerospace ventilation shaft. The emergency locker is open and empty. The loose metal casing has been completely removed from the frame. Only the spinning cooling fan remains.";
+      } else if (scavDone) {
+        return "A dark, cramped aerospace ventilation shaft. The rusted emergency locker is open and empty, but a loose carbon-reinforced casing is still attached to the duct.";
+      } else if (casingDone) {
+        return "A dark, cramped aerospace ventilation shaft. The ventilation casing has been dismantled, but a rusted emergency locker is still locked in the corner.";
+      }
+    }
+
+    if (poiId === "security_terminal") {
+      const lockerDone = completed.includes("security_terminal:locker");
+      const batteryDone = completed.includes("security_terminal:battery");
+      if (lockerDone && batteryDone) {
+        return "A monitoring station with offline terminals. The weapons locker stands open and looted, and the auxiliary thermal battery cell socket is dark and empty.";
+      } else if (lockerDone) {
+        return "A monitoring station. The weapons locker stands open and empty. The auxiliary thermal battery cell is still humming in its socket.";
+      } else if (batteryDone) {
+        return "A monitoring station. The thermal battery cell is gone, but the secure heavy weapons locker remains locked.";
+      }
+    }
+
+    if (poiId === "blast_door") {
+      const barracksDone = completed.includes("blast_door:barracks");
+      const binDone = completed.includes("blast_door:bin");
+      if (barracksDone && binDone) {
+        return "A massive, multi-layered hydraulic blast barrier. The nearby guard barracks are cleared out, and the corporate supply bin has been fully raided.";
+      } else if (barracksDone) {
+        return "A massive blast barrier. The guard barracks are empty, but the locked corporate supply bin is still intact.";
+      } else if (binDone) {
+        return "A massive blast barrier. The supply bin has been emptied, but the guard barracks are still unsearched.";
+      }
+    }
+
+    if (poiId === "shatter_ridge_security_post") {
+      const scavDone = completed.includes("shatter_ridge_security_post:scavenge");
+      const gateDone = completed.includes("shatter_ridge_security_post:gate");
+      if (scavDone && gateDone) {
+        return "A fortified cyber-barrier checkpoint. The steel lockers lie open and ransacked. The defensive tripwires and security gate are permanently overloaded and inactive.";
+      } else if (scavDone) {
+        return "A fortified cyber-barrier checkpoint. The steel lockers are completely empty. Red defensive warning lights continue to flash across the security gate.";
+      } else if (gateDone) {
+        return "A fortified cyber-barrier checkpoint. The defensive tripwires are deactivated, but the heavy steel lockers remain locked.";
+      }
+    }
+
+    if (poiId === "shatter_ridge_reactor_well") {
+      const leverDone = completed.includes("shatter_ridge_reactor_well:lever");
+      const coreDone = completed.includes("shatter_ridge_reactor_well:reactor_core");
+      if (leverDone && coreDone) {
+        return "A boiling pool of toxic bio-coolant fluid. The suspended cargo crate has been lowered and looted, and the bio-reactor core is dark and quiet.";
+      } else if (leverDone) {
+        return "A boiling pool of toxic bio-coolant. The cargo crate has been lowered and emptied, but the bio-reactor core is still hum-charging.";
+      } else if (coreDone) {
+        return "A boiling pool of toxic bio-coolant. The bio-reactor core has been dismantled, but the cargo crate still hangs overhead.";
+      }
+    }
+
+    return basePOI.description;
+  };
+
+  // Helper to determine if an action button has already been consumed
+  const isActionCompleted = (poiId: string | null, actionText: string) => {
+    if (!poiId || !gameState || !gameState.completedPOIActions) return false;
+    const clean = actionText.toLowerCase();
+    if (poiId === "ventilation_shaft") {
+      if (clean.includes("scavenge") && gameState.completedPOIActions.includes("ventilation_shaft:scavenge")) return true;
+      if (clean.includes("dismantle") && gameState.completedPOIActions.includes("ventilation_shaft:casing")) return true;
+      if (clean.includes("slip") && gameState.completedPOIActions.includes("ventilation_shaft:slip")) return true;
+      if (clean.includes("force fan") && gameState.completedPOIActions.includes("ventilation_shaft:slip")) return true;
+      if (clean.includes("trigger emp") && gameState.completedPOIActions.includes("ventilation_shaft:slip")) return true;
+      if (clean.includes("hack fan") && gameState.completedPOIActions.includes("ventilation_shaft:slip")) return true;
+      if (clean.includes("talk to") && gameState.completedPOIActions.includes("ventilation_shaft:talk_to_vice_tracker")) return true;
+    }
+    if (poiId === "security_terminal") {
+      if (clean.includes("bypass") && gameState.completedPOIActions.includes("security_terminal:bypass")) return true;
+      if (clean.includes("wreckage") && gameState.completedPOIActions.includes("security_terminal:wreckage")) return true;
+      if (clean.includes("locker") && gameState.completedPOIActions.includes("security_terminal:locker")) return true;
+      if (clean.includes("siphon") && gameState.completedPOIActions.includes("security_terminal:battery")) return true;
+    }
+    if (poiId === "blast_door") {
+      if (clean.includes("pry") && gameState.completedPOIActions.includes("blast_door:pry")) return true;
+      if (clean.includes("barracks") && gameState.completedPOIActions.includes("blast_door:barracks")) return true;
+      if (clean.includes("supply") && gameState.completedPOIActions.includes("blast_door:bin")) return true;
+      if (clean.includes("banter") && gameState.completedPOIActions.includes("blast_door:banter")) return true;
+    }
+    if (poiId === "shatter_ridge_security_post") {
+      if (clean.includes("overclock") && gameState.completedPOIActions.includes("shatter_ridge_security_post:gate")) return true;
+      if (clean.includes("scavenge") && gameState.completedPOIActions.includes("shatter_ridge_security_post:scavenge")) return true;
+      if (clean.includes("pep-talk") && gameState.completedPOIActions.includes("shatter_ridge_security_post:peptalk")) return true;
+    }
+    if (poiId === "shatter_ridge_reactor_well") {
+      if (clean.includes("pull") && gameState.completedPOIActions.includes("shatter_ridge_reactor_well:lever")) return true;
+      if (clean.includes("salvage") && gameState.completedPOIActions.includes("shatter_ridge_reactor_well:reactor_core")) return true;
+      if (clean.includes("tactics") && gameState.completedPOIActions.includes("shatter_ridge_reactor_well:tactics")) return true;
+    }
+    return false;
+  };
+
+  const handleEquipItem = (itemName: string) => {
+    if (!gameState) return;
+    const details = ITEM_METADATA[itemName];
+    if (!details || !details.slot) return;
+    const slot = details.slot as "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket";
+
+    let nextState = { ...gameState };
+    if (!nextState.equipment) {
+      nextState.equipment = { meleeWeapon: null, rangedWeapon: null, armor: null, headpiece: null, trinket: null };
+    }
+
+    const previousItem = nextState.equipment[slot];
+    if (previousItem) {
+      nextState.inventory.push(previousItem);
+    }
+
+    nextState.equipment[slot] = itemName;
+    nextState.inventory = nextState.inventory.filter((item, idx) => idx !== nextState.inventory.indexOf(itemName));
+
+    setGameState(nextState);
+
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const slotDisplay = slot === "meleeWeapon" ? "MELEE WEAPON" : slot === "rangedWeapon" ? "RANGED WEAPON" : slot;
+    const logText = previousItem 
+      ? `🔄 EQUIPMENT SWAPPED: Unequipped ${previousItem} and equipped ${itemName} into ${slotDisplay.toUpperCase()} slot!`
+      : `🛡️ EQUIPMENT EQUIP: Equipped ${itemName} into ${slotDisplay.toUpperCase()} slot!`;
+
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: logText,
+        type: "system",
+        district: nextState.district,
+        poi: nextState.poi
+      }
+    ]);
+    triggerToast(`EQUIPPED: ${itemName}`);
+  };
+
+  const handleUnequipItem = (slot: "meleeWeapon" | "rangedWeapon" | "armor" | "headpiece" | "trinket") => {
+    if (!gameState || !gameState.equipment) return;
+    const itemName = gameState.equipment[slot];
+    if (!itemName) return;
+
+    let nextState = { ...gameState };
+    nextState.inventory.push(itemName);
+    nextState.equipment[slot] = null;
+
+    setGameState(nextState);
+
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const slotDisplay = slot === "meleeWeapon" ? "MELEE WEAPON" : slot === "rangedWeapon" ? "RANGED WEAPON" : slot;
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `🛡️ EQUIPMENT UNEQUIP: Unequipped ${itemName} from ${slotDisplay.toUpperCase()} slot. Returned to stash inventory.`,
+        type: "system",
+        district: nextState.district,
+        poi: nextState.poi
+      }
+    ]);
+    triggerToast(`UNEQUIPPED: ${itemName}`);
+  };
   
   // Success toast indicators
   const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -212,9 +647,25 @@ export default function App() {
     party: string[],
     archetype: string
   ) => {
-    const pRange = archetype === "Cyber-Blade" ? 1 : 3;
-    const pDmg = archetype === "Cyber-Blade" ? 22 : archetype === "Techno-Mage" ? 28 : 18;
-    const pAvatar = archetype === "Cyber-Blade" ? "⚔️" : archetype === "Techno-Mage" ? "🔮" : "🔫";
+    let pRange = archetype === "Cyber-Blade" ? 1 : 3;
+    let pDmg = archetype === "Cyber-Blade" ? 22 : archetype === "Techno-Mage" ? 28 : 18;
+    let pAvatar = archetype === "Cyber-Blade" ? "⚔️" : archetype === "Techno-Mage" ? "🔮" : "🔫";
+    let pShields = 0;
+
+    if (gameState?.inventory.includes("Tactical Cyber-SMG")) {
+      pRange = 3;
+      pDmg = Math.max(pDmg, 24);
+      pAvatar = "🔫";
+    }
+    if (gameState?.inventory.includes("Carbon Fiber Armor Plates")) {
+      pShields += 30;
+    }
+    if (gameState?.inventory.includes("Tactical Flak Armor")) {
+      pShields += 45;
+    }
+    if (gameState?.inventory.includes("Cyber-Ammo")) {
+      pDmg += 6;
+    }
 
     const combatants: GridCombatant[] = [
       {
@@ -223,8 +674,8 @@ export default function App() {
         team: "player",
         hp: gameState?.hp || 100,
         maxHp: gameState?.maxHp || 100,
-        shields: 0,
-        maxShields: 0,
+        shields: pShields,
+        maxShields: pShields,
         x: 1,
         y: 2,
         avatar: pAvatar,
@@ -364,6 +815,27 @@ export default function App() {
             ap: 2,
             maxAp: 2,
             initiative: 8,
+            isDead: false,
+            isCompanion: true
+          });
+        } else if (name === "Trigger") {
+          combatants.push({
+            id: "trigger",
+            name: "Trigger (Companion)",
+            team: "player",
+            hp: 95,
+            maxHp: 95,
+            shields: 15,
+            maxShields: 15,
+            x: 0,
+            y: idx + 1,
+            avatar: "🔫",
+            color: "border-emerald-500 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.3)]",
+            range: 4,
+            damage: 20,
+            ap: 2,
+            maxAp: 2,
+            initiative: 12,
             isDead: false,
             isCompanion: true
           });
@@ -529,10 +1001,31 @@ export default function App() {
             cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
             netSlicer: isBlade ? 1 : isMage ? 2 : 3,
             heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
-            mindmancer: 0
+            mindmancer: isMage ? 1 : 0
+          },
+          equipment: {
+            meleeWeapon: null,
+            rangedWeapon: null,
+            armor: null,
+            headpiece: null,
+            trinket: null
           },
           ...parsedState
         };
+
+        // Migrate old weapon slot if exists
+        if (migratedState.equipment && (migratedState.equipment as any).weapon) {
+          const oldWeapon = (migratedState.equipment as any).weapon;
+          delete (migratedState.equipment as any).weapon;
+          const details = ITEM_METADATA[oldWeapon];
+          if (details && details.slot === "meleeWeapon") {
+            migratedState.equipment.meleeWeapon = oldWeapon;
+          } else if (details && details.slot === "rangedWeapon") {
+            migratedState.equipment.rangedWeapon = oldWeapon;
+          } else {
+            migratedState.equipment.meleeWeapon = oldWeapon;
+          }
+        }
         setGameState(migratedState);
         setLogs(JSON.parse(savedLogs));
         setActiveRegionId(migratedState.district || "aurus");
@@ -667,6 +1160,9 @@ export default function App() {
     await new Promise(resolve => setTimeout(resolve, 300));
     
     let nextState = { ...gameState };
+    if (!nextState.completedPOIActions) {
+      nextState.completedPOIActions = [];
+    }
     let narrative = "";
     let logType: LogMessage["type"] = "narration";
 
@@ -925,20 +1421,34 @@ export default function App() {
         const roll = Math.floor(Math.random() * 20) + 1 + dex;
         if (roll >= 23) {
           nextState.experience += 25;
+          nextState.completedPOIActions.push("ventilation_shaft:slip");
           narrative = `🎯 DEX CHECK SUCCESS (Roll: ${roll} vs 23): You calibrate your speed servos perfectly, sliding through the spinning blades during the sub-second frequency lull! Vice whispers: 'Damn, kid. Clean slip.' Earned +25 XP.`;
           nextState.poi = "Security Sub-Terminal";
           setActivePOIView("security_terminal");
+          setActivePopup({
+            title: "SLIPPED THROUGH VENTILATION",
+            subtitle: "DEX CHECK SUCCESS",
+            type: "transit",
+            text: `You calibrated your speed servos perfectly (Roll: ${roll} vs 23) and slipped safely through the giant spinning rotor blades! You drop down into the glowing monitoring sub-station. Earned +25 XP.`
+          });
         } else {
           const dmg = 20;
           nextState.hp = Math.max(10, nextState.hp - dmg);
           nextState.experience += 10;
           setVentFailed(true);
           narrative = `⚠️ DEX CHECK FAILURE (Roll: ${roll} vs 23): The heavy spinning fan blade strikes your back chassis! Sparks fly as you are pinned inside the duct. Dealt ${dmg} kinetic damage. Alarms begin to beep softly! You are STUCK in the ventilation shaft. You must choose an emergency override response immediately before security arrives.`;
+          setActivePopup({
+            title: "FAN BLADES INTERCEPTED",
+            subtitle: "DEX CHECK FAILURE",
+            type: "check_failure",
+            text: `The massive spinning fan blade strikes your back chassis (Roll: ${roll} vs 23)! Sparks fly as you are pinned inside the duct. You suffered 20 kinetic damage. Solve the lockdown immediately!`
+          });
         }
       }
       else if (cleanAction.includes("force fan blades (str check)") || cleanAction.includes("force fan")) {
         const str = nextState.attributes?.str || 10;
         const roll = Math.floor(Math.random() * 20) + 1 + str;
+        nextState.completedPOIActions.push("ventilation_shaft:slip");
         if (roll >= 15) {
           narrative = `💥 STR CHECK SUCCESS (Roll: ${roll} vs 15): With a guttural growl, you wrench the auxiliary hydraulic shaft. The massive blades halt with a screeching metallic tear! You scramble through, but the noise was immense! Alarm beacons begin to spin.`;
           nextState.poi = "Security Sub-Terminal";
@@ -955,6 +1465,12 @@ export default function App() {
             isActive: true,
             turnLog: "The screeching fan tear has alerted the nearby sector! A rapid sentry drone deploys from the ceiling vents with guns hot!"
           };
+          setActivePopup({
+            title: "FAN BLADES WRENCHED",
+            subtitle: "STR CHECK SUCCESS",
+            type: "check_success",
+            text: `With raw strength (Roll: ${roll} vs 15), you wrenched the hydraulic rotor! The blade screeched and seized, letting you scramble through. However, the deafening noise has alerted an autonomous security patrol! Prepare for combat!`
+          });
         } else {
           narrative = `❌ STR CHECK FAILURE (Roll: ${roll} vs 15): You attempt to force the rotor, but the titanium alloy is too rigid! The blades spin faster, tearing into your cybernetics for 15 damage and sounding the sector alarms! Sentry units are converging!`;
           nextState.hp = Math.max(10, nextState.hp - 15);
@@ -971,9 +1487,16 @@ export default function App() {
             isActive: true,
             turnLog: "Alarms are blaring! You fall out of the ventilation shaft right in front of an alerted security patrol!"
           };
+          setActivePopup({
+            title: "ROTOR OVERRIDE FAILURE",
+            subtitle: "STR CHECK FAILURE",
+            type: "check_failure",
+            text: `The titanium blade was too rigid (Roll: ${roll} vs 15)! Your arm joints suffered 15 fatigue damage, and sector alarms have been triggered. Hostile units are converging on your position!`
+          });
         }
       }
       else if (cleanAction.includes("trigger emp burst") || cleanAction.includes("emp explosion")) {
+        nextState.completedPOIActions.push("ventilation_shaft:slip");
         narrative = `⚡ LOUD EMP EXPLOSION: You override your cyberdeck battery, releasing a raw, unstable EMP blast! The ventilation fan sparks violently and explodes in a shower of blue fire. You are thrown forward into the Security Sub-Terminal, taking 10 damage from the shockwave. The blast has completely fried the sector's grid, sounding emergency sirens!`;
         nextState.hp = Math.max(10, nextState.hp - 10);
         nextState.poi = "Security Sub-Terminal";
@@ -989,15 +1512,28 @@ export default function App() {
           isActive: true,
           turnLog: "The EMP explosion blacked out the corridor! Alerted patrol guards breach the entrance with sub-machine railguns flashing!"
         };
+        setActivePopup({
+          title: "EMP BLAST OVERRIDE",
+          subtitle: "SYSTEM GRID OVERLOAD",
+          type: "check_failure",
+          text: "You overloaded your cyberdeck's cognitive battery cell, releasing a blind high-frequency EMP blast! The rotor exploded in blue sparks, blowing you into the sub-station with 10 damage. A heavy security patrol has breached the darkened intersection!"
+        });
       }
       else if (cleanAction.includes("hack fan console (int check)") || cleanAction.includes("hack fan")) {
         const intVal = nextState.attributes?.int || 10;
         const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        nextState.completedPOIActions.push("ventilation_shaft:slip");
         if (roll >= 16) {
           narrative = `💾 INT CHECK SUCCESS (Roll: ${roll} vs 16): You patch your neural link directly into the exposed fan relay. Executing a quiet loop-bypass script, the heavy blades spin down to a complete, silent halt. You slide through safely. Vice pats your shoulder: 'Smart hack, rookie.'`;
           nextState.poi = "Security Sub-Terminal";
           setActivePOIView("security_terminal");
           setVentFailed(false);
+          setActivePopup({
+            title: "CONSOLE RELAY OVERRIDE",
+            subtitle: "INT CHECK SUCCESS",
+            type: "check_success",
+            text: `You bypassed the local airlock controller relay (Roll: ${roll} vs 16)! The blades spun down to a silent, complete halt, letting you slide through with perfect stealth.`
+          });
         } else {
           narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 16): Your override script causes a short circuit! A small pop sounds, and the fan controller starts burning. You take 10 kinetic damage, and the sparks alert a security drone!`;
           nextState.hp = Math.max(10, nextState.hp - 10);
@@ -1014,50 +1550,135 @@ export default function App() {
             isActive: true,
             turnLog: "The burning fan controller sounds a local short-circuit alarm! A patrol drone hovers down to investigate!"
           };
+          setActivePopup({
+            title: "RELAY FIREWALL FAULT",
+            subtitle: "INT CHECK FAILURE",
+            type: "check_failure",
+            text: `A severe short-circuit feedback shocked your neural deck (Roll: ${roll} vs 16), dealing 10 damage. The burning relay console triggered a silent short-circuit alarm, summoning an investigation drone!`
+          });
         }
       }
       else if (nextState.district === "conduit09" && (cleanAction.includes("talk to vice") || cleanAction.includes("talk to tracker") || cleanAction.includes("banter"))) {
-        narrative = `💬 AMBIENT CONDUIT FEED:
-- Vice: 'We're looking for server node 09-D. Keep your head on a swivel. If Tracker's decryption is off, we'll be fighting our way out.'
-- Tracker: 'My keys are flawless. Just focus on prying any heavy bulkheads we find, recruit.'`;
+        setSquadDialogue({ sceneId: "banter", nodeId: "start" });
+        setIsLoading(false);
+        return;
+      }
+      else if (cleanAction.includes("scavenge rusted emergency locker") || cleanAction.includes("emergency locker")) {
+        nextState.inventory.push("Cyber-Ammo");
+        nextState.inventory.push("Nano Med-Stim (Heal)");
+        nextState.hp = Math.min(nextState.maxHp, nextState.hp + 15);
+        nextState.completedPOIActions.push("ventilation_shaft:scavenge");
+        narrative = `🔍 EMERGENCY SUPPLIES SCAVENGED: You crack open a rusty corporate locker on the ventilation catwalk! Inside you find a box of high-density Cyber-Ammo (+6 Gun Damage) and a Nano Med-Stim (Heal) (+60 HP). You also patch your minor armor scrapings, restoring +15 HP!`;
+        setActivePopup({
+          title: "EMERGENCY SUPPLIES SCAVENGED",
+          subtitle: "CONDUIT 09 LOCKER LOOT",
+          type: "loot",
+          text: "You cracked open a rusty emergency locker on the catwalk. Inside, you secured high-density Cyber-Ammo (+6 Gun Damage), a Nano Med-Stim (Heal) (+60 HP), and patched your armor scrapings (+15 HP)!"
+        });
+      }
+      else if (cleanAction.includes("dismantle ventilation casing") || cleanAction.includes("ventilation casing")) {
+        nextState.inventory.push("Carbon Fiber Armor Plates");
+        nextState.completedPOIActions.push("ventilation_shaft:casing");
+        narrative = `🛠️ CASING SALVAGED: Using a laser-ratchet, you carefully unscrew and dismantle the lightweight, carbon-reinforced ventilation housing. This is high-grade aerospace defense plating! You acquire Carbon Fiber Armor Plates (Grants +30 starting Combat Shields).`;
+        setActivePopup({
+          title: "CASING DISMANTLED",
+          subtitle: "CATWALK METAL RECOVERED",
+          type: "loot",
+          text: "Using a laser-ratchet, you dismantled the carbon-reinforced ventilation casing. You salvaged a piece of premium Carbon Fiber Armor Plates (+30 starting Combat Shields)!"
+        });
       }
 
       // Security Sub-Terminal
       else if (cleanAction.includes("bypass sub-terminal")) {
         const intVal = nextState.attributes?.int || 10;
         const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        nextState.completedPOIActions.push("security_terminal:bypass");
         if (roll >= 23) {
           nextState.experience += 25;
           nextState.inventory.push("Rusted Circuitry");
           narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 23): You slice the alarm sub-grid gracefully, rendering the outer perimeter completely blind! You salvage a piece of valuable 'Rusted Circuitry' copper scrap from the motherboard. Tracker grunts: 'Efficient work.' Earned +25 XP.`;
           nextState.poi = "Heavy Blast Door";
           setActivePOIView("blast_door");
+          setActivePopup({
+            title: "SUB-TERMINAL BYPASSED",
+            subtitle: "INT CHECK SUCCESS",
+            type: "transit",
+            text: `You sliced the alarm sub-grid with stealth precision (Roll: ${roll} vs 23), rendering local cameras completely blind! You salvaged a piece of 'Rusted Circuitry' copper scrap. Transiting to the Heavy Blast Door. Earned +25 XP.`
+          });
         } else {
           nextState.mana = Math.max(0, nextState.mana - 15);
           nextState.experience += 10;
           narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 23): An electrostatic firewall feedback discharges directly into your deck! Your mana flow drops by -15. But you force an emergency override to clear the block. Earned +10 XP.`;
           nextState.poi = "Heavy Blast Door";
           setActivePOIView("blast_door");
+          setActivePopup({
+            title: "SUB-GRID FIREWALL BACKFIRE",
+            subtitle: "INT CHECK FAILURE",
+            type: "check_failure",
+            text: `An electrostatic firewall backfired directly into your cyberdeck (Roll: ${roll} vs 23)! Your mana pool dropped by -15. However, you successfully forced an emergency transit shunt to the Heavy Blast Door.`
+          });
         }
       }
       else if (cleanAction.includes("search terminal wreckage")) {
+        nextState.completedPOIActions.push("security_terminal:wreckage");
         if (Math.random() > 0.4) {
           nextState.inventory.push("Rusted Circuitry");
           narrative = "🔍 SCAVENGE SUCCESS: You unscrew the auxiliary panel and slide out a piece of copper 'Rusted Circuitry' scrap! This can be recycled at the Apex Armory.";
+          setActivePopup({
+            title: "WRECKAGE SALVAGED",
+            subtitle: "TERMINAL SCRAP ACQUIRED",
+            type: "loot",
+            text: "You unscrewed the charred sub-terminal motherboard panel and safely extracted a piece of recyclable 'Rusted Circuitry' copper scrap!"
+          });
         } else {
           narrative = "🔍 SCAVENGE EMPTY: The sub-terminal circuits are completely charred and useless.";
+          setActivePopup({
+            title: "WRECKAGE STRIPPED",
+            subtitle: "SCAVENGE ENCOUNTERED EMPTY",
+            type: "check_failure",
+            text: "The sub-terminal circuits are completely melted and charred of anything recyclable."
+          });
         }
+      }
+      else if (cleanAction.includes("hack secure weapons locker") || cleanAction.includes("weapons locker")) {
+        nextState.inventory.push("Tactical Cyber-SMG");
+        nextState.completedPOIActions.push("security_terminal:locker");
+        narrative = `🔓 WEAPONS LOCKER OVERRIDDEN: You link your cyberdeck directly to the armory cabinet's heavy locking pins. Following a brief bypass, the door swings open to reveal a polished, matte-black Tactical Cyber-SMG! You now have a lethal firearm in your equipment deck.`;
+        setActivePopup({
+          title: "ARMORY ACCESS UNLOCKED",
+          subtitle: "WEAPONS LOCKER BYPASS",
+          type: "loot",
+          text: "You bypassed the secure weapons locker mainframe interface! Inside, you secured a pristine, matte-black Tactical Cyber-SMG! [Your basic combat range is expanded to 3, and base combat damage is increased to 24!]"
+        });
+      }
+      else if (cleanAction.includes("siphon auxiliary thermal battery") || cleanAction.includes("thermal battery")) {
+        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 35);
+        nextState.completedPOIActions.push("security_terminal:battery");
+        narrative = `⚡ POWER RECOVERED: You stick direct conductive copper lead clips into the humming sub-grid thermal battery cell. A warm, blue wave of raw electrostatic currents surge back into your cognitive deck, restoring +35 Mana!`;
+        setActivePopup({
+          title: "THERMAL CELL ENERGY SIPHONED",
+          subtitle: "AUXILIARY CONDENSER SIPHON",
+          type: "loot",
+          text: "You connected direct conductive clamps to the battery capacitor. A high-voltage electrostatic wave surged back into your cognitive deck, restoring +35 Mana!"
+        });
       }
 
       // Heavy Blast Door
       else if (cleanAction.includes("pry open valve") || cleanAction.includes("pry open door")) {
         const strVal = nextState.attributes?.str || 10;
         const roll = Math.floor(Math.random() * 20) + 1 + strVal;
+        nextState.completedPOIActions.push("blast_door:pry");
         if (roll >= 23) {
           nextState.experience += 25;
           narrative = `🎯 STR CHECK SUCCESS (Roll: ${roll} vs 23): You grip the mechanical hydraulic valve and twist it with raw hydraulic force! The massive titanium doors hiss open. Vice nods: 'Whoa. Mind your power limits, brute!' Earned +25 XP.`;
           nextState.poi = "Next Section Gate (Transit)";
           setActivePOIView("section_gate");
+          setActivePopup({
+            title: "BLAST GATE VALVE PRYED",
+            subtitle: "STR CHECK SUCCESS",
+            type: "transit",
+            text: `You twisted the heavy hydraulic rotary valve with extreme physical force (Roll: ${roll} vs 23)! The thick blast doors hiss open. Proceeding to the transit gate section. Earned +25 XP.`
+          });
         } else {
           const dmg = 10;
           nextState.hp = Math.max(10, nextState.hp - dmg);
@@ -1065,20 +1686,161 @@ export default function App() {
           narrative = `⚠️ STR CHECK FAILURE (Roll: ${roll} vs 23): Your hydraulic servos scream under the strain! You suffer ${dmg} points of internal system fatigue. Tracker steps up and uses his manual heavy cutter to melt the latch. Earned +10 XP.`;
           nextState.poi = "Next Section Gate (Transit)";
           setActivePOIView("section_gate");
+          setActivePopup({
+            title: "VALVE COUPLING STUCK",
+            subtitle: "STR CHECK FAILURE",
+            type: "check_failure",
+            text: `Your joints failed to budge the rusted hydraulic valve (Roll: ${roll} vs 23), suffering 10 physical fatigue damage. Tracker was forced to use his heavy plasma cutter to bypass the seal. Transited to the Next Section Gate.`
+          });
         }
+      }
+      else if (cleanAction.includes("raid security guard barracks") || cleanAction.includes("guard barracks")) {
+        nextState.inventory.push("Nano Med-Stim (Heal)");
+        nextState.inventory.push("Tactical Flak Armor");
+        nextState.completedPOIActions.push("blast_door:barracks");
+        narrative = `🎒 BARRACKS LOOTED: You slip into an abandoned security guard shift-room. You pry open a steel footlocker and find a fresh Nano Med-Stim (Heal) (+60 HP) and a heavy, high-tech piece of Tactical Flak Armor (+45 starting Combat Shields)!`;
+        setActivePopup({
+          title: "SECURITY BARRACKS LOOTED",
+          subtitle: "GUARD ROOM SEARCH",
+          type: "loot",
+          text: "You broke into the abandoned barracks shift footlocker. You salvaged a Nano Med-Stim (Heal) (+60 HP) and heavy Tactical Flak Armor (+45 starting Combat Shields)!"
+        });
+      }
+      else if (cleanAction.includes("interface with corporate supply bin") || cleanAction.includes("supply bin")) {
+        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 30);
+        nextState.credits += 45;
+        nextState.completedPOIActions.push("blast_door:bin");
+        narrative = `💰 CASH & BATTERIES DISCOVERED: You jack into an encrypted Ares corporate supply locker. The terminal unlocks, dispensing direct battery cells (+30 Mana) and a secure voucher credit-chip worth +45¤!`;
+        setActivePopup({
+          title: "SUPPLY BIN ACCESS OVERRIDDEN",
+          subtitle: "SECURE FILES RAIDED",
+          type: "loot",
+          text: "You sliced the corporate supply cabinet security deck. It dispensed high-capacity battery units (+30 Mana) and secure union credit vouchers worth +45¤!"
+        });
       }
 
       // Next Section Gate (Transit to Map 2)
       else if (cleanAction.includes("proceed to shatter-ridge core")) {
         nextState.district = "shatter_ridge_core";
-        nextState.poi = "Core Array Shatter-Ridge";
+        nextState.poi = "Shatter-Ridge Security Checkpoint";
         setActiveRegionId("shatter_ridge_core");
-        setActivePOIView("main_array_core");
-        nextState.activeQuests = ["Prologue: Core Array Shatter-Ridge - Defend Tracker while he bypasses the primary mainframe lock."];
-        narrative = "🚀 TRANSITING SECTION: You climb through the heavy gate and seal it behind you. A huge cavernous hangar of the Core Array Shatter-Ridge stretches ahead. The glowing blue crystals hum loudly.";
+        setActivePOIView("shatter_ridge_security_post");
+        nextState.activeQuests = ["Prologue: Shatter-Ridge - Infiltrate deeper to disable the defensive cyber-barriers."];
+        narrative = "🚀 TRANSITING DISTRICT: You climb through the heavy gate and seal it behind you. You emerge inside the heavily guarded checkpoint of the Shatter-Ridge Core. Steel security lockers line the barrier corridor.";
+        setActivePopup({
+          title: "SHATTER-RIDGE CORE ACCESS",
+          subtitle: "DISTRICT TRANSLATION",
+          type: "transit",
+          text: "You climb through the heavy gate and seal it behind you. You emerge inside the heavily guarded checkpoint of the Shatter-Ridge Core district. Scan the local defensive barrier console."
+        });
       }
 
       // ---- PROLOGUE MAP 2: SHATTER-RIDGE CORE ----
+      else if (cleanAction.includes("overclock security gate") || cleanAction.includes("overclock gate")) {
+        const intVal = nextState.attributes?.int || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + Math.floor(intVal / 4);
+        nextState.completedPOIActions.push("shatter_ridge_security_post:gate");
+        if (roll >= 16) {
+          nextState.experience += 25;
+          narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 16): You overclock the security gate grid capacitors, causing a localized power short-circuit that melts the security beam nodes! Earned +25 XP.`;
+          setActivePopup({
+            title: "GATE COUPLINGS MELTED",
+            subtitle: "INT CHECK SUCCESS",
+            type: "check_success",
+            text: `You overclocked the security gate capacitors perfectly (Roll: ${roll} vs 16)! A surge of high-voltage sparks melted the defensive beam grids, disabling the alarm tripwires permanently. Earned +25 XP.`
+          });
+        } else {
+          nextState.mana = Math.max(0, nextState.mana - 15);
+          nextState.hp = Math.max(10, nextState.hp - 10);
+          narrative = `❌ INT CHECK FAILURE (Roll: ${roll} vs 16): The security gate console registers unauthorized decryption! An electrostatic feedback shock drains -15 Mana and deals 10 damage before you force-shut the grid down.`;
+          setActivePopup({
+            title: "GATE RESISTOR SHOCK",
+            subtitle: "INT CHECK FAILURE",
+            type: "check_failure",
+            text: `Decryption attempt failed (Roll: ${roll} vs 16)! A feedback wave surged into your cortex, dealing 10 physical shock damage and draining -15 Mana before you successfully shut down the local subnet alarm nodes.`
+          });
+        }
+      }
+      else if (cleanAction.includes("scavenge security chest") || cleanAction.includes("security chest")) {
+        nextState.inventory.push("Exo-Plated Mesh Armor");
+        nextState.inventory.push("Nano Med-Stim (Heal)");
+        nextState.completedPOIActions.push("shatter_ridge_security_post:scavenge");
+        narrative = `🔍 CHEST SECURED: You crack open a steel corporate chest behind the guard barrier. Inside, you salvage Exo-Plated Mesh Armor (+40 Max HP, +30 Shields, +4 Str) and a Nano Med-Stim (Heal) (+60 HP)!`;
+        setActivePopup({
+          title: "SECURITY CHEST UNLOCKED",
+          subtitle: "SCAVENGE SUCCESS",
+          type: "loot",
+          text: "You broke into the steel corporate security locker! Inside, you secured premium Exo-Plated Mesh Armor (+40 Max HP, +30 Shields, +4 Str) and a fresh Nano Med-Stim (Heal) (+60 HP)!"
+        });
+      }
+      else if (cleanAction.includes("pep-talk") || cleanAction.includes("pep talk") || cleanAction.includes("inspiration dialogue")) {
+        setSquadDialogue({ sceneId: "peptalk", nodeId: "start" });
+        setIsLoading(false);
+        return;
+      }
+      else if (cleanAction.includes("move to reactor well") || cleanAction.includes("reactor well")) {
+        nextState.poi = "Shatter-Ridge Reactor Well";
+        setActivePOIView("shatter_ridge_reactor_well");
+        narrative = `🚀 TRANSITING SUB-SECTION: You slip past the deactivated checkpoint and move deeper down the steel catwalk. Eerie turquoise glowing steam rises from the toxic reactor pool.`;
+        setActivePopup({
+          title: "REACTOR WELL ACCESSED",
+          subtitle: "SUB-SECTION TRANSIT",
+          type: "transit",
+          text: "You move past the security checkpoint and approach the Shatter-Ridge Reactor Well. Analyze the cargo lever mechanism and the bio-reactor core."
+        });
+      }
+      else if (cleanAction.includes("pull cargo lever") || cleanAction.includes("cargo lever")) {
+        const strVal = nextState.attributes?.str || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + Math.floor(strVal / 4);
+        nextState.completedPOIActions.push("shatter_ridge_reactor_well:lever");
+        if (roll >= 15) {
+          nextState.experience += 25;
+          nextState.inventory.push("Unstable Plasma Core");
+          narrative = `🎯 STR CHECK SUCCESS (Roll: ${roll} vs 15): You grip the mechanical lever and pull down with hydraulic assist! The crane groans and lowers the cargo crate safely onto the catwalk, allowing you to salvage an Unstable Plasma Core! Earned +25 XP.`;
+          setActivePopup({
+            title: "CARGO CRATE SECURED",
+            subtitle: "STR CHECK SUCCESS",
+            type: "loot",
+            text: `You pulled down the massive hydraulic cargo crane lever (Roll: ${roll} vs 15)! The crane groaned and deposited the container right in front of you. Inside, you secured an Unstable Plasma Core (+10 Max HP, +10 Max Mana, +4 Str, +4 Dex)! Earned +25 XP.`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 15);
+          narrative = `❌ STR CHECK FAILURE (Roll: ${roll} vs 15): You attempt to yank the rusted crane lever, but the heavy gears seize up and snap! Sparks explode in your face, dealing 15 kinetic damage and locking the cargo crate permanently.`;
+          setActivePopup({
+            title: "HYDRAULIC COUPLING FAULT",
+            subtitle: "STR CHECK FAILURE",
+            type: "check_failure",
+            text: `The mechanical lever seized up under your strain (Roll: ${roll} vs 15)! A heavy gear snapped, bursting sparks into your face for 15 kinetic damage and locking the cargo crate permanently.`
+          });
+        }
+      }
+      else if (cleanAction.includes("salvage bio-reactor core") || cleanAction.includes("bio-reactor core") || cleanAction.includes("salvage bio-reactor")) {
+        nextState.inventory.push("Smart-Targeting Visor");
+        nextState.completedPOIActions.push("shatter_ridge_reactor_well:reactor_core");
+        narrative = `🔍 CORE EXTRACTED: You carefully bypass the bio-reactor's external ventilation cooling vents and extract its ocular telemetry analyzer, securing a high-tech Smart-Targeting Visor (+15 Max Mana, +4 Dex, +4 Int)!`;
+        setActivePopup({
+          title: "TELEMETRY VISOR SALVAGED",
+          subtitle: "REACTOR CORE EXTRACTED",
+          type: "loot",
+          text: "You carefully bypassed the bio-cooler and dismantled the reactor's sensor stack! Inside, you secured a premium Smart-Targeting Visor (+15 Max Mana, +4 Dex, +4 Int)!"
+        });
+      }
+      else if (cleanAction.includes("consult squad") || cleanAction.includes("tactics")) {
+        setSquadDialogue({ sceneId: "tactics", nodeId: "start" });
+        setIsLoading(false);
+        return;
+      }
+      else if (cleanAction.includes("proceed to main array") || cleanAction.includes("main array")) {
+        nextState.poi = "Core Array Shatter-Ridge";
+        setActivePOIView("main_array_core");
+        narrative = `🚀 ADVANCING TO CORE: You climb up the vertical structural ladders to the main cavernous hangar. Massive vertical server column rows glow in deep electric blue, hum-charging the central grid mainframe.`;
+        setActivePopup({
+          title: "CORE ARRAY INTERCEPTED",
+          subtitle: "MAIN HANGAR ENTRY",
+          type: "transit",
+          text: "You climb up the metal ladders to the main Core Array cavern. Huge columns hum loudly. Defend Tracker while he bypasses the primary locks!"
+        });
+      }
       else if (cleanAction.includes("defend core array") || cleanAction.includes("triggers combat")) {
         nextState.combatState = {
           enemyName: "3x Autonomous Security Drones",
@@ -1095,28 +1857,14 @@ export default function App() {
 
       // ---- PROLOGUE MAP 3: DATA VAULT SANCTUARY ----
       else if (cleanAction.includes("activate mysterious relic")) {
-        // Debuff player: reduce max HP by 25, set mana to highly unstable
-        nextState.maxHp = Math.max(50, nextState.maxHp - 25);
-        nextState.hp = Math.min(nextState.hp, nextState.maxHp);
-        
-        // Mid-Battle Ability Unlock: Grant the player 2 absolute Mindmancer spells
-        if (nextState.skills) {
-          nextState.skills.mindmancer = 1; // Unlock Mindmancer spells
-        }
-        
-        // Spawn Ambush Encounter: Ares Corporate Enforcers
-        nextState.combatState = {
-          enemyName: "Ares Corporate Enforcers (Ambush)",
-          enemyHp: 160,
-          enemyMaxHp: 160,
-          enemyShields: 20,
-          enemyMaxShields: 20,
-          isActive: true,
-          turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
-        };
-        
-        narrative = "💥 ALARM SIGNAL DETECTED: The moment you touch the floating golden relic, a massive psychic feedback shockwave rips into your neural pathways, reducing your maximum vitals! Your eyes spark with purple energy... the MINDMANCER powers have awakened inside your cortex! Mid-Battle spells unlocked: Mind Hack and Neural Overload!\n\nSuddenly, the vault walls detonate. Ares Corporate Enforcers ambush you!";
-        logType = "combat";
+        setActiveDialogue("relic_awakening");
+        narrative = "💥 NEURAL CONTACT DETECTED: You touch the floating golden relic, triggering a massive psychic feedback surge in your brain cells! Read the high-priority alarm dialogue box above immediately to proceed.";
+        setActivePopup({
+          title: "NEURAL CONTACT REGISTERED",
+          subtitle: "ALTAIC ENERGY SURGE",
+          type: "loot",
+          text: "You touch the cold, floating metallic edges of the golden relic. Instantly, a massive electrostatic wave flashes across your neural cortex, uploading cryptic pre-collapse bio-schemas. Read the high-priority dialog above!"
+        });
       }
 
       // Check Inventory Stash
@@ -1439,6 +2187,8 @@ export default function App() {
     handleExecuteAction("Sell circuitry scrap for credits.");
   };
 
+  const derived = getDerivedStats();
+
   return (
     <div className="min-h-screen bg-[#070913] text-slate-100 font-sans flex flex-col antialiased relative selection:bg-rose-500 selection:text-white p-0 m-0 overflow-x-hidden">
       
@@ -1716,30 +2466,32 @@ export default function App() {
               className="flex flex-col gap-6 w-full animate-fadeIn"
             >
               {/* TACTICAL HUD SWITCH - IMMERSIVE MINIMALIST CONTROL PANEL */}
-              <div className="flex border border-white/10 rounded-xl overflow-hidden bg-slate-950/40 backdrop-blur-md p-1.5 font-mono text-xs w-full max-w-xl mx-auto shadow-lg z-10 relative">
-                <button
-                  onClick={() => setGameTab("exploration")}
-                  className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
-                    gameTab === "exploration"
-                      ? "bg-gradient-to-r from-cyan-950/60 to-cyan-900/40 text-cyan-400 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-                      : "text-slate-400 hover:text-white border border-transparent"
-                  }`}
-                >
-                  <Compass size={13} className={gameTab === "exploration" ? "animate-spin-slow" : ""} />
-                  Missions &amp; Map
-                </button>
-                <button
-                  onClick={() => setGameTab("database")}
-                  className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
-                    gameTab === "database"
-                      ? "bg-gradient-to-r from-rose-950/60 to-rose-900/40 text-rose-400 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.15)]"
-                      : "text-slate-400 hover:text-white border border-transparent"
-                  }`}
-                >
-                  <Database size={13} />
-                  Operative Database
-                </button>
-              </div>
+              {!gameState.combatState?.isActive && (
+                <div className="flex border border-white/10 rounded-xl overflow-hidden bg-slate-950/40 backdrop-blur-md p-1.5 font-mono text-xs w-full max-w-xl mx-auto shadow-lg z-10 relative">
+                  <button
+                    onClick={() => setGameTab("exploration")}
+                    className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
+                      gameTab === "exploration"
+                        ? "bg-gradient-to-r from-cyan-950/60 to-cyan-900/40 text-cyan-400 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
+                        : "text-slate-400 hover:text-white border border-transparent"
+                    }`}
+                  >
+                    <Compass size={13} className={gameTab === "exploration" ? "animate-spin-slow" : ""} />
+                    Missions &amp; Map
+                  </button>
+                  <button
+                    onClick={() => setGameTab("database")}
+                    className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
+                      gameTab === "database"
+                        ? "bg-gradient-to-r from-rose-950/60 to-rose-900/40 text-rose-400 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.15)]"
+                        : "text-slate-400 hover:text-white border border-transparent"
+                    }`}
+                  >
+                    <Database size={13} />
+                    Operative Database
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
               
@@ -1748,85 +2500,88 @@ export default function App() {
                 <div className="lg:col-span-12 flex flex-col gap-6">
 
                 {/* DOCK BAR STATUS GAUGES WITH HIGHEST VISUAL INTEGRITY */}
-                <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4 relative">
-                  
-                  {/* District / Coordinate Node info with travel status indicator */}
-                  <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
-                    <div className="p-2 bg-gradient-to-br from-cyan-900/50 to-slate-900 border border-cyan-500/30 text-cyan-400 rounded-md">
-                      <MapPin size={16} />
-                    </div>
-                    <div className="overflow-hidden font-mono text-left">
-                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">COORDINATE</span>
-                      <p className="text-[11px] font-bold text-white uppercase truncate mt-0.5">
-                        {gameState.poi}
-                      </p>
-                      <span className="text-[9px] text-cyan-400 block uppercase truncate font-semibold">
-                        {REGIONS.find(r => r.id === gameState.district)?.name || "Slums"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* HP GAUGE RACK */}
-                  <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
-                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
-                      <span className="font-bold text-rose-400 flex items-center gap-1 uppercase">
-                        <Heart size={11} className="text-rose-500" /> Vital Core
-                      </span>
-                      <span className="font-bold text-[#f5ebd5]">{gameState.hp} / {gameState.maxHp}</span>
-                    </div>
+                {!gameState.combatState?.isActive && (
+                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4 relative">
                     
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
-                      <div
-                        className="bg-rose-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(239,68,68,0.7)]"
-                        style={{ width: `${Math.max(0, Math.min(100, (gameState.hp / gameState.maxHp) * 100))}%` }}
-                      />
-                    </div>
-                    <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                      {gameState.hp < 35 ? "STATUS: CRITICAL EXHAUSTION" : "CORES: OPTIMAL PARAMETER"}
-                    </span>
-                  </div>
-
-                  {/* MP GAUGE RACK */}
-                  <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
-                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
-                      <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase">
-                        <Zap size={11} className="text-cyan-400" /> Ether Stream
-                      </span>
-                      <span className="font-bold text-[#f5ebd5]">{gameState.mana} / {gameState.maxMana}</span>
-                    </div>
-                    
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
-                      <div
-                        className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.7)]"
-                        style={{ width: `${Math.max(0, Math.min(100, (gameState.mana / gameState.maxMana) * 100))}%` }}
-                      />
-                    </div>
-                    <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                      COGNITIVE CHIP CALIBRATED
-                    </span>
-                  </div>
-
-                  {/* Credits & level widget details */}
-                  <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex justify-between items-center">
-                    <div className="text-left">
-                      <span className="text-[8px] font-mono text-slate-500 block uppercase font-bold tracking-wider">BALANCE</span>
-                      <p className="text-sm font-mono font-black text-amber-400 mt-0.5 leading-none">
-                        {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
-                      </p>
-                    </div>
-                    <div className="text-right font-mono">
-                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">SKILLS NODE</span>
-                      <div className="flex items-center justify-end gap-1.5 mt-0.5 text-xs font-bold leading-none">
-                        <span className="text-[#efe8d4]">LVL {gameState.level ?? 1}</span>
-                        <span className="text-slate-500 text-[10px]">({gameState.experience ?? 0}/100)</span>
+                    {/* District / Coordinate Node info with travel status indicator */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
+                      <div className="p-2 bg-gradient-to-br from-cyan-900/50 to-slate-900 border border-cyan-500/30 text-cyan-400 rounded-md">
+                        <MapPin size={16} />
+                      </div>
+                      <div className="overflow-hidden font-mono text-left">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">COORDINATE</span>
+                        <p className="text-[11px] font-bold text-white uppercase truncate mt-0.5">
+                          {gameState.poi}
+                        </p>
+                        <span className="text-[9px] text-cyan-400 block uppercase truncate font-semibold">
+                          {REGIONS.find(r => r.id === gameState.district)?.name || "Slums"}
+                        </span>
                       </div>
                     </div>
-                  </div>
 
-                </div>
+                    {/* HP GAUGE RACK */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
+                        <span className="font-bold text-rose-400 flex items-center gap-1 uppercase">
+                          <Heart size={11} className="text-rose-500" /> Vital Core
+                        </span>
+                        <span className="font-bold text-[#f5ebd5]">{gameState.hp} / {derived.maxHp}</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
+                        <div
+                          className="bg-rose-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(239,68,68,0.7)]"
+                          style={{ width: `${Math.max(0, Math.min(100, (gameState.hp / derived.maxHp) * 100))}%` }}
+                        />
+                      </div>
+                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
+                        {gameState.hp < 35 ? "STATUS: CRITICAL EXHAUSTION" : "CORES: OPTIMAL PARAMETER"}
+                      </span>
+                    </div>
+
+                    {/* MP GAUGE RACK */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
+                        <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase">
+                          <Zap size={11} className="text-cyan-400" /> Ether Stream
+                        </span>
+                        <span className="font-bold text-[#f5ebd5]">{gameState.mana} / {derived.maxMana}</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
+                        <div
+                          className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.7)]"
+                          style={{ width: `${Math.max(0, Math.min(100, (gameState.mana / derived.maxMana) * 100))}%` }}
+                        />
+                      </div>
+                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
+                        COGNITIVE CHIP CALIBRATED
+                      </span>
+                    </div>
+
+                    {/* Credits & level widget details */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex justify-between items-center">
+                      <div className="text-left">
+                        <span className="text-[8px] font-mono text-slate-500 block uppercase font-bold tracking-wider">BALANCE</span>
+                        <p className="text-sm font-mono font-black text-amber-400 mt-0.5 leading-none">
+                          {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
+                        </p>
+                      </div>
+                      <div className="text-right font-mono">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">SKILLS NODE</span>
+                        <div className="flex items-center justify-end gap-1.5 mt-0.5 text-xs font-bold leading-none">
+                          <span className="text-[#efe8d4]">LVL {gameState.level ?? 1}</span>
+                          <span className="text-slate-500 text-[10px]">({gameState.experience ?? 0}/100)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
 
                 {/* THE HIGHEST CRAFTED CENTRAL SCREEN MAP OR POI BLUEPRINT SCENE */}
-                <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 flex flex-col gap-4 box-glow-cyan">
+                {!gameState.combatState?.isActive && (
+                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 flex flex-col gap-4 box-glow-cyan">
                   
                   {/* Header Selector Switch for holographic routing */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
@@ -1977,16 +2732,16 @@ export default function App() {
                         initial={{ opacity: 0, scale: 0.99 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.99 }}
-                        className="grid grid-cols-1 md:grid-cols-12 gap-5 bg-slate-950/80 border border-cyan-500/20 rounded-xl p-4 min-h-[280px] md:min-h-[320px] shadow-[inset_0_0_30px_rgba(34,211,238,0.03)]"
+                        className="grid grid-cols-1 lg:grid-cols-12 gap-7 bg-slate-950/95 border border-cyan-500/30 rounded-2xl p-6 md:p-8 min-h-[420px] lg:min-h-[460px] shadow-[0_0_35px_rgba(6,182,212,0.05),inset_0_0_40px_rgba(34,211,238,0.05)]"
                       >
                         {/* Left half: POI scenery illustration frame */}
-                        <div className="md:col-span-5 flex flex-col justify-between relative rounded-lg overflow-hidden border border-white/10 group min-h-[140px]">
+                        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[220px] lg:min-h-[360px]">
                           {/* Main Close-up Illustrated Photo of local environment */}
                           <img
                             src={MAP_POIS.find(p => p.id === activePOIView)?.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400"}
                             alt={gameState.poi}
                             referrerPolicy="no-referrer"
-                            className="absolute inset-0 w-full h-full object-cover select-none filter brightness-90 saturate-125"
+                            className="absolute inset-0 w-full h-full object-cover select-none filter brightness-90 saturate-125 transition-all duration-700 group-hover:scale-105"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-slate-950/80 z-10" />
 
@@ -1995,38 +2750,224 @@ export default function App() {
                           <div className="absolute inset-x-0 top-0 h-full opacity-10 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:10px_10px] z-10" />
 
                           {/* Top Tag info inside image */}
-                          <div className="p-2 z-10 flex justify-between items-center bg-slate-950/80 backdrop-blur-sm border-b border-white/5 uppercase font-mono text-[9px] text-slate-400">
+                          <div className="p-3.5 z-10 flex justify-between items-center bg-slate-950/80 backdrop-blur-sm border-b border-white/5 uppercase font-mono text-[9px] text-slate-400">
                             <span>GRID LOCALITY FILE</span>
-                            <span className="text-cyan-400">STATUS: VISITED</span>
+                            <span className="text-cyan-400 font-bold">STATUS: VISITED</span>
                           </div>
 
                           {/* Lower scene metadata over image overlay */}
-                          <div className="p-3 z-10 font-mono">
-                            <span className="text-cyan-400 text-3xs tracking-wider uppercase font-extrabold flex items-center gap-1">
+                          <div className="p-4.5 z-10 font-mono">
+                            <span className="text-cyan-400 text-3xs tracking-wider uppercase font-extrabold flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                              NODE AREA SCAN
+                              NODE AREA SCAN COMPLETE
                             </span>
-                            <p className="text-xs font-bold font-display text-white mt-1 uppercase">
+                            <p className="text-sm font-black font-display text-white mt-1 uppercase tracking-wide">
                               {MAP_POIS.find(p => p.id === activePOIView)?.name.replace("Main Headquarters ", "")}
                             </p>
                           </div>
                         </div>
 
                         {/* Right half: Detailed text and local operational interaction terminal */}
-                        <div className="md:col-span-7 flex flex-col justify-between space-y-4">
-                          <div className="space-y-2">
-                            <h4 className="text-3xs font-mono uppercase tracking-[0.15em] text-cyan-400 font-bold">
+                        <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
+                          <div className="space-y-3">
+                            <h4 className="text-3xs font-mono uppercase tracking-[0.15em] text-cyan-400 font-black">
                               LOCAL DESCRIPTOR CONSOLE
                             </h4>
-                            <p className="text-slate-300 text-xs font-sans leading-relaxed">
-                              {MAP_POIS.find(p => p.id === activePOIView)?.description}
+                            <p className="text-slate-200 text-xs sm:text-sm font-sans leading-relaxed text-left font-medium">
+                              {getPOIDescription(activePOIView)}
                             </p>
                           </div>
 
                           {/* Dynamic NPC Dialog or Scene Buttons depending on dialogue engagement */}
-                          <div className="border-t border-white/5 pt-3">
-                            {activeDialogue ? (
-                              activeDialogue === "post_combat_tracker" ? (
+                          <div className="border-t border-white/5 pt-4">
+                            {squadDialogue ? (
+                              (() => {
+                                const node = SQUAD_DIALOGUES[squadDialogue.sceneId]?.[squadDialogue.nodeId];
+                                if (!node) return null;
+                                return (
+                                  <div className="bg-slate-950/95 border border-cyan-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow text-left">
+                                    <div className="flex justify-between items-center border-b border-cyan-500/20 pb-2">
+                                      <span className="text-cyan-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                        <Compass size={14} className="text-cyan-500" /> SQUAD TRANSMISSION CONDUIT
+                                      </span>
+                                      <span className="text-3xs text-cyan-500 font-bold bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/20 uppercase">
+                                        {squadDialogue.sceneId} interaction
+                                      </span>
+                                    </div>
+                                    
+                                    <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
+                                      <div className="relative flex-shrink-0">
+                                        <img
+                                          src={node.portrait}
+                                          alt={node.speakerName}
+                                          referrerPolicy="no-referrer"
+                                          className="w-16 h-16 object-cover rounded-xl border-2 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                                        />
+                                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950" />
+                                      </div>
+                                      <div className="flex-1 space-y-2">
+                                        <div>
+                                          <h4 className="text-sm font-extrabold text-cyan-300">{node.speakerName}</h4>
+                                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{node.speakerRole}</p>
+                                        </div>
+                                        <p className="text-slate-200 text-xs sm:text-sm leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-white/5">
+                                          "{node.text}"
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-2 mt-2">
+                                      {node.choices.map((choice, cIdx) => (
+                                        <button
+                                          key={cIdx}
+                                          onClick={() => {
+                                            if (choice.effect && gameState) {
+                                              let updated = choice.effect({ ...gameState });
+                                              setGameState(updated);
+                                            }
+                                            if (choice.nodeId !== undefined) {
+                                              if (choice.nodeId === null) {
+                                                setSquadDialogue(null);
+                                                if (gameState) {
+                                                  let next = { ...gameState };
+                                                  if (!next.completedPOIActions) next.completedPOIActions = [];
+                                                  if (squadDialogue.sceneId === "banter") {
+                                                    next.completedPOIActions.push("ventilation_shaft:talk_to_vice_tracker");
+                                                    next.completedPOIActions.push("blast_door:banter");
+                                                  } else if (squadDialogue.sceneId === "peptalk") {
+                                                    next.completedPOIActions.push("shatter_ridge_security_post:peptalk");
+                                                  } else if (squadDialogue.sceneId === "tactics") {
+                                                    next.completedPOIActions.push("shatter_ridge_reactor_well:tactics");
+                                                  }
+                                                  setGameState(next);
+                                                }
+                                              } else {
+                                                setSquadDialogue({
+                                                  sceneId: squadDialogue.sceneId,
+                                                  nodeId: choice.nodeId
+                                                });
+                                              }
+                                            }
+                                          }}
+                                          className="text-left w-full px-4 py-3 rounded-lg border border-cyan-500/20 bg-cyan-950/20 hover:bg-cyan-950/40 hover:border-cyan-400 text-cyan-100 font-mono text-xs transition-all flex items-center justify-between cursor-pointer group"
+                                        >
+                                          <span>&gt; {choice.text}</span>
+                                          <span className="text-[10px] text-cyan-500/60 group-hover:text-cyan-300 font-bold">SELECT</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })()
+                            ) : activeDialogue ? (
+                              activeDialogue === "relic_awakening" ? (
+                                <div className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink">
+                                  <div className="flex justify-between items-center border-b border-purple-500/20 pb-2">
+                                    <span className="text-purple-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                      <Zap size={14} className="text-purple-500" /> NEURAL SYSTEM SHOCKWAVE
+                                    </span>
+                                    <span className="text-3xs text-purple-500 font-bold bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 uppercase">MINDMANCER TRANSFORMATION</span>
+                                  </div>
+                                  
+                                  <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
+                                    <div className="relative">
+                                      <div className="w-16 h-16 rounded-full bg-purple-500/20 absolute inset-0 animate-ping" />
+                                      <img
+                                        src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=200"
+                                        alt="Relic portrait"
+                                        referrerPolicy="no-referrer"
+                                        className="w-16 h-16 object-cover rounded-xl border-2 border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.5)] flex-shrink-0"
+                                      />
+                                    </div>
+                                    <div className="text-[11px] space-y-2 text-slate-300 flex-1">
+                                      <p className="text-purple-300 font-black uppercase text-xs">MINDMANCER UNLOCK SEQUENCE</p>
+                                      <p className="text-slate-100 font-sans text-xs leading-relaxed">
+                                        The moment your fingers brush against the warm, floating golden relic, a massive, brilliant pulse of purple light flashes!
+                                        <br /><br />
+                                        A psychic feedback shockwave rips into your neural pathways, rewriting your cortex cells. Your vision turns deep violet as the <span className="text-purple-400 font-bold">MINDMANCER powers awaken</span>!
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {/* Vice dialog */}
+                                    <div className="bg-rose-950/20 border border-rose-500/30 p-3 rounded-lg flex gap-2.5">
+                                      <span className="text-xl">🔫</span>
+                                      <div className="text-[10px] text-left">
+                                        <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                        <span className="text-4xs text-slate-500 block mt-0.5 uppercase">Companion</span>
+                                        <p className="text-slate-300 font-sans text-3xs leading-normal italic mt-1">
+                                          "Whoa, kid! Your eyes... they are glowing purple! Mind your levels, something is breaching the containment walls!"
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Tracker dialog */}
+                                    <div className="bg-amber-950/20 border border-amber-500/30 p-3 rounded-lg flex gap-2.5">
+                                      <span className="text-xl">📟</span>
+                                      <div className="text-[10px] text-left">
+                                        <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                        <span className="text-4xs text-slate-500 block mt-0.5 uppercase">Companion</span>
+                                        <p className="text-slate-300 font-sans text-3xs leading-normal italic mt-1">
+                                          "Multiple corporate signatures dropping in from the ventilation ducts! Ares Enforcers have found us! Settle your brain and draw your steel!"
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="bg-slate-900/60 border border-red-500/20 p-2.5 rounded text-3xs text-slate-400 font-sans leading-relaxed text-left">
+                                    ⚠️ <span className="text-red-400 font-bold">AMBUSH ALERT:</span> Ares Corporate Enforcers have blown the security barrier and are surrounding the altar with weapons drawn. Wield your new Mindmancer powers of <span className="text-purple-400 font-bold">Mind Hack</span> and <span className="text-purple-400 font-bold">Neural Overload</span> to defend your squad!
+                                  </div>
+
+                                  <div className="flex justify-center pt-1.5">
+                                    <button
+                                      onClick={() => {
+                                        if (!gameState) return;
+                                        let nextState = { ...gameState };
+                                        
+                                        // Debuff player: reduce max HP by 25, set mana to highly unstable
+                                        nextState.maxHp = Math.max(50, nextState.maxHp - 25);
+                                        nextState.hp = Math.min(nextState.hp, nextState.maxHp);
+                                        
+                                        // Mid-Battle Ability Unlock: Grant the player 2 absolute Mindmancer spells
+                                        if (nextState.skills) {
+                                          nextState.skills.mindmancer = 1; // Unlock Mindmancer spells
+                                        }
+                                        
+                                        // Spawn Ambush Encounter: Ares Corporate Enforcers
+                                        nextState.combatState = {
+                                          enemyName: "Ares Corporate Enforcers (Ambush)",
+                                          enemyHp: 160,
+                                          enemyMaxHp: 160,
+                                          enemyShields: 20,
+                                          enemyMaxShields: 20,
+                                          isActive: true,
+                                          turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
+                                        };
+                                        
+                                        setActiveDialogue(null);
+                                        setGameState(nextState);
+                                        
+                                        setLogs(prev => [
+                                          ...prev,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                            text: `💥 NEURAL AWAKENING & AMBUSH: Your neural structures are rewritten with raw psychic energy! Mindmancer spells unlocked: Mind Hack & Neural Overload.\n\nAres Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
+                                            type: "combat",
+                                            district: nextState.district,
+                                            poi: nextState.poi
+                                          }
+                                        ]);
+                                        triggerToast("COMBAT START: AWAKENING AMBUSH");
+                                      }}
+                                      className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                                    >
+                                      ⚡ [Brace for Impact] Fight Ares Enforcers
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : activeDialogue === "post_combat_tracker" ? (
                                 <div className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl">
                                   <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
                                     <span className="text-red-500 font-extrabold text-[11px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
@@ -2437,6 +3378,12 @@ export default function App() {
                                           setActivePOIView("relic_altar");
                                           nextState.inventory.push("Ares Data Crystal");
                                           nextState.experience += 50;
+                                          setActivePopup({
+                                            title: "DATABASE COPIED",
+                                            subtitle: "HEX DECRYPTION SUCCESS",
+                                            type: "loot",
+                                            text: "You successfully bypassed the Ares mainframe and extracted the Ares Data Crystal! The secure lockpins holding the golden relic chamber have fully retracted. Access the altar immediately."
+                                          });
                                           setGameState(nextState);
                                           setHackingPuzzle(null);
                                           
@@ -2472,22 +3419,30 @@ export default function App() {
                                     {(activePOIView === "ventilation_shaft" && ventFailed
                                       ? ["Force Fan Blades (STR Check)", "Trigger EMP Burst (EMP Explosion!)", "Hack Fan Console (INT Check)"]
                                       : (MAP_POIS.find(p => p.id === activePOIView)?.buttons || [])
-                                    ).map((action, idx) => (
-                                      <button
-                                        key={idx}
-                                        onClick={() => handleExecuteAction(action)}
-                                        className={`text-left px-3.5 py-2.5 rounded-lg border font-mono text-xs transition-all flex items-center justify-between cursor-pointer group ${
-                                          activePOIView === "ventilation_shaft" && ventFailed
-                                            ? "border-red-500/30 bg-red-950/40 hover:bg-red-900/50 hover:border-red-500/60 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
-                                            : "border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white"
-                                        }`}
-                                      >
-                                        <span className="truncate group-hover:text-cyan-300">{action}</span>
-                                        <span className="text-[9px] text-slate-600 font-bold border border-white/5 px-1 rounded block flex-shrink-0 ml-2">
-                                          {idx + 1}
-                                        </span>
-                                      </button>
-                                    ))}
+                                    ).map((action, idx) => {
+                                      const isCompleted = isActionCompleted(activePOIView, action);
+                                      return (
+                                        <button
+                                          key={idx}
+                                          disabled={isCompleted}
+                                          onClick={() => handleExecuteAction(action)}
+                                          className={`text-left px-3.5 py-2.5 rounded-lg border font-mono text-xs transition-all flex items-center justify-between cursor-pointer group ${
+                                            isCompleted
+                                              ? "border-slate-950 bg-slate-950/40 text-slate-500 cursor-not-allowed opacity-50"
+                                              : activePOIView === "ventilation_shaft" && ventFailed
+                                                ? "border-red-500/30 bg-red-950/40 hover:bg-red-900/50 hover:border-red-500/60 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
+                                                : "border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white"
+                                          }`}
+                                        >
+                                          <span className="truncate group-hover:text-cyan-300">
+                                            {action} {isCompleted && " ✓ [SECURED]"}
+                                          </span>
+                                          <span className="text-[9px] text-slate-600 font-bold border border-white/5 px-1 rounded block flex-shrink-0 ml-2">
+                                            {isCompleted ? "✓" : idx + 1}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )
@@ -2515,6 +3470,7 @@ export default function App() {
                   </AnimatePresence>
 
                 </div>
+                )}
 
                 {/* ADVANCED ELECTRONIC TACTICAL COMBAT HUD */}
                 <AnimatePresence>
@@ -2598,9 +3554,18 @@ export default function App() {
 
                                 // Targeting Calculation
                                 let targetable = false;
-                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && unit && unit.team === "enemy" && gridCombat.selectedAction === "attack") {
-                                  const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
-                                  targetable = d <= activeActor.range;
+                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && unit && unit.team === "enemy") {
+                                  if (gridCombat.selectedAction === "meleeAtk") {
+                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                    targetable = d === 1;
+                                  } else if (gridCombat.selectedAction === "rangedAtk") {
+                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                    const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
+                                    targetable = d > 0 && d <= maxRange;
+                                  } else if (gridCombat.selectedAction === "attack") {
+                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                    targetable = d <= activeActor.range;
+                                  }
                                 }
 
                                 return (
@@ -2633,8 +3598,21 @@ export default function App() {
                                       }
                                       
                                       // Execute attack
-                                      if (targetable && unit && gridCombat.selectedAction === "attack") {
-                                        const rollDmg = activeActor.damage + Math.floor(Math.random() * 7) - 3;
+                                      if (targetable && unit && (gridCombat.selectedAction === "attack" || gridCombat.selectedAction === "meleeAtk" || gridCombat.selectedAction === "rangedAtk")) {
+                                        let finalDamage = activeActor.damage;
+                                        let weaponUsedName = "unarmed strike";
+
+                                        if (gridCombat.selectedAction === "meleeAtk") {
+                                          const derived = getDerivedStats();
+                                          weaponUsedName = gameState?.equipment?.meleeWeapon || "standard cyber-fists";
+                                          finalDamage = 15 + Math.floor((gameState?.attributes?.str || 10) * 1.2) + derived.meleeAtk;
+                                        } else if (gridCombat.selectedAction === "rangedAtk") {
+                                          const derived = getDerivedStats();
+                                          weaponUsedName = gameState?.equipment?.rangedWeapon || "integrated sidearm";
+                                          finalDamage = 12 + Math.floor((gameState?.attributes?.dex || 10) * 1.2) + derived.rangeAtk;
+                                        }
+
+                                        const rollDmg = finalDamage + Math.floor(Math.random() * 7) - 3;
                                         const updated = gridCombat.combatants.map(c => {
                                           if (c.id === unit.id) {
                                             let finalHp = c.hp;
@@ -2665,7 +3643,7 @@ export default function App() {
                                         setGridCombat(prev => prev ? {
                                           ...prev,
                                           combatants: updated,
-                                          turnLog: `⚔️ ATTACK REPORT: ${activeActor.name} engaged ${unit.name} with weapon array! ${enemyRemainingLog}`
+                                          turnLog: `⚔️ ATTACK REPORT: ${activeActor.name} engaged ${unit.name} using ${weaponUsedName}! ${enemyRemainingLog}`
                                         } : null);
 
                                         // Sync health back to primary gameState if the primary enemy or player was damaged
@@ -2782,7 +3760,8 @@ export default function App() {
                       </div>
 
                       {/* Combat Status Feed Log */}
-                      <div className="bg-slate-950 border border-rose-500/10 p-2.5 rounded-lg text-rose-300 font-mono text-[10px] text-center italic tracking-wider">
+                      <div className="bg-slate-950/95 border border-rose-500/30 p-4 rounded-xl text-amber-200 font-mono text-xs sm:text-sm md:text-base text-center font-bold tracking-wide shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                        <span className="text-rose-500 font-black mr-2">SYS LOG:</span>
                         {gridCombat.turnLog}
                       </div>
 
@@ -2804,18 +3783,31 @@ export default function App() {
                               🚀 Move Position [AP: 1]
                             </button>
                             
-                            <button
-                              onClick={() => {
-                                setGridCombat(prev => prev ? { ...prev, selectedAction: "attack" } : null);
-                              }}
-                              className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
-                                gridCombat.selectedAction === "attack"
-                                  ? "bg-rose-500 text-white border-rose-400 font-extrabold shadow-[0_0_10px_rgba(244,63,94,0.3)]"
-                                  : "bg-slate-900 border-white/5 text-rose-400 hover:bg-slate-800"
-                              }`}
-                            >
-                              ⚔️ Strike / Shoot [AP: 1]
-                            </button>
+                             <button
+                               onClick={() => {
+                                 setGridCombat(prev => prev ? { ...prev, selectedAction: "meleeAtk" } : null);
+                               }}
+                               className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                 gridCombat.selectedAction === "meleeAtk"
+                                   ? "bg-red-500 text-white border-red-400 font-extrabold shadow-[0_0_10px_rgba(239,68,68,0.3)]"
+                                   : "bg-slate-900 border-white/5 text-red-400 hover:bg-slate-800"
+                               }`}
+                             >
+                               🗡️ Melee Strike [AP: 1]
+                             </button>
+
+                             <button
+                               onClick={() => {
+                                 setGridCombat(prev => prev ? { ...prev, selectedAction: "rangedAtk" } : null);
+                               }}
+                               className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                 gridCombat.selectedAction === "rangedAtk"
+                                   ? "bg-orange-500 text-white border-orange-400 font-extrabold shadow-[0_0_10px_rgba(249,115,22,0.3)]"
+                                   : "bg-slate-900 border-white/5 text-orange-400 hover:bg-slate-800"
+                               }`}
+                             >
+                               🔫 Ranged Shoot [AP: 1]
+                             </button>
 
                             {/* Ether Spell discharge */}
                             <button
@@ -3336,54 +4328,56 @@ export default function App() {
 
                 {/* THE HISTORIC RPG NARRATIVE CORE TERMINAL (LOGS CONSOLE) */}
                 {/* DE-CLUTTERED COLLAPSIBLE CYBERDECK TRANSMISSION FEED */}
-                <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col gap-3">
-                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                    <span className="font-mono text-3xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                      <Terminal size={14} className="text-cyan-400 animate-pulse" />
-                      Cyberdeck Console Transmission Feed
-                    </span>
-                    <button
-                      onClick={() => setExpandLogs(!expandLogs)}
-                      className="text-4xs font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/20 px-2 py-1 rounded bg-slate-950/40 cursor-pointer transition-all hover:bg-slate-900 font-black uppercase"
-                    >
-                      {expandLogs ? "[-] COLLAPSE BACKLOG" : "[+] EXPAND HISTORY"}
-                    </button>
-                  </div>
+                {!gameState.combatState?.isActive && (
+                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col gap-3">
+                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                      <span className="font-mono text-3xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Terminal size={14} className="text-cyan-400 animate-pulse" />
+                        Cyberdeck Console Transmission Feed
+                      </span>
+                      <button
+                        onClick={() => setExpandLogs(!expandLogs)}
+                        className="text-4xs font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/20 px-2 py-1 rounded bg-slate-950/40 cursor-pointer transition-all hover:bg-slate-900 font-black uppercase"
+                      >
+                        {expandLogs ? "[-] COLLAPSE BACKLOG" : "[+] EXPAND HISTORY"}
+                      </button>
+                    </div>
 
-                  {/* Narrative Scroll panel block */}
-                  <div 
-                    className={`bg-slate-950/60 rounded-xl p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-3.5 border border-white/5 relative box-glow-cyan transition-all duration-300 ${
-                      expandLogs ? "h-[260px]" : "h-[90px]"
-                    }`}
-                  >
-                    {(expandLogs ? logs : logs.slice(-2)).map((log) => (
-                      <div key={log.id} className="text-left transition-all">
-                        <div className="flex items-center gap-2 text-[9px] text-slate-500 tracking-wider mb-0.5 leading-none font-bold">
-                          <span>[{log.timestamp}]</span>
-                          {log.poi && <span className="text-cyan-500/75 uppercase">@{log.poi.replace("Main Headquarters ", "")}</span>}
-                          
-                          {log.type === "action" && <span className="bg-cyan-950 text-cyan-400 border border-cyan-500/10 px-1 py-0.2 rounded text-[8px] uppercase">OPERATIVE</span>}
-                          {log.type === "combat" && <span className="bg-rose-950 text-rose-400 border border-rose-500/10 px-1 py-0.2 rounded text-[8px] uppercase">TACTICAL</span>}
-                          {log.type === "system" && <span className="bg-slate-900 text-slate-300 border border-white/10 px-1 py-0.2 rounded text-[8px] uppercase">SYSTEM</span>}
+                    {/* Narrative Scroll panel block */}
+                    <div 
+                      className={`bg-slate-950/60 rounded-xl p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-3.5 border border-white/5 relative box-glow-cyan transition-all duration-300 ${
+                        expandLogs ? "h-[260px]" : "h-[90px]"
+                      }`}
+                    >
+                      {(expandLogs ? logs : logs.slice(-2)).map((log) => (
+                        <div key={log.id} className="text-left transition-all">
+                          <div className="flex items-center gap-2 text-[9px] text-slate-500 tracking-wider mb-0.5 leading-none font-bold">
+                            <span>[{log.timestamp}]</span>
+                            {log.poi && <span className="text-cyan-500/75 uppercase">@{log.poi.replace("Main Headquarters ", "")}</span>}
+                            
+                            {log.type === "action" && <span className="bg-cyan-950 text-cyan-400 border border-cyan-500/10 px-1 py-0.2 rounded text-[8px] uppercase">OPERATIVE</span>}
+                            {log.type === "combat" && <span className="bg-rose-950 text-rose-400 border border-rose-500/10 px-1 py-0.2 rounded text-[8px] uppercase">TACTICAL</span>}
+                            {log.type === "system" && <span className="bg-slate-900 text-slate-300 border border-white/10 px-1 py-0.2 rounded text-[8px] uppercase">SYSTEM</span>}
+                          </div>
+                          <p
+                            className={`whitespace-pre-line text-xs tracking-wide leading-relaxed pl-1 pl-1 ${
+                              log.type === "action"
+                                ? "text-cyan-300 font-bold"
+                                : log.type === "combat"
+                                  ? "text-rose-400"
+                                  : log.type === "system"
+                                    ? "text-amber-200"
+                                    : "text-slate-300 font-sans leading-relaxed text-2xs"
+                            }`}
+                          >
+                            {log.text}
+                          </p>
                         </div>
-                        <p
-                          className={`whitespace-pre-line text-xs tracking-wide leading-relaxed pl-1 ${
-                            log.type === "action"
-                              ? "text-cyan-300 font-bold"
-                              : log.type === "combat"
-                                ? "text-rose-400"
-                                : log.type === "system"
-                                  ? "text-amber-200"
-                                  : "text-slate-300 font-sans leading-relaxed text-2xs"
-                          }`}
-                        >
-                          {log.text}
-                        </p>
-                      </div>
-                    ))}
-                    <div ref={logsEndRef} />
+                      ))}
+                      <div ref={logsEndRef} />
+                    </div>
                   </div>
-                </div>
+                )}
 
               </div>
             )}
@@ -3414,12 +4408,12 @@ export default function App() {
                         <div className="space-y-1">
                           <div className="flex justify-between items-center text-3xs">
                             <span className="text-rose-400 font-extrabold uppercase flex items-center gap-1"><Heart size={10} /> INTEGRITY STATUS (HP)</span>
-                            <span className="text-white font-bold">{gameState.hp} / {gameState.maxHp}</span>
+                            <span className="text-white font-bold">{gameState.hp} / {derived.maxHp}</span>
                           </div>
                           <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
                             <div 
                               className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)] transition-all duration-300"
-                              style={{ width: `${Math.min(100, (gameState.hp / gameState.maxHp) * 100)}%` }}
+                              style={{ width: `${Math.min(100, (gameState.hp / derived.maxHp) * 100)}%` }}
                             />
                           </div>
                         </div>
@@ -3428,12 +4422,12 @@ export default function App() {
                         <div className="space-y-1">
                           <div className="flex justify-between items-center text-3xs">
                             <span className="text-cyan-400 font-extrabold uppercase flex items-center gap-1"><Zap size={10} /> ENERGY COGNITION (MP)</span>
-                            <span className="text-white font-bold">{gameState.mana} / {gameState.maxMana}</span>
+                            <span className="text-white font-bold">{gameState.mana} / {derived.maxMana}</span>
                           </div>
                           <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
                             <div 
                               className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-all duration-300"
-                              style={{ width: `${Math.min(100, (gameState.mana / gameState.maxMana) * 100)}%` }}
+                              style={{ width: `${Math.min(100, (gameState.mana / derived.maxMana) * 100)}%` }}
                             />
                           </div>
                         </div>
@@ -3478,23 +4472,23 @@ export default function App() {
                       <div className="grid grid-cols-5 gap-2 text-center">
                         <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
                           <span className="text-[8px] text-slate-500 block uppercase font-bold">STR</span>
-                          <span className="text-xs text-white font-black">{gameState.attributes?.str ?? 10}</span>
+                          <span className="text-xs text-white font-black">{derived.str}</span>
                         </div>
                         <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
                           <span className="text-[8px] text-slate-500 block uppercase font-bold">DEX</span>
-                          <span className="text-xs text-white font-black">{gameState.attributes?.dex ?? 10}</span>
+                          <span className="text-xs text-white font-black">{derived.dex}</span>
                         </div>
                         <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
                           <span className="text-[8px] text-slate-500 block uppercase font-bold">INT</span>
-                          <span className="text-xs text-white font-black">{gameState.attributes?.int ?? 10}</span>
+                          <span className="text-xs text-white font-black">{derived.int}</span>
                         </div>
                         <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
                           <span className="text-[8px] text-slate-500 block uppercase font-bold">WILL</span>
-                          <span className="text-xs text-white font-black">{gameState.attributes?.will ?? 10}</span>
+                          <span className="text-xs text-white font-black">{derived.will}</span>
                         </div>
                         <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
                           <span className="text-[8px] text-slate-500 block uppercase font-bold">ETH</span>
-                          <span className="text-xs text-cyan-400 font-black">{gameState.attributes?.eth ?? 10}</span>
+                          <span className="text-xs text-cyan-400 font-black">{derived.eth}</span>
                         </div>
                       </div>
 
@@ -3532,38 +4526,37 @@ export default function App() {
                         <Shield size={12} className="text-cyan-400" /> Active Hardware Uplinks
                       </span>
                       <div className="space-y-2 text-3xs">
-                        {gameState.inventory.includes("Apex Mantis electro-blade") ? (
-                          <div className="p-2.5 bg-cyan-950/20 border border-cyan-400/20 rounded-lg flex items-center justify-between">
-                            <span className="font-bold text-cyan-300 uppercase">Apex Mantis electro-blade</span>
-                            <span className="text-cyan-400 font-black">[+25 MELEE ATK]</span>
-                          </div>
-                        ) : (
-                          <div className="p-2.5 bg-slate-950/40 border border-white/5 rounded-lg text-slate-500">
-                            Melee Slot: Standard alloy fist [0%]
-                          </div>
-                        )}
+                        {(["meleeWeapon", "rangedWeapon", "armor", "headpiece", "trinket"] as const).map((slot) => {
+                          const equippedItem = gameState.equipment?.[slot];
+                          const details = equippedItem ? ITEM_METADATA[equippedItem] : null;
+                          const slotLabel = slot === "meleeWeapon" ? "MELEE WEAPON" : slot === "rangedWeapon" ? "RANGED WEAPON" : slot;
 
-                        {gameState.inventory.includes("Technical Signal Core") ? (
-                          <div className="p-2.5 bg-indigo-950/20 border border-indigo-400/20 rounded-lg flex items-center justify-between">
-                            <span className="font-bold text-indigo-300 uppercase">Technical Signal Core</span>
-                            <span className="text-indigo-400 font-black">[SATELLITE JAM]</span>
-                          </div>
-                        ) : (
-                          <div className="p-2.5 bg-slate-950/40 border border-white/5 rounded-lg text-slate-500">
-                            Aux Slot: Decrypted network visor
-                          </div>
-                        )}
-
-                        {gameState.inventory.includes("Charged Ley-Matrix") ? (
-                          <div className="p-2.5 bg-rose-950/20 border border-rose-400/20 rounded-lg flex items-center justify-between">
-                            <span className="font-bold text-rose-300 uppercase">Charged Ley-Matrix</span>
-                            <span className="text-rose-400 font-black">[+30% MAGIC COMP]</span>
-                          </div>
-                        ) : (
-                          <div className="p-2.5 bg-slate-950/40 border border-white/5 rounded-lg text-slate-500">
-                            Ether Deck: Basic bio-couplers
-                          </div>
-                        )}
+                          return (
+                            <div key={slot} className="p-2.5 bg-slate-950/60 border border-white/5 rounded-lg flex flex-col gap-1.5">
+                              <div className="flex justify-between items-center">
+                                <span className="text-slate-500 uppercase font-bold tracking-wider text-[9px]">{slotLabel.toUpperCase()} SLOT</span>
+                                {equippedItem && (
+                                  <button
+                                    onClick={() => handleUnequipItem(slot)}
+                                    className="bg-red-950/60 hover:bg-red-900/60 border border-red-500/30 text-red-400 text-4xs uppercase px-1.5 py-0.5 rounded cursor-pointer transition-all font-bold"
+                                  >
+                                    Unequip
+                                  </button>
+                                )}
+                              </div>
+                              {equippedItem ? (
+                                <div>
+                                  <p className="font-extrabold text-cyan-400 uppercase text-2xs leading-none">{equippedItem}</p>
+                                  {details?.desc && (
+                                    <p className="text-slate-400 text-[10px] font-sans leading-tight mt-1">{details.desc}</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-slate-600 italic text-[10px]">No {slotLabel} equipped. Find and equip one from your inventory.</p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -3698,40 +4691,66 @@ export default function App() {
                             ) : (
                               <div className="grid grid-cols-1 gap-2">
                                 {filteredInventory.map((item, index) => {
-                                const isScrap = item === "Rusted Circuitry";
-                                const isStim = item.includes("Stim") || item.includes("Cell");
-                                return (
-                                  <div
-                                    key={index}
-                                    className="p-3 bg-slate-950/80 border border-white/10 rounded-lg flex justify-between items-center transition-all hover:border-white/20"
-                                  >
-                                    <div>
-                                      <p className="font-bold text-slate-200 text-2xs uppercase leading-none">{item}</p>
-                                      <p className="text-[9px] text-slate-500 mt-1 uppercase">
-                                        {isScrap ? "Recycle Scavenge Scrap" : isStim ? "Combat Injector" : "Equipped Enhancement"}
-                                      </p>
-                                    </div>
+                                  const isScrap = item === "Rusted Circuitry";
+                                  const isStim = item.includes("Stim") || item.includes("Cell");
+                                  const details = ITEM_METADATA[item];
+                                  const isEquipable = details && ["meleeWeapon", "rangedWeapon", "armor", "headpiece", "trinket"].includes(details.slot);
 
-                                    {/* Action items */}
-                                    {isScrap && (
-                                      <button
-                                        onClick={handleRecycleScrapDirect}
-                                        className="bg-amber-950/40 hover:bg-amber-900/40 border border-amber-500/30 text-amber-300 text-3xs font-black uppercase px-2 py-1.5 rounded cursor-pointer"
-                                      >
-                                        Recycle (+30¤)
-                                      </button>
-                                    )}
-                                    {isStim && (
-                                      <button
-                                        onClick={() => handleExecuteAction(`Consume ${item}`)}
-                                        className="bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 text-3xs font-black uppercase px-2 py-1.5 rounded cursor-pointer animate-pulse"
-                                      >
-                                        Use
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                                  let subtitle = "System Inventory Item";
+                                  if (isScrap) subtitle = "Recycle Scavenge Scrap";
+                                  else if (isStim) subtitle = "Combat Injector";
+                                  else if (details && details.slot) {
+                                    const slotDisplay = details.slot === "meleeWeapon" ? "MELEE WEAPON" : details.slot === "rangedWeapon" ? "RANGED WEAPON" : details.slot;
+                                    subtitle = `${slotDisplay.toUpperCase()} HARDWARE`;
+                                  }
+
+                                  return (
+                                    <div
+                                      key={index}
+                                      className="p-3 bg-slate-950/80 border border-white/10 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-all hover:border-white/20"
+                                    >
+                                      <div className="text-left">
+                                        <p className="font-bold text-slate-200 text-2xs uppercase leading-none">{item}</p>
+                                        <p className="text-[9px] text-slate-500 mt-1 uppercase font-bold tracking-wider">
+                                          {subtitle}
+                                        </p>
+                                        {details?.desc && (
+                                          <p className="text-slate-400 font-sans text-3xs mt-1.5 leading-snug max-w-md">
+                                            {details.desc}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      {/* Action items */}
+                                      <div className="flex items-center gap-2 self-end sm:self-center">
+                                        {isScrap && (
+                                          <button
+                                            onClick={handleRecycleScrapDirect}
+                                            className="bg-amber-950/40 hover:bg-amber-900/40 border border-amber-500/30 text-amber-300 text-3xs font-black uppercase px-2 py-1.5 rounded cursor-pointer"
+                                          >
+                                            Recycle (+30¤)
+                                          </button>
+                                        )}
+                                        {isStim && (
+                                          <button
+                                            onClick={() => handleExecuteAction(`Consume ${item}`)}
+                                            className="bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 text-3xs font-black uppercase px-2 py-1.5 rounded cursor-pointer animate-pulse"
+                                          >
+                                            Use
+                                          </button>
+                                        )}
+                                        {isEquipable && (
+                                          <button
+                                            onClick={() => handleEquipItem(item)}
+                                            className="bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-300 text-3xs font-black uppercase px-2.5 py-1.5 rounded cursor-pointer font-extrabold"
+                                          >
+                                            Equip
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                             </div>
                           );
                         })()}
@@ -3952,6 +4971,100 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {activePopup && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 15 }}
+                className={`max-w-md w-full rounded-xl border p-6 font-mono relative shadow-2xl overflow-hidden ${
+                  activePopup.type === "transit"
+                    ? "border-cyan-500/50 bg-slate-900/90 shadow-[0_0_40px_rgba(6,182,212,0.15)]"
+                    : activePopup.type === "loot"
+                      ? "border-emerald-500/50 bg-slate-900/90 shadow-[0_0_40px_rgba(16,185,129,0.15)]"
+                      : activePopup.type === "check_success"
+                        ? "border-cyan-400/50 bg-slate-900/90 shadow-[0_0_40px_rgba(34,211,238,0.15)]"
+                        : activePopup.type === "check_failure"
+                          ? "border-red-500/50 bg-slate-900/90 shadow-[0_0_40px_rgba(239,68,68,0.15)]"
+                          : "border-slate-700 bg-slate-900/90 shadow-[0_0_30px_rgba(255,255,255,0.05)]"
+                }`}
+              >
+                {/* Visual sci-fi scanner overlay beam */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse" />
+
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    {activePopup.type === "check_failure" ? (
+                      <div className="w-8 h-8 rounded-lg bg-red-950/50 border border-red-500/30 flex items-center justify-center text-red-500 animate-pulse">
+                        <AlertTriangle size={16} />
+                      </div>
+                    ) : activePopup.type === "loot" ? (
+                      <div className="w-8 h-8 rounded-lg bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                        <Briefcase size={16} />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                        <Compass size={16} />
+                      </div>
+                    )}
+                    <div className="text-left">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest block font-bold">
+                        {activePopup.subtitle || "TACTICAL DECK NOTICE"}
+                      </span>
+                      <h3 className={`text-sm font-black tracking-wide uppercase ${
+                        activePopup.type === "check_failure"
+                          ? "text-red-400"
+                          : activePopup.type === "loot"
+                            ? "text-emerald-400"
+                            : "text-cyan-400"
+                      }`}>
+                        {activePopup.title}
+                      </h3>
+                    </div>
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${
+                    activePopup.type === "check_failure"
+                      ? "bg-red-950/40 border-red-500/20 text-red-400"
+                      : activePopup.type === "loot"
+                        ? "bg-emerald-950/40 border-emerald-500/20 text-emerald-400"
+                        : "bg-cyan-950/40 border-cyan-500/20 text-cyan-400"
+                  }`}>
+                    {activePopup.type}
+                  </span>
+                </div>
+
+                {/* Content text */}
+                <p className="text-slate-200 text-xs sm:text-sm leading-relaxed text-left p-4 rounded-lg bg-slate-950/60 border border-white/5 whitespace-pre-wrap">
+                  {activePopup.text}
+                </p>
+
+                {/* Footer Buttons */}
+                <div className="mt-5 flex justify-end">
+                  <button
+                    onClick={() => setActivePopup(null)}
+                    className={`w-full py-2.5 rounded-lg font-bold text-xs uppercase tracking-wider cursor-pointer border transition-all ${
+                      activePopup.type === "check_failure"
+                        ? "bg-gradient-to-r from-red-900 to-red-800 text-white border-red-500/20 hover:border-red-400 hover:shadow-[0_0_15px_rgba(239,68,68,0.25)]"
+                        : activePopup.type === "loot"
+                          ? "bg-gradient-to-r from-emerald-900 to-emerald-800 text-white border-emerald-500/20 hover:border-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.25)]"
+                          : "bg-gradient-to-r from-cyan-900 to-cyan-800 text-white border-cyan-500/20 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(6,182,212,0.25)]"
+                    }`}
+                  >
+                    CONFIRM COGNITION [OK]
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>

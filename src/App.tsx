@@ -38,9 +38,13 @@ import {
   Settings,
   Check,
   Edit,
-  UserCog
+  UserCog,
+  CloudLightning
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+import WeatherOverlay from "./components/WeatherOverlay";
+import NPCBaseManagement from "./components/NPCBaseManagement";
 
 import { LogMessage, GameState, CompanionState } from "./types";
 import {
@@ -136,6 +140,9 @@ export default function App() {
 
   // State to track which companion is being edited in the detailed gear manager
   const [editingCompanionName, setEditingCompanionName] = useState<string | null>(null);
+
+  // State to track whether the Base NPC Management modal is open
+  const [baseNPCManagerOpen, setBaseNPCManagerOpen] = useState(false);
 
   // Shop Filter for buying items
   const [shopFilter, setShopFilter] = useState<string>("all");
@@ -1291,12 +1298,242 @@ export default function App() {
     triggerToast("AGENT CONSPIRACY PURGED COMPLETELY");
   };
 
+  // Skip Intro and begin Chapter 1 in Aurus Hideout base
+  const handleSkipIntro = () => {
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // Seed initial baseNPCs if missing
+    const starterNPCs = [
+      {
+        id: "aria",
+        name: "Chancellor Aria",
+        role: "High Commander",
+        avatar: "👑",
+        image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600",
+        description: "You catch Aria standing inside your headquarters, analyzing holo-maps of the Megacity grid sectors. Clad in a dark leather officer outfit, she carries a severe authority that demands absolute discipline.",
+        dialogue: "Master. It is excellent to see you. The base is operational, but we must expand our parameters. State your directives or allocate me to research protocols.",
+        reaction: null,
+        happiness: 80,
+        affection: "Amiable",
+        affectionValue: 65,
+        willpower: 82,
+        corruption: 39,
+        hygiene: "Normal",
+        discipline: 90,
+        hunger: "Well-fed",
+        respect: 21,
+        withdrawRisk: "None",
+        anger: 0,
+        defiance: 0,
+        fear: 0,
+        inventory: ["Corpo Security Pistol", "Cheap Combat Armor"],
+        currentJob: "Idle / Chilling"
+      },
+      {
+        id: "mia",
+        name: "Mia",
+        role: "Base Specialist",
+        avatar: "🌸",
+        image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+        description: "Mia is cleaning the server stacks in the safehouse core. Her posture is fragile but her eyes show a deep, quiet gratitude for rescuing her from the slums.",
+        dialogue: "Um... hello, commander. Thank you so much for bringing me here. It's so warm and safe compared to the rainy back-alleys. I've prepared a hot meal if you are hungry.",
+        reaction: null,
+        happiness: 95,
+        affection: "Warm",
+        affectionValue: 78,
+        willpower: 45,
+        corruption: 10,
+        hygiene: "Excellent",
+        discipline: 60,
+        hunger: "Satiated",
+        respect: 85,
+        withdrawRisk: "None",
+        anger: 0,
+        defiance: 5,
+        fear: 15,
+        inventory: ["Copper-Wire Ring"],
+        currentJob: "Base Supply Chef"
+      },
+      {
+        id: "scythe_base",
+        name: "Scythe",
+        role: "Security Coordinator",
+        avatar: "👤",
+        image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=600",
+        description: "Scythe sits quietly on an ammo crate, field-stripping her customized monoblade. The ambient neon light reflects off her active camo plating.",
+        dialogue: "Report, Boss. Perimeter sensor sweeps are green, but corporate signal sniffers are active nearby. Give me a target, or I'll run another patrol.",
+        reaction: null,
+        happiness: 75,
+        affection: "Amiable",
+        affectionValue: 50,
+        willpower: 95,
+        corruption: 20,
+        hygiene: "Normal",
+        discipline: 85,
+        hunger: "Well-fed",
+        respect: 75,
+        withdrawRisk: "None",
+        anger: 10,
+        defiance: 15,
+        fear: 5,
+        inventory: ["Nano-alloy Katana"],
+        currentJob: "Defensive Security Guard"
+      }
+    ];
+
+    setGameState(prev => {
+      // If gameState is not loaded (e.g. from main menu), initialize with the Cyber-Blade archetype
+      const current = prev || getInitialState(ARCHETYPES[0]);
+      
+      return {
+        ...current,
+        district: "aurus",
+        poi: "Aurus Safehouse (The Hideout)",
+        activeQuests: [
+          "Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."
+        ],
+        completedQuests: ["Prologue: Data Vault Infiltration"],
+        stamina: 100,
+        maxStamina: 100,
+        credits: Math.max(current.credits, 450), // Provide test currency for gifting & testing
+        baseNPCs: [],
+        activeBaseNPCId: null,
+        safehouseDefenses: current.safehouseDefenses || {
+          securityLevel: 1,
+          turrets: 0,
+          shieldStrength: 100,
+          fortifiedDoors: false,
+          intrusionLogs: [
+            "🔋 Safehouse initial power grid linked successfully.",
+            "📡 Stealth frequency beacon activated - safehouse hidden from city radars."
+          ]
+        }
+      };
+    });
+
+    setLogs(prev => [
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: "⚡ NEURAL MATRIX SYNC OVERRIDE: Skip initiated. Prologue bypassed, Chapter 1 unlocked. Welcome to Aurus Base Headquarters.",
+        type: "system"
+      },
+      ...prev
+    ]);
+
+    setActivePOIView("hideout");
+    setActiveDialogue(null);
+    setCurrentScreen("game");
+    triggerToast("CHAPTER 1 BEGUN: BASE CREW CONSOLE OPENED");
+  };
+
   // Helper alert notifier
   const triggerToast = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => {
       setSaveToast(null);
     }, 4000);
+  };
+
+  // Unified helper to calculate stamina loss, weather debuffs, and random weather transitions on travel
+  const handleStaminaAndWeatherOnTravel = (
+    state: GameState,
+    isRegionChange: boolean,
+    destinationName: string
+  ): { nextState: GameState; warningText: string | null; logs: LogMessage[] } => {
+    let nextState = { ...state };
+    let logs: LogMessage[] = [];
+    let warningText: string | null = null;
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // 1. Calculate base cost
+    let staminaCost = isRegionChange ? 15 : 8;
+
+    // 2. Weather adjustments to stamina cost
+    const activeWeather = nextState.weather || "clear";
+    if (activeWeather === "rain") {
+      staminaCost += 2;
+    } else if (activeWeather === "snow") {
+      staminaCost += 3;
+    } else if (activeWeather === "storm") {
+      staminaCost += 5;
+    } else if (activeWeather === "heat") {
+      staminaCost += 5;
+    } else if (activeWeather === "smog") {
+      staminaCost += 4;
+    }
+
+    // 3. Deduct stamina
+    const previousStamina = nextState.stamina;
+    nextState.stamina = Math.max(0, nextState.stamina - staminaCost);
+    const finalStamina = nextState.stamina;
+
+    const logsText: string[] = [];
+    logsText.push(`🔋 STAMINA DECREASED: Consumed ${staminaCost} stamina points during transit to "${destinationName}" (Remaining: ${finalStamina}/100).`);
+
+    // 4. Apply weather debuffs on health/mana
+    if (activeWeather === "smog") {
+      // Holographic smog drains HP and Mana due to toxic exposure
+      nextState.hp = Math.max(5, nextState.hp - 3);
+      nextState.mana = Math.max(0, nextState.mana - 3);
+      logsText.push(`😷 TOXIC SMOG INHALED: Severe neon pollution in area. Suffered minor organic degradation: -3 HP, -3 Ether.`);
+    } else if (activeWeather === "heat") {
+      // Extreme heat has 25% chance of applying minor damage or dehydrating
+      if (Math.random() < 0.3) {
+        nextState.hp = Math.max(5, nextState.hp - 5);
+        logsText.push(`🥵 HEATSTROKE WARNING: Core temperatures exceeded safe limits during transit through thermal zones: -5 HP.`);
+      }
+    } else if (activeWeather === "storm") {
+      // Static discharges
+      if (Math.random() < 0.25) {
+        nextState.hp = Math.max(5, nextState.hp - 4);
+        logsText.push(`⚡ LIGHTNING STATIC STRIKE: Ambient magnetic storms caused static discharge into neural implants: -4 HP.`);
+      }
+    } else if (activeWeather === "snow") {
+      // Chilled / acidic frost reduces active Mana slightly
+      nextState.mana = Math.max(0, nextState.mana - 2);
+      logsText.push(`❄️ ACID FROST COOLING: Severe cybernetic temperature drop. Drained minor neural energy: -2 Ether.`);
+    }
+
+    // 5. Check if stamina has reached 0
+    if (finalStamina === 0 && previousStamina > 0) {
+      warningText = "⚠️ SYSTEM BLACKOUT: Your stamina is fully depleted! You are severely exhausted. Return to the Safehouse to rest/sleep.";
+      logsText.push(`🚨 CRITICAL EMERGENCY: Stamina depleted to 0%. Locomotor and hacking modules locked in Safe Mode. You cannot perform further operations until you Rest/Sleep at Aurus Safehouse!`);
+    }
+
+    // 6. Roll for new weather (45% chance on travel/region change)
+    if (Math.random() < 0.45) {
+      const weatherPool: ("clear" | "rain" | "snow" | "storm" | "heat" | "smog")[] = [
+        "clear", "clear", "rain", "snow", "storm", "heat", "smog"
+      ];
+      const newWeather = weatherPool[Math.floor(Math.random() * weatherPool.length)];
+      if (newWeather !== activeWeather) {
+        nextState.weather = newWeather;
+        const weatherNames = {
+          clear: "Clear/Optimal Skies ☀️",
+          rain: "Acid Rain Storm 🌧️ (+2 Stamina Drain)",
+          snow: "Neon Frost Snow ❄️ (+3 Stamina Drain, -2 Ether on Travel)",
+          storm: "Magnetic Lightning Storm ⚡ (+5 Stamina Drain, Static Strike Risk)",
+          heat: "Thermal Overheat waves 🥵 (+5 Stamina Drain, Dehydration Risk)",
+          smog: "Toxic Holographic Smog 😷 (+4 Stamina Drain, -3 HP/-3 Ether on Travel)"
+        };
+        logsText.push(`🌤️ WEATHER CORRIDOR UPDATE: Climatology grid shifted. Current conditions: ${weatherNames[newWeather]}.`);
+      }
+    }
+
+    // Transform logsText array into LogMessage structures
+    logsText.forEach(txt => {
+      logs.push({
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: txt,
+        type: "system",
+        district: nextState.district,
+        poi: nextState.poi
+      });
+    });
+
+    return { nextState, warningText, logs };
   };
 
   // Deploy fresh agent from archetype select
@@ -1403,6 +1640,22 @@ export default function App() {
       return;
     }
 
+    if (gameState.stamina <= 0) {
+      triggerToast("STAMINA EXHAUSTED: Transit channel locked. You must rest/sleep at Aurus Safehouse.");
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: `❌ TRANSIT INTERRUPTED: Monorail interface refused neural link. Locomotor stamina depleted (0/100). Return to Aurus Safehouse immediately.`,
+          type: "system",
+          district: gameState.district,
+          poi: gameState.poi
+        }
+      ]);
+      return;
+    }
+
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     // Auto-travel to the first POI in that region to maintain visual cohesion
@@ -1416,6 +1669,10 @@ export default function App() {
     }
     
     setActiveRegionId(regionId);
+
+    // Deduct stamina and process weather consequences
+    const travelResult = handleStaminaAndWeatherOnTravel(nextState, true, reg.name);
+    nextState = travelResult.nextState;
     setGameState(nextState);
 
     const log: LogMessage = {
@@ -1426,7 +1683,11 @@ export default function App() {
       district: regionId,
       poi: firstPOI ? firstPOI.name : "Transit Node"
     };
-    setLogs(prev => [...prev, log]);
+    setLogs(prev => [...prev, log, ...travelResult.logs]);
+
+    if (travelResult.warningText) {
+      triggerToast(travelResult.warningText);
+    }
   };
 
   // Interactive local actions calculation
@@ -1460,6 +1721,212 @@ export default function App() {
 
     const cleanAction = actionText.toLowerCase();
 
+    const isRestAction = cleanAction.includes("rest & recover") || cleanAction.includes("rest and sleep");
+    const isEmergencyAdrenaline = cleanAction.includes("emergency adrenaline dose");
+    const isEmergencyGrate = cleanAction.includes("heavy rest on back-alley grate");
+    const isFastTravelHome = cleanAction.includes("fast-travel home to sleep");
+    const isEmergency = isEmergencyAdrenaline || isEmergencyGrate || isFastTravelHome;
+
+    // 1. Stamina depletion guard: block standard actions if stamina is 0 and it's not a rest/emergency/combat action
+    if (gameState.stamina <= 0 && !isRestAction && !isEmergency && !gameState.combatState?.isActive) {
+      setIsLoading(false);
+      triggerToast("STAMINA EXHAUSTED: Rest/Sleep required.");
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: timeString,
+          text: `❌ ACTION REJECTED: Neural stamina fully depleted (0/100). Perform an Emergency Action or Rest/Sleep immediately!`,
+          type: "system",
+          district: gameState.district,
+          poi: gameState.poi
+        }
+      ]);
+      return;
+    }
+
+    // 2. Handle Emergency actions
+    if (isEmergency) {
+      if (isEmergencyAdrenaline) {
+        if (nextState.credits >= 25) {
+          nextState.credits -= 25;
+          nextState.stamina = Math.min(100, nextState.stamina + 40);
+          narrative = `💉 ADRENALINE DEPOT UNLEASHED: Injected an emergency military-grade adrenaline serum into your spinal port (-25¤). Neural stamina recharged to ${nextState.stamina}/100. Let's move!`;
+          triggerToast("Injected Adrenaline: +40 Stamina");
+        } else {
+          narrative = `❌ INSUFFICIENT FUNDS: An Emergency Adrenaline Dose requires 25¤. Your current balance is ${nextState.credits}¤.`;
+          triggerToast("Insufficient Credits!");
+        }
+      } else if (isEmergencyGrate) {
+        const hpLoss = 10;
+        if (nextState.hp > 12) {
+          nextState.hp -= hpLoss;
+          nextState.stamina = Math.min(100, nextState.stamina + 20);
+          narrative = `💤 UNCOMFORTABLE BACK-ALLEY INTERMISSION: Rested on a vibrating hot-steam ventilation grate under radioactive neon pollution. Recharged +20 Stamina, but sustained severe body chassis soreness and toxic exposure: -${hpLoss} HP. Current Stamina: ${nextState.stamina}/100, HP: ${nextState.hp}/${nextState.maxHp}.`;
+          triggerToast("Took Back-Alley Nap: +20 Stamina, -10 HP");
+        } else {
+          narrative = `❌ CRITICAL HP WARNING: Your health (${nextState.hp} HP) is too low to safely sleep on the contaminated back-alley grates. You would not survive the toxic exposure!`;
+          triggerToast("HP Too Low to Sleep on Grates!");
+        }
+      } else if (isFastTravelHome) {
+        if (["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district)) {
+          narrative = `❌ TRANSIT ERROR: Cognitive bounds engaged. Heist operations are in progress; fast travel is blocked.`;
+          triggerToast("Fast Travel Blocked!");
+        } else {
+          // Perform home sleep
+          nextState.district = "aurus";
+          nextState.poi = "Aurus Safehouse (The Hideout)";
+          setActiveRegionId("aurus");
+          setActivePOIView("hideout");
+          
+          nextState.hp = nextState.maxHp;
+          nextState.mana = nextState.maxMana;
+          nextState.stamina = nextState.maxStamina; // FULL REPLENISH!
+          nextState.weather = "clear"; // RESET WEATHER!
+          nextState.timeOfDay = "Morning";
+          nextState.day += 1;
+
+          let passiveText = "";
+          
+          // Core companion node wages
+          let totalWage = 0;
+          nextState.companions.forEach(c => {
+            if (c.status === "working") totalWage += 35;
+          });
+          if (totalWage > 0) {
+            nextState.credits += totalWage;
+            passiveText += `\n\n💎 CREW HARVEST DECK: Hired mercenaries delivered automated sub-node payout: +${totalWage}¤.`;
+          }
+
+          // Base Crew Jobs Passive Production
+          const baseNPCsList = nextState.baseNPCs || [];
+
+          // Hacker Network Operators
+          const hackerCount = baseNPCsList.filter(n => n.currentJob === "Hacker Network Operator").length;
+          if (hackerCount > 0) {
+            const earnings = hackerCount * 45;
+            nextState.credits += earnings;
+            passiveText += `\n\n💻 HACKER NETWORK INCOME: ${hackerCount} base operator(s) tapped corporate bank sub-nodes: +${earnings}¤ deposited.`;
+          }
+
+          // Base Supply Chefs (with Luxury Kitchen support)
+          const chefCount = baseNPCsList.filter(n => n.currentJob === "Base Supply Chef").length;
+          if (chefCount > 0) {
+            const isKitchenUpgraded = nextState.safehouseUpgrades?.kitchenUpgraded;
+            const mealsPerChef = isKitchenUpgraded ? 2 : 1;
+            const totalMeals = chefCount * mealsPerChef;
+            for (let i = 0; i < totalMeals; i++) {
+              nextState.inventory.push("Synthetic Nutrient Plate");
+            }
+            passiveText += `\n\n🍗 CHEF KITCHEN BATCH: ${chefCount} base chef(s) prepped ${totalMeals} hot meals ${isKitchenUpgraded ? "[Luxury Kitchen x2 Boost!]" : ""}: placed in stash.`;
+          }
+
+          // Dojo Training Coaches (with Dojo Mat Expansion support)
+          const coachCount = baseNPCsList.filter(n => n.currentJob === "Dojo Training Coach").length;
+          const isDojoUpgraded = nextState.safehouseUpgrades?.dojoUpgraded;
+          if (coachCount > 0 || isDojoUpgraded) {
+            nextState.dojoBuffActive = true;
+            const bonusPct = isDojoUpgraded ? "+30%" : "+15%";
+            passiveText += `\n\n⚔️ DOJO TRAINING CALIBRATION: Dojo coaches & automated combat mats fine-tuned your blades: granted ${bonusPct} Melee damage for your next combat encounter!`;
+          }
+
+          // Process Crew Infiltration & Recon Sub-Grid Missions
+          if (nextState.crewMissions && nextState.crewMissions.length > 0) {
+            const remainingMissions: typeof nextState.crewMissions = [];
+            for (const mission of nextState.crewMissions) {
+              const updatedMission = { ...mission, turnsLeft: mission.turnsLeft - 1 };
+              const targetNPC = (nextState.baseNPCs || []).find(n => n.id === mission.npcId);
+              const npcName = targetNPC ? targetNPC.name : "Your operator";
+
+              if (updatedMission.turnsLeft <= 0) {
+                // Resolve mission outcome!
+                // Risk-based roll (low: 10%, medium: 25%, high: 45%)
+                const riskVal = mission.risk.toLowerCase();
+                const riskPct = riskVal === "high" ? 0.45 : riskVal === "medium" ? 0.25 : 0.10;
+                const gotInjured = Math.random() < riskPct;
+
+                if (gotInjured) {
+                  // NPC injured
+                  if (targetNPC) {
+                    targetNPC.injuryStatus = "Wounded";
+                    targetNPC.happiness = Math.max(0, targetNPC.happiness - 25);
+                    targetNPC.dialogue = "Ugh... they detected my signature during the sub-grid run. It was a setup! I need medical attention in the hideout bunk.";
+                    targetNPC.currentJob = "Idle / Chilling";
+                  }
+                  nextState.inventory.push("High-Grade Scrap Salvage");
+                  passiveText += `\n\n⚠️ INFILTRATION ALERT: ${npcName} triggered alarms on the run to ${mission.missionName}! They returned wounded and bleeding. Managed to drag back 1x 'High-Grade Scrap Salvage' but needs rest.`;
+                  triggerToast(`${npcName} returned WOUNDED from mission!`);
+                } else {
+                  // Mission succeeded cleanly!
+                  let rewardsText = "";
+                  if (mission.missionId === "matrix_decrypt") {
+                    nextState.credits += 120;
+                    nextState.inventory.push("Encrypted Decrypt Key");
+                    rewardsText = "120¤ and 1x 'Encrypted Decrypt Key'";
+                  } else if (mission.missionId === "cargo_raid") {
+                    nextState.credits += 220;
+                    nextState.inventory.push("Synthetic Nutrient Plate");
+                    nextState.inventory.push("High-Grade Scrap Salvage");
+                    rewardsText = "220¤, 1x 'Synthetic Nutrient Plate', and 1x 'High-Grade Scrap Salvage'";
+                  } else {
+                    // apex_infiltration
+                    nextState.credits += 450;
+                    nextState.inventory.push("Deluxe Combat Stimulant");
+                    nextState.inventory.push("Heavy Sentry Blueprint");
+                    rewardsText = "450¤, 1x 'Deluxe Combat Stimulant', and 1x 'Heavy Sentry Blueprint'";
+                  }
+
+                  if (targetNPC) {
+                    targetNPC.injuryStatus = "Healthy";
+                    targetNPC.happiness = Math.min(100, targetNPC.happiness + 15);
+                    targetNPC.dialogue = "System bypassed! Core sub-nodes downloaded successfully, commander. The rewards have been delivered to stash.";
+                    targetNPC.currentJob = "Idle / Chilling";
+                  }
+
+                  passiveText += `\n\n📟 MISSION SUCCESS: ${npcName} bypassed all corporate ice blocks at ${mission.missionName}! Delivered ${rewardsText} to your safehouse stash.`;
+                  triggerToast(`${npcName} COMPLETED Sub-Grid Run!`);
+                }
+              } else {
+                remainingMissions.push(updatedMission);
+                passiveText += `\n\n📡 SUB-GRID RUN IN PROGRESS: ${npcName} is active in cyberspace bypassing nodes at ${mission.missionName} (${updatedMission.turnsLeft} turns left).`;
+              }
+            }
+            nextState.crewMissions = remainingMissions;
+          }
+
+          narrative = `🚀 TELEPORTED HOME & SLEPT: Triggered emergency secure beacon. Recalled to Aurus Safehouse. You immediately collapsed onto your medical bunk and fell into a deep dreamless sleep. Woke up refreshed the next morning: Stamina and Vitals fully restored to 100%! Weather is now Clear.${passiveText}`;
+          triggerToast("Returned Home and Slept: 100% restored!");
+        }
+      }
+
+      setGameState(nextState);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: timeString,
+          text: narrative,
+          type: "system",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Deduct stamina for executing a standard action if we're not in combat, not a region switch, and not resting
+    const isRegionSwitch = cleanAction.includes("switch region");
+    if (!gameState.combatState?.isActive && !isRestAction && !isRegionSwitch) {
+      let actionStaminaCost = 5;
+      const activeWeather = nextState.weather || "clear";
+      if (activeWeather === "rain") actionStaminaCost += 1;
+      else if (activeWeather === "snow") actionStaminaCost += 2;
+      else if (activeWeather === "storm" || activeWeather === "heat" || activeWeather === "smog") actionStaminaCost += 3;
+
+      nextState.stamina = Math.max(0, nextState.stamina - actionStaminaCost);
+    }
+
     // ---- REGION SWITCH TRANSLATION PASS ----
     if (cleanAction.includes("switch region:") || cleanAction.includes("switch region")) {
       setIsLoading(false);
@@ -1484,6 +1951,15 @@ export default function App() {
           pDmg += 12;
         }
 
+        let buffText = "";
+        if (nextState.dojoBuffActive) {
+          const isDojoUpgraded = nextState.safehouseUpgrades?.dojoUpgraded;
+          const pct = isDojoUpgraded ? 0.30 : 0.15;
+          const bonus = Math.floor(pDmg * pct);
+          pDmg += bonus;
+          buffText = isDojoUpgraded ? " [Dojo Buff +30%]" : " [Dojo Buff +15%]";
+        }
+
         if (combat.enemyShields > 0) {
           const rem = combat.enemyShields - pDmg;
           if (rem < 0) {
@@ -1496,7 +1972,7 @@ export default function App() {
           combat.enemyHp -= pDmg;
         }
 
-        narrative = `⚔️ STRIKE RETALIATED: You flash your blade into ${combat.enemyName}! Dealt ${pDmg} physical damage.`;
+        narrative = `⚔️ STRIKE RETALIATED: You flash your blade into ${combat.enemyName}! Dealt ${pDmg} physical damage.${buffText}`;
       }
       else if (cleanAction.includes("spell slash") || cleanAction.includes("spend mp") || cleanAction.includes("plasma")) {
         if (nextState.mana < 15) {
@@ -1555,6 +2031,7 @@ export default function App() {
       else if (cleanAction.includes("attempt flee") || cleanAction.includes("flee") || cleanAction.includes("evade")) {
         if (Math.random() > 0.4) {
           nextState.combatState = null;
+          nextState.dojoBuffActive = false;
           setGameState(nextState);
           setLogs(prev => [
             ...prev,
@@ -1620,6 +2097,7 @@ export default function App() {
         }
 
         nextState.combatState = null;
+        nextState.dojoBuffActive = false;
         logType = "system";
       } else {
         // Enemy Counter-Attacks
@@ -1633,6 +2111,7 @@ export default function App() {
             nextState.hp = nextState.maxHp;
             nextState.mana = nextState.maxMana;
             nextState.combatState = null;
+            nextState.dojoBuffActive = false;
             narrative += `\n\n☠️ CRITICAL OVERLOAD: Your bio-signatures flatlined in the catacombs! Fortunately, your squad-mate Vice injected an adrenaline micro-dose, resetting your critical vitals and dragging you back to safety. Let's try again!`;
             logType = "system";
           } else {
@@ -1645,6 +2124,7 @@ export default function App() {
             setActiveRegionId("aurus");
             setActivePOIView("hideout");
             nextState.combatState = null;
+            nextState.dojoBuffActive = false;
             narrative += `\n\n☠️ SYSTEM OVERRIDE TRAUMA: Bio-signatures flatlined! Your emergency backup beacon auto-teleported your frame to Hideout medical bay. -${penalty}¤ Trauma deduction.`;
             logType = "system";
           }
@@ -1696,7 +2176,20 @@ export default function App() {
           }
           
           let healText = "";
-          if (itemLower.includes("stim") || itemLower.includes("heal")) {
+          if (itemLower.includes("nutrient") || itemLower.includes("plate") || itemLower.includes("synthetic nutrient plate")) {
+            const healAmt = 45;
+            const oldHp = nextState.hp;
+            nextState.hp = Math.min(nextState.maxHp, nextState.hp + healAmt);
+            const healed = nextState.hp - oldHp;
+            
+            const stamAmt = 35;
+            const oldStam = nextState.stamina;
+            nextState.stamina = Math.min(nextState.maxStamina, nextState.stamina + stamAmt);
+            const stamRestored = nextState.stamina - oldStam;
+
+            healText = `🍗 SYNTH-NUTRIENT CONSUMED: You enjoyed a warm, freshly prepared 'Synthetic Nutrient Plate'. Repolarized +${healed} HP and recharged +${stamRestored} Stamina!`;
+            triggerToast(`Consumed Nutrient Plate: +${healed} HP, +${stamRestored} Stamina`);
+          } else if (itemLower.includes("stim") || itemLower.includes("heal")) {
             const healAmt = 60;
             const oldHp = nextState.hp;
             nextState.hp = Math.min(nextState.maxHp, nextState.hp + healAmt);
@@ -1737,20 +2230,185 @@ export default function App() {
       if (cleanAction.includes("rest & recover") || cleanAction.includes("rest and sleep")) {
         nextState.hp = nextState.maxHp;
         nextState.mana = nextState.maxMana;
+        nextState.stamina = nextState.maxStamina; // Restores stamina completely!
+        nextState.weather = "clear"; // Resets weather after a full night's rest!
         nextState.timeOfDay = "Morning";
         nextState.day += 1;
         
         let passiveText = "";
+        
+        // 1. Core wages for hired companions on nodes
         let totalWage = 0;
         nextState.companions.forEach(c => {
           if (c.status === "working") totalWage += 35;
         });
         if (totalWage > 0) {
           nextState.credits += totalWage;
-          passiveText = `\n\n💎 CREW HARVEST DECK: Allocated hackers delivered automated credits payout: +${totalWage}¤.`;
+          passiveText += `\n\n💎 CREW HARVEST DECK: Hired mercenaries delivered automated sub-node payout: +${totalWage}¤.`;
+        }
+
+        // 2. Base Crew Jobs Passive Production
+        const baseNPCsList = nextState.baseNPCs || [];
+
+        // Hacker Network Operators
+        const hackerCount = baseNPCsList.filter(n => n.currentJob === "Hacker Network Operator").length;
+        if (hackerCount > 0) {
+          const earnings = hackerCount * 45;
+          nextState.credits += earnings;
+          passiveText += `\n\n💻 HACKER NETWORK INCOME: ${hackerCount} base operator(s) tapped corporate bank sub-nodes: +${earnings}¤ deposited.`;
+        }
+
+        // Base Supply Chefs (with Luxury Kitchen support)
+        const chefCount = baseNPCsList.filter(n => n.currentJob === "Base Supply Chef").length;
+        if (chefCount > 0) {
+          const isKitchenUpgraded = nextState.safehouseUpgrades?.kitchenUpgraded;
+          const mealsPerChef = isKitchenUpgraded ? 2 : 1;
+          const totalMeals = chefCount * mealsPerChef;
+          for (let i = 0; i < totalMeals; i++) {
+            nextState.inventory.push("Synthetic Nutrient Plate");
+          }
+          passiveText += `\n\n🍗 CHEF KITCHEN BATCH: ${chefCount} base chef(s) prepped ${totalMeals} hot meals ${isKitchenUpgraded ? "[Luxury Kitchen x2 Boost!]" : ""}: placed in stash.`;
+        }
+
+        // Dojo Training Coaches (with Dojo Mat Expansion support)
+        const coachCount = baseNPCsList.filter(n => n.currentJob === "Dojo Training Coach").length;
+        const isDojoUpgraded = nextState.safehouseUpgrades?.dojoUpgraded;
+        if (coachCount > 0 || isDojoUpgraded) {
+          nextState.dojoBuffActive = true;
+          const bonusPct = isDojoUpgraded ? "+30%" : "+15%";
+          passiveText += `\n\n⚔️ DOJO TRAINING CALIBRATION: Dojo coaches & automated combat mats fine-tuned your blades: granted ${bonusPct} Melee damage for your next combat encounter!`;
+        }
+
+        // Process Crew Infiltration & Recon Sub-Grid Missions
+        if (nextState.crewMissions && nextState.crewMissions.length > 0) {
+          const remainingMissions: typeof nextState.crewMissions = [];
+          for (const mission of nextState.crewMissions) {
+            const updatedMission = { ...mission, turnsLeft: mission.turnsLeft - 1 };
+            const targetNPC = (nextState.baseNPCs || []).find(n => n.id === mission.npcId);
+            const npcName = targetNPC ? targetNPC.name : "Your operator";
+
+            if (updatedMission.turnsLeft <= 0) {
+              // Resolve mission outcome!
+              // Risk-based roll (low: 10%, medium: 25%, high: 45%)
+              const riskVal = mission.risk.toLowerCase();
+              const riskPct = riskVal === "high" ? 0.45 : riskVal === "medium" ? 0.25 : 0.10;
+              const gotInjured = Math.random() < riskPct;
+
+              if (gotInjured) {
+                // NPC injured
+                if (targetNPC) {
+                  targetNPC.injuryStatus = "Wounded";
+                  targetNPC.happiness = Math.max(0, targetNPC.happiness - 25);
+                  targetNPC.dialogue = "Ugh... they detected my signature during the sub-grid run. It was a setup! I need medical attention in the hideout bunk.";
+                  targetNPC.currentJob = "Idle / Chilling";
+                }
+                nextState.inventory.push("High-Grade Scrap Salvage");
+                passiveText += `\n\n⚠️ INFILTRATION ALERT: ${npcName} triggered alarms on the run to ${mission.missionName}! They returned wounded and bleeding. Managed to drag back 1x 'High-Grade Scrap Salvage' but needs rest.`;
+                triggerToast(`${npcName} returned WOUNDED from mission!`);
+              } else {
+                // Mission succeeded cleanly!
+                let rewardsText = "";
+                if (mission.missionId === "matrix_decrypt") {
+                  nextState.credits += 120;
+                  nextState.inventory.push("Encrypted Decrypt Key");
+                  rewardsText = "120¤ and 1x 'Encrypted Decrypt Key'";
+                } else if (mission.missionId === "cargo_raid") {
+                  nextState.credits += 220;
+                  nextState.inventory.push("Synthetic Nutrient Plate");
+                  nextState.inventory.push("High-Grade Scrap Salvage");
+                  rewardsText = "220¤, 1x 'Synthetic Nutrient Plate', and 1x 'High-Grade Scrap Salvage'";
+                } else {
+                  // apex_infiltration
+                  nextState.credits += 450;
+                  nextState.inventory.push("Deluxe Combat Stimulant");
+                  nextState.inventory.push("Heavy Sentry Blueprint");
+                  rewardsText = "450¤, 1x 'Deluxe Combat Stimulant', and 1x 'Heavy Sentry Blueprint'";
+                }
+
+                if (targetNPC) {
+                  targetNPC.injuryStatus = "Healthy";
+                  targetNPC.happiness = Math.min(100, targetNPC.happiness + 15);
+                  targetNPC.dialogue = "System bypassed! Core sub-nodes downloaded successfully, commander. The rewards have been delivered to stash.";
+                  targetNPC.currentJob = "Idle / Chilling";
+                }
+
+                passiveText += `\n\n📟 MISSION SUCCESS: ${npcName} bypassed all corporate ice blocks at ${mission.missionName}! Delivered ${rewardsText} to your safehouse stash.`;
+                triggerToast(`${npcName} COMPLETED Sub-Grid Run!`);
+              }
+            } else {
+              remainingMissions.push(updatedMission);
+              passiveText += `\n\n📡 SUB-GRID RUN IN PROGRESS: ${npcName} is active in cyberspace bypassing nodes at ${mission.missionName} (${updatedMission.turnsLeft} turns left).`;
+            }
+          }
+          nextState.crewMissions = remainingMissions;
         }
 
         narrative = `💤 REST PROTOCOLS COMPLETE: Rested on safehouse medical bunk. Cybernetic channels completely drained and fully calibrated to 100% capacity.${passiveText}`;
+
+        // Safehouse Intrusion & Tactical Base Raids (disabled until Quest 3 / completedQuests.length >= 3)
+        const isRaidEnabled = (nextState.completedQuests || []).length >= 3;
+        if (isRaidEnabled) {
+          const defenses = nextState.safehouseDefenses || {
+            securityLevel: 1,
+            turrets: 0,
+            shieldStrength: 100,
+            fortifiedDoors: false,
+            intrusionLogs: []
+          };
+          
+          // 25% chance of corporate sweep raid intrusion
+          if (Math.random() < 0.25) {
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // If shield capacitors are high (e.g. above 40%), the shield grid blocks the intrusion completely, absorbing the blow!
+            if (defenses.shieldStrength > 40) {
+              const shieldDamage = 45 - (defenses.fortifiedDoors ? 15 : 0);
+              const remainingShield = Math.max(0, defenses.shieldStrength - shieldDamage);
+              
+              const absorbLog = `[${timeStr}] 📡 INCIDENT DEFLECTED: Security grid detected an Ares tracker probe. Energy shields absorbed the sweep (-${shieldDamage}% Shield energy). No breach occurred.`;
+              
+              nextState.safehouseDefenses = {
+                ...defenses,
+                shieldStrength: remainingShield,
+                intrusionLogs: [absorbLog, ...(defenses.intrusionLogs || [])]
+              };
+              narrative += `\n\n🛡️ SECURITY WARNING: Corporate scanner sweep deflected! Safehouse energy shields absorbed the tracking telemetry probe, but shield capacitors took damage. Recharge them in the Base Defenses console!`;
+            } else {
+              // Shield capacitor is depleted! Infiltration breach occurs!
+              const breachLog = `[${timeStr}] 🚨 SEC-GRID BREACHED: Elite corporate Strike Team bypassed weak shields and infiltrated Aurus Hideout! Base defenses engaged.`;
+              
+              // Sentry turrets reduce the intruder's initial health/shields before the grid combat begins
+              const baseEnemyHp = 100;
+              const enemyHpDamage = defenses.turrets * 20; // 20 damage per active turret
+              const actualEnemyHp = Math.max(30, baseEnemyHp - enemyHpDamage);
+              
+              nextState.safehouseDefenses = {
+                ...defenses,
+                shieldStrength: 0,
+                intrusionLogs: [breachLog, ...(defenses.intrusionLogs || [])]
+              };
+
+              nextState.combatState = {
+                enemyName: "Ares Assault Commander (Base Raider)",
+                enemyHp: actualEnemyHp,
+                enemyMaxHp: baseEnemyHp,
+                enemyShields: Math.max(0, 30 - (defenses.turrets * 5)),
+                enemyMaxShields: 30,
+                isActive: true,
+                turnLog: `🚨 ALARM: BASE SEC-GRID BREACHED! An elite corporate Strike Commando team led by an Ares Assault Commander has traced your telemetrics and breached the safehouse! Automated turrets dealt damage to the intruder as they entered. Defend the core safehouse node!`
+              };
+
+              narrative += `\n\n🚨 ALARM CLAXONS BLARING: BREACH DETECTED! While you were sleeping, an elite Ares Corp tactical team breached our lower sewer entrance! Automated turrets have engaged, but the Commander is inside the main hub. PREPARE TO DEFEND THE HIDEOUT!`;
+
+              setActivePopup({
+                title: "🚨 SAFEHOUSE BREACHED!",
+                subtitle: "TACTICAL BASE RAID ENGAGED",
+                type: "combat_warning",
+                text: `Warning: An elite corporate Strike Commando team has breached your perimeter lock! Sentry turrets have engaged, dealing ${enemyHpDamage} initial damage to the invaders. Defend your base operations now!`
+              });
+            }
+          }
+        }
       }
       
       // ---- PROLOGUE MAP 1: SUBSURFACE AI CATACOMBS (CONDUIT 09) ----
@@ -2207,9 +2865,25 @@ export default function App() {
         });
       }
 
+      // Approach Lost, Frightened Girl (Mia recruitment)
+      else if (cleanAction.includes("approach lost") || cleanAction.includes("frightened girl") || cleanAction.includes("lost, frightened girl")) {
+        setActiveDialogue("lost_girl");
+        narrative = "You carefully approach the shivering figure huddled behind the neon crates. Read the high-priority dialogue overlay above to interact.";
+        setIsLoading(false);
+        return;
+      }
+
       // Check Inventory Stash
       else if (cleanAction.includes("check stash") || cleanAction.includes("stash inventory")) {
         narrative = `🎒 STORAGE AUDIT: Current items stored in physical slots: ${nextState.inventory.length > 0 ? nextState.inventory.join(", ") : "None"}. Balance liquidity: ${nextState.credits}¤.`;
+      }
+
+      // Base Crew Management / NPC Interaction Hub
+      else if (cleanAction.includes("base crew management") || cleanAction.includes("base npc manager")) {
+        setBaseNPCManagerOpen(true);
+        narrative = "📡 CONSOLE UPLINK SECURED: Initiated high-frequency encryption sync with safehouse staff. Displaying Base Crew Command Station...";
+        setIsLoading(false);
+        return;
       }
 
       // Bar Dialog Jax / Talk Jax
@@ -2272,6 +2946,45 @@ export default function App() {
             subtitle: "SCAVENGE EMPTY",
             type: "check_failure",
             text: "You searched thoroughly underneath the booths but found only sticky chemical residue and empty drug cylinders."
+          });
+        }
+      }
+
+      // Enter Auction Lobby
+      else if (cleanAction.includes("enter auction lobby") || cleanAction.includes("auction lobby") || cleanAction.includes("enter slave")) {
+        setActiveDialogue("auction_lobby");
+        narrative = "You step into the dimly-lit syndicate bidding lounge. Cages line the perimeter under orange light tubes.";
+        setIsLoading(false);
+        return;
+      }
+
+      // Inspect Holdout Pens
+      else if (cleanAction.includes("inspect holdout pens") || cleanAction.includes("holdout pens") || cleanAction.includes("inspect outcast")) {
+        setActiveDialogue("inspect_pens");
+        narrative = "You walk through the holding blocks, reviewing the cold carbon-steel enclosures of captured escapees.";
+        setIsLoading(false);
+        return;
+      }
+
+      // Bribe Syndicate Warden
+      else if (cleanAction.includes("bribe syndicate warden") || cleanAction.includes("bribe warden")) {
+        if (nextState.credits >= 40) {
+          nextState.credits -= 40;
+          nextState.completedPOIActions.push("auction_market:bribed");
+          narrative = "💰 WARDEN BRIBED: You slip a cold ledger block containing 40¤ into the warden's glove. Active bid prices reduced by 25%!";
+          setActivePopup({
+            title: "WARDEN BRIBED",
+            subtitle: "MARKET OVERRIDE ACTIVE",
+            type: "check_success",
+            text: "You slipped 40¤ to the Syndicate Warden. He pockets it and flips off the active telemetry monitors. All bids are now cheaper!"
+          });
+        } else {
+          narrative = "❌ TRANSACTION FAILURE: Warden scowls. 'You think forty copper bits buy you silence here?'";
+          setActivePopup({
+            title: "TRANSACTION REJECTED",
+            subtitle: "INSUFFICIENT LIQUIDITY",
+            type: "check_failure",
+            text: "The Warden sneers at your small balance ledger. 'You think forty copper bits buy you silence here? Move along.'"
           });
         }
       }
@@ -2605,6 +3318,12 @@ export default function App() {
         <div className="flex items-center gap-3 font-mono text-xs">
           {gameState && (
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleSkipIntro}
+                className="bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 transition-all font-mono text-4xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse"
+              >
+                ⚡ Skip Intro (Base Crew)
+              </button>
               <button
                 onClick={handleSaveGame}
                 className="bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60 transition-all font-mono text-4xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
@@ -3403,8 +4122,9 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col gap-6 w-full animate-fadeIn"
+              className="flex flex-col gap-6 w-full animate-fadeIn relative"
             >
+              <WeatherOverlay weather={gameState.weather || "clear"} />
               {/* TACTICAL HUD SWITCH - IMMERSIVE MINIMALIST CONTROL PANEL */}
               {!gameState.combatState?.isActive && (
                 <div className="flex border border-white/10 rounded-xl overflow-hidden bg-slate-950/40 backdrop-blur-md p-1.5 font-mono text-xs w-full max-w-xl mx-auto shadow-lg z-10 relative">
@@ -3441,7 +4161,7 @@ export default function App() {
 
                 {/* DOCK BAR STATUS GAUGES WITH HIGHEST VISUAL INTEGRITY */}
                 {!gameState.combatState?.isActive && (
-                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 grid grid-cols-2 md:grid-cols-4 gap-4 relative">
+                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 relative">
                     
                     {/* District / Coordinate Node info with travel status indicator */}
                     <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
@@ -3455,6 +4175,34 @@ export default function App() {
                         </p>
                         <span className="text-[9px] text-cyan-400 block uppercase truncate font-semibold">
                           {REGIONS.find(r => r.id === gameState.district)?.name || "Slums"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* WEATHER CONDITIONS NODE */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
+                      <div className="p-2 bg-gradient-to-br from-amber-950/50 to-slate-900 border border-amber-500/30 text-amber-400 rounded-md">
+                        <CloudLightning size={16} />
+                      </div>
+                      <div className="overflow-hidden font-mono text-left">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">ATMOSPHERE</span>
+                        <p className="text-[11px] font-bold text-white uppercase truncate mt-0.5">
+                          {gameState.weather === "clear" && "Clear Skies ☀️"}
+                          {gameState.weather === "rain" && "Acid Rain 🌧️"}
+                          {gameState.weather === "snow" && "Neon Frost ❄️"}
+                          {gameState.weather === "storm" && "Electro Storm ⚡"}
+                          {gameState.weather === "heat" && "Thermal wave 🥵"}
+                          {gameState.weather === "smog" && "Toxic Smog 😷"}
+                          {(!gameState.weather || gameState.weather === "clear") && "Optimal skies ☀️"}
+                        </p>
+                        <span className="text-[7.5px] text-amber-500 block uppercase truncate font-semibold">
+                          {gameState.weather === "clear" && "Normal Stamina Rate"}
+                          {gameState.weather === "rain" && "+2 Stamina Drain / Wet"}
+                          {gameState.weather === "snow" && "+3 Stamina / -2 Ether"}
+                          {gameState.weather === "storm" && "+5 Stamina / Static Risk"}
+                          {gameState.weather === "heat" && "+5 Stamina / Damage Risk"}
+                          {gameState.weather === "smog" && "+4 Stamina / HP & MP Drain"}
+                          {(!gameState.weather || gameState.weather === "clear") && "No Active Debuffs"}
                         </span>
                       </div>
                     </div>
@@ -3496,6 +4244,26 @@ export default function App() {
                       </div>
                       <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
                         COGNITIVE CHIP CALIBRATED
+                      </span>
+                    </div>
+
+                    {/* STAMINA/FATIGUE GAUGE RACK */}
+                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
+                        <span className="font-bold text-amber-500 flex items-center gap-1 uppercase">
+                          <Activity size={11} className="text-amber-500 animate-pulse" /> Stamina Core
+                        </span>
+                        <span className="font-bold text-[#f5ebd5]">{gameState.stamina ?? 100} / 100</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
+                        <div
+                          className="bg-amber-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(245,158,11,0.7)]"
+                          style={{ width: `${Math.max(0, Math.min(100, (gameState.stamina ?? 100)))}%` }}
+                        />
+                      </div>
+                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
+                        {gameState.stamina === 0 ? "⚠️ EXHAUSTED: REST" : "ACTUATORS: OPERATIONAL"}
                       </span>
                     </div>
 
@@ -3605,11 +4373,31 @@ export default function App() {
                               <button
                                 key={p.id}
                                 onClick={() => {
+                                  if (gameState.stamina <= 0) {
+                                    triggerToast("STAMINA EXHAUSTED: Transit locked. Rest at Aurus Safehouse to restore.");
+                                    setLogs(prev => [
+                                      ...prev,
+                                      {
+                                        id: crypto.randomUUID(),
+                                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                        text: `❌ NAVIGATION ERROR: Cannot walk to "${p.name}". Neural fatigue locks locomotive motor core. REST required.`,
+                                        type: "system",
+                                        district: gameState.district,
+                                        poi: gameState.poi
+                                      }
+                                    ]);
+                                    return;
+                                  }
+
                                   // Update game POI
                                   let nextState = { ...gameState };
                                   nextState.poi = p.name;
                                   nextState.district = p.district;
+                                  
+                                  const travelResult = handleStaminaAndWeatherOnTravel(nextState, false, p.name);
+                                  nextState = travelResult.nextState;
                                   setGameState(nextState);
+
                                   // Enter local POI Detailed View automatically!
                                   setActivePOIView(p.id);
                                   
@@ -3623,8 +4411,13 @@ export default function App() {
                                       type: "system",
                                       district: p.district,
                                       poi: p.name
-                                    }
+                                    },
+                                    ...travelResult.logs
                                   ]);
+
+                                  if (travelResult.warningText) {
+                                    triggerToast(travelResult.warningText);
+                                  }
                                 }}
                                 className="absolute transition-all transform -translate-x-1/2 -translate-y-1/2 cursor-pointer p-1 rounded-lg group/pin"
                                 style={{ left: `${p.x}%`, top: `${p.y}%` }}
@@ -4073,7 +4866,11 @@ export default function App() {
                                             ? "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200"
                                             : activeDialogue === "lost_girl"
                                               ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200"
-                                              : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                                              : activeDialogue === "auction_lobby"
+                                                ? "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&q=80&w=200"
+                                                : activeDialogue === "inspect_pens"
+                                                  ? "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&q=80&w=200"
+                                                  : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
                                     }
                                     alt="NPC portrait"
                                     referrerPolicy="no-referrer"
@@ -4082,10 +4879,10 @@ export default function App() {
 
                                 <div className="space-y-1 font-mono text-[11px] flex-1 text-left">
                                   <p className="text-cyan-400 font-bold uppercase leading-none">
-                                    {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : activeDialogue === "lost_girl" ? "Mia" : "Agent Vesper"}
+                                    {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : activeDialogue === "lost_girl" ? "Mia" : activeDialogue === "auction_lobby" ? "Syndicate Auctioneer" : activeDialogue === "inspect_pens" ? "Holding Cell Warden" : "Agent Vesper"}
                                   </p>
                                   <p className="text-[9px] text-slate-500 uppercase font-semibold">
-                                    {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : activeDialogue === "lost_girl" ? "Lost Corporate Subject" : "Nexus Recruiter"}
+                                    {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : activeDialogue === "lost_girl" ? "Lost Corporate Subject" : activeDialogue === "auction_lobby" ? "Outcast Contract Trader" : activeDialogue === "inspect_pens" ? "Security Detainee Monitor" : "Nexus Recruiter"}
                                   </p>
                                   <span className="h-px bg-white/5 block my-1" />
                                   <p className="text-slate-300 font-sans text-2xs leading-relaxed italic">
@@ -4111,7 +4908,11 @@ export default function App() {
                                             ? gameState.companions.some(c => c.name === "Mia")
                                               ? "Mia looks up at you with happy, sparkling eyes: 'Thank you for giving me a home and saving my life, commander! I'll do my absolute best to support you.'"
                                               : "P-please... don't report me to Ares Biotech security... I escaped when the mainframe crashed. My neural cortex is overloading and I have no credentials, no credits, and nowhere to go... can you help me?"
-                                            : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
+                                            : activeDialogue === "auction_lobby"
+                                              ? "The syndicate auction floor is roaring! Today we are selling the premium servitude contracts of captured outcasts and cyber-laborers. Place your bids immediately or leave the trading ring!"
+                                              : activeDialogue === "inspect_pens"
+                                                ? "You walk down the wet, rusty steel corridors of the holding blocks. Outcasts of all shapes look through the glowing security bars with fear and hope. You can purchase their cell key to release them to your base, or ignore them."
+                                                : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
                                       }
                                   </p>
 
@@ -4221,10 +5022,388 @@ export default function App() {
                                       ) : null
                                     )}
 
-                                    {activeDialogue === "lost_girl" && !gameState.companions.some(c => c.name === "Mia") && (
+                                    {activeDialogue === "auction_lobby" && (
+                                      <>
+                                        {/* Bid for Evelyn */}
+                                        {!gameState.baseNPCs?.some(n => n.id === "evelyn") ? (
+                                          (() => {
+                                            const isBribed = gameState.completedPOIActions?.includes("auction_market:bribed");
+                                            const price = isBribed ? 90 : 120;
+                                            return (
+                                              <>
+                                                {gameState.credits >= price ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      next.credits -= price;
+                                                      const evelyn = {
+                                                        id: "evelyn",
+                                                        name: "Evelyn",
+                                                        role: "Maid Servitude Specialist",
+                                                        avatar: "🧹",
+                                                        image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Evelyn was a cyber-genetic engineer before severe medical debts got her sold to the syndicate under absolute servitude. She wears clean butler-style lace cuffs and sweeps base server nodes.",
+                                                        dialogue: "Master... the safehouse energy grids have been fine-tuned and calibrated to peak performance. Tell me how I can serve you today.",
+                                                        reaction: null,
+                                                        happiness: 45,
+                                                        affection: "Reserved",
+                                                        affectionValue: 35,
+                                                        willpower: 55,
+                                                        corruption: 15,
+                                                        hygiene: "Excellent",
+                                                        discipline: 75,
+                                                        hunger: "Hungry",
+                                                        respect: 40,
+                                                        withdrawRisk: "None",
+                                                        anger: 15,
+                                                        defiance: 20,
+                                                        fear: 40,
+                                                        inventory: ["Tech-repair Screwdriver"],
+                                                        currentJob: "Base Maintenance Maid"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), evelyn];
+                                                      next.experience += 75;
+                                                      setGameState(next);
+                                                      triggerToast(`EVELYN CONTRACT PURCHASED (+75 XP)`);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                  >
+                                                    🧹 Bid on Evelyn ({price}¤) [Guaranteed Win]
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                                    Need {price}¤ for Evelyn
+                                                  </span>
+                                                )}
+
+                                                <button
+                                                  onClick={() => {
+                                                    const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                    if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                      triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                      return;
+                                                    }
+                                                    const mind = gameState.skills?.mindmancer || 0;
+                                                    if (mind >= 1) {
+                                                      let next = { ...gameState };
+                                                      const bluffPrice = isBribed ? 60 : 80;
+                                                      if (next.credits >= bluffPrice) {
+                                                        next.credits -= bluffPrice;
+                                                        const evelyn = {
+                                                          id: "evelyn",
+                                                          name: "Evelyn",
+                                                          role: "Maid Servitude Specialist",
+                                                          avatar: "🧹",
+                                                          image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600",
+                                                          description: "Evelyn was a cyber-genetic engineer before severe medical debts got her sold to the syndicate under absolute servitude. She wears clean butler-style lace cuffs and sweeps base server nodes.",
+                                                          dialogue: "Master... the safehouse energy grids have been fine-tuned and calibrated to peak performance. Tell me how I can serve you today.",
+                                                          reaction: null,
+                                                          happiness: 45,
+                                                          affection: "Reserved",
+                                                          affectionValue: 35,
+                                                          willpower: 55,
+                                                          corruption: 15,
+                                                          hygiene: "Excellent",
+                                                          discipline: 75,
+                                                          hunger: "Hungry",
+                                                          respect: 40,
+                                                          withdrawRisk: "None",
+                                                          anger: 15,
+                                                          defiance: 20,
+                                                          fear: 40,
+                                                          inventory: ["Tech-repair Screwdriver"],
+                                                          currentJob: "Base Maintenance Maid"
+                                                        };
+                                                        next.baseNPCs = [...(next.baseNPCs || []), evelyn];
+                                                        next.experience += 100;
+                                                        setGameState(next);
+                                                        triggerToast(`BLUFF SUCCESS: Bought Evelyn for ${bluffPrice}¤!`);
+                                                      } else {
+                                                        triggerToast("INSUFFICIENT CREDITS FOR BLUFF");
+                                                      }
+                                                    } else {
+                                                      triggerToast("REQUIRES MINDMANCER LEVEL 1");
+                                                    }
+                                                  }}
+                                                  className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                >
+                                                  🔮 [Mindmancer 1] Social Bluff Bid ({isBribed ? 60 : 80}¤)
+                                                </button>
+                                              </>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 border border-dashed border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Evelyn Contract Acquired
+                                          </span>
+                                        )}
+
+                                        {/* Bid for Talon */}
+                                        {!gameState.baseNPCs?.some(n => n.id === "talon") ? (
+                                          (() => {
+                                            const isBribed = gameState.completedPOIActions?.includes("auction_market:bribed");
+                                            const price = isBribed ? 135 : 180;
+                                            return (
+                                              <>
+                                                {gameState.credits >= price ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      next.credits -= price;
+                                                      const talon = {
+                                                        id: "talon",
+                                                        name: "Talon",
+                                                        role: "Chrome Base Sentinel",
+                                                        avatar: "🤖",
+                                                        image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600",
+                                                        description: "A heavily-chromed cybernetic enforcer and former pit-gladiator purchased from the syndicate arenas. He stands tall, checking the ballistic shell loaders in his pneumatic arm gaskets.",
+                                                        dialogue: "Orders, Boss. My pneumatic pistons are pressurized and ready to breach. Any corporate rat coming through those hideout doors will get iron-crushed.",
+                                                        reaction: null,
+                                                        happiness: 60,
+                                                        affection: "Distant",
+                                                        affectionValue: 20,
+                                                        willpower: 85,
+                                                        corruption: 35,
+                                                        hygiene: "Normal",
+                                                        discipline: 80,
+                                                        hunger: "Well-fed",
+                                                        respect: 65,
+                                                        withdrawRisk: "None",
+                                                        anger: 25,
+                                                        defiance: 10,
+                                                        fear: 10,
+                                                        inventory: ["Pneumatic Gauntlet Key"],
+                                                        currentJob: "Hideout Sentry Guard"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), talon];
+                                                      next.experience += 85;
+                                                      setGameState(next);
+                                                      triggerToast(`TALON CONTRACT PURCHASED (+85 XP)`);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                  >
+                                                    🤖 Bid on Talon ({price}¤) [Guaranteed Win]
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                                    Need {price}¤ for Talon
+                                                  </span>
+                                                )}
+
+                                                <button
+                                                  onClick={() => {
+                                                    const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                    if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                      triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                      return;
+                                                    }
+                                                    const str = gameState.attributes?.str || 10;
+                                                    const roll = Math.floor(Math.random() * 20) + 1 + str;
+                                                    const bluffPrice = isBribed ? 90 : 120;
+                                                    if (roll >= 15) {
+                                                      let next = { ...gameState };
+                                                      if (next.credits >= bluffPrice) {
+                                                        next.credits -= bluffPrice;
+                                                        const talon = {
+                                                          id: "talon",
+                                                          name: "Talon",
+                                                          role: "Chrome Base Sentinel",
+                                                          avatar: "🤖",
+                                                          image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+                                                          description: "A heavily-chromed cybernetic enforcer and former pit-gladiator purchased from the syndicate arenas. He stands tall, checking the ballistic shell loaders in his pneumatic arm gaskets.",
+                                                          dialogue: "Orders, Boss. My pneumatic pistons are pressurized and ready to breach. Any corporate rat coming through those hideout doors will get iron-crushed.",
+                                                          reaction: null,
+                                                          happiness: 60,
+                                                          affection: "Distant",
+                                                          affectionValue: 20,
+                                                          willpower: 85,
+                                                          corruption: 35,
+                                                          hygiene: "Normal",
+                                                          discipline: 80,
+                                                          hunger: "Well-fed",
+                                                          respect: 65,
+                                                          withdrawRisk: "None",
+                                                          anger: 25,
+                                                          defiance: 10,
+                                                          fear: 10,
+                                                          inventory: ["Pneumatic Gauntlet Key"],
+                                                          currentJob: "Hideout Sentry Guard"
+                                                        };
+                                                        next.baseNPCs = [...(next.baseNPCs || []), talon];
+                                                        next.experience += 110;
+                                                        setGameState(next);
+                                                        triggerToast(`STR INTIMIDATION SUCCESS! Bought Talon for ${bluffPrice}¤!`);
+                                                      } else {
+                                                        triggerToast("INSUFFICIENT CREDITS FOR INTIMIDATION");
+                                                      }
+                                                    } else {
+                                                      triggerToast(`STR INTIMIDATION FAIL (Roll: ${roll} vs 15): Bidders laughed!`);
+                                                    }
+                                                  }}
+                                                  className="bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                >
+                                                  🦾 [Strength Check] Intimidate Competitors ({isBribed ? 90 : 120}¤)
+                                                </button>
+                                              </>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 border border-dashed border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Talon Contract Acquired
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+
+                                    {activeDialogue === "inspect_pens" && (
+                                      <>
+                                        {!gameState.baseNPCs?.some(n => n.id === "kira") ? (
+                                          (() => {
+                                            const isBribed = gameState.completedPOIActions?.includes("auction_market:bribed");
+                                            const price = isBribed ? 150 : 200;
+                                            return (
+                                              <>
+                                                {gameState.credits >= price ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      next.credits -= price;
+                                                      const kira = {
+                                                        id: "kira",
+                                                        name: "Kira",
+                                                        role: "Cyber-Hacker Specialist",
+                                                        avatar: "💻",
+                                                        image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Kira is a prodigy netrunner whom you rescued from the syndicate holdout cages. She sits cross-legged on a server crate with her portable deck glowing bright teal.",
+                                                        dialogue: "Yo, Boss! Hacked three corporate escrow channels while you were out. Automated credits are trickling into our balance logs as we speak!",
+                                                        reaction: null,
+                                                        happiness: 80,
+                                                        affection: "Grateful",
+                                                        affectionValue: 60,
+                                                        willpower: 70,
+                                                        corruption: 10,
+                                                        hygiene: "Excellent",
+                                                        discipline: 65,
+                                                        hunger: "Satiated",
+                                                        respect: 70,
+                                                        withdrawRisk: "None",
+                                                        anger: 5,
+                                                        defiance: 15,
+                                                        fear: 15,
+                                                        inventory: ["Cracked Cyberdeck Module"],
+                                                        currentJob: "Automated Data Thief"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), kira];
+                                                      next.experience += 90;
+                                                      setGameState(next);
+                                                      triggerToast(`RESCUED KIRA (+90 XP)`);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                  >
+                                                    🔓 Rescued Kira / Buy Key ({price}¤)
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                                    Need {price}¤ for Kira Key
+                                                  </span>
+                                                )}
+
+                                                <button
+                                                  onClick={() => {
+                                                    const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                    if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                      triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                      return;
+                                                    }
+                                                    const intelligence = gameState.attributes?.int || 10;
+                                                    const roll = Math.floor(Math.random() * 20) + 1 + intelligence;
+                                                    if (roll >= 18) {
+                                                      let next = { ...gameState };
+                                                      const kira = {
+                                                        id: "kira",
+                                                        name: "Kira",
+                                                        role: "Cyber-Hacker Specialist",
+                                                        avatar: "💻",
+                                                        image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Kira is a prodigy netrunner whom you rescued from the syndicate holdout cages. She sits cross-legged on a server crate with her portable deck glowing bright teal.",
+                                                        dialogue: "Yo, Boss! Hacked three corporate escrow channels while you were out. Automated credits are trickling into our balance logs as we speak!",
+                                                        reaction: null,
+                                                        happiness: 80,
+                                                        affection: "Grateful",
+                                                        affectionValue: 60,
+                                                        willpower: 70,
+                                                        corruption: 10,
+                                                        hygiene: "Excellent",
+                                                        discipline: 65,
+                                                        hunger: "Satiated",
+                                                        respect: 70,
+                                                        withdrawRisk: "None",
+                                                        anger: 5,
+                                                        defiance: 15,
+                                                        fear: 15,
+                                                        inventory: ["Cracked Cyberdeck Module"],
+                                                        currentJob: "Automated Data Thief"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), kira];
+                                                      next.experience += 150;
+                                                      setGameState(next);
+                                                      triggerToast(`INT CHECK SUCCESS (Roll: ${roll} vs 18)! Kira Hacked Free!`);
+                                                    } else {
+                                                      // Trigger Alarm Combat!
+                                                      let next = { ...gameState };
+                                                      next.combatState = {
+                                                        enemyName: "Syndicate Shock-Guard (Group Ambush)",
+                                                        enemyHp: 65,
+                                                        enemyMaxHp: 65,
+                                                        enemyShields: 20,
+                                                        enemyMaxShields: 20,
+                                                        isActive: true,
+                                                        turnLog: "INT CHECK FAILURE! Hacking attempt detected! Red laser grid alarm activated and Warden dispatched Shock-Guards to neutralize you!"
+                                                      };
+                                                      setGameState(next);
+                                                      setActiveDialogue(null);
+                                                      triggerToast(`🚨 HACK FAILURE (Roll: ${roll} vs 18): ALARMS DETECTED!`);
+                                                    }
+                                                  }}
+                                                  className="bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                >
+                                                  🧠 [Intellect Check] Decrypt Latch Code (0¤, Alert Risk)
+                                                </button>
+                                              </>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 border border-dashed border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Kira Rescued to Safehouse Base
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+
+                                    {activeDialogue === "lost_girl" && !gameState.baseNPCs?.some(c => c.id === "mia") && (
                                       <>
                                         <button
                                           onClick={() => {
+                                            const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                            if ((gameState.baseNPCs || []).length >= maxCap) {
+                                              triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                              return;
+                                            }
                                             let next = { ...gameState };
                                             const mia = {
                                               name: "Mia",
@@ -4241,11 +5420,37 @@ export default function App() {
                                                 trinket: null
                                               }
                                             };
+                                            const miaBaseNPC = {
+                                              id: "mia",
+                                              name: "Mia",
+                                              role: "Base Specialist / Chef",
+                                              avatar: "🌸",
+                                              image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+                                              description: "Mia is cleaning the server stacks in the safehouse core. Her posture is fragile but her eyes show a deep, quiet gratitude for rescuing her from the slums.",
+                                              dialogue: "Um... hello, commander. Thank you so much for bringing me here. It's so warm and safe compared to the rainy back-alleys. I've prepared a hot meal if you are hungry.",
+                                              reaction: null,
+                                              happiness: 95,
+                                              affection: "Warm",
+                                              affectionValue: 78,
+                                              willpower: 45,
+                                              corruption: 10,
+                                              hygiene: "Excellent",
+                                              discipline: 60,
+                                              hunger: "Satiated",
+                                              respect: 85,
+                                              withdrawRisk: "None",
+                                              anger: 0,
+                                              defiance: 5,
+                                              fear: 15,
+                                              inventory: ["Copper-Wire Ring"],
+                                              currentJob: "Base Supply Chef"
+                                            };
                                             next.companions.push(mia);
                                             next.party.push("Mia");
+                                            next.baseNPCs = [...(next.baseNPCs || []), miaBaseNPC];
                                             next.experience += 60;
                                             setGameState(next);
-                                            triggerToast("MIA JOINED YOUR PARTY!");
+                                            triggerToast("MIA JOINED YOUR PARTY AND SAFEHOUSE BASE!");
                                             setActiveDialogue(null);
                                           }}
                                           className="bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-emerald-400"
@@ -4255,6 +5460,11 @@ export default function App() {
 
                                         <button
                                           onClick={() => {
+                                            const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                            if ((gameState.baseNPCs || []).length >= maxCap) {
+                                              triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                              return;
+                                            }
                                             let next = { ...gameState };
                                             const mia = {
                                               name: "Mia",
@@ -4271,10 +5481,36 @@ export default function App() {
                                                 trinket: null
                                               }
                                             };
+                                            const miaBaseNPC = {
+                                              id: "mia",
+                                              name: "Mia",
+                                              role: "Base Specialist / Chef",
+                                              avatar: "🌸",
+                                              image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+                                              description: "Mia is cleaning the server stacks in the safehouse core. Her posture is fragile but her eyes show a deep, quiet gratitude for rescuing her from the slums.",
+                                              dialogue: "Um... hello, commander. Thank you so much for bringing me here. It's so warm and safe compared to the rainy back-alleys. I've prepared a hot meal if you are hungry.",
+                                              reaction: null,
+                                              happiness: 95,
+                                              affection: "Warm",
+                                              affectionValue: 78,
+                                              willpower: 45,
+                                              corruption: 10,
+                                              hygiene: "Excellent",
+                                              discipline: 60,
+                                              hunger: "Satiated",
+                                              respect: 85,
+                                              withdrawRisk: "None",
+                                              anger: 0,
+                                              defiance: 5,
+                                              fear: 15,
+                                              inventory: ["Copper-Wire Ring"],
+                                              currentJob: "Base Supply Chef"
+                                            };
                                             next.companions.push(mia);
+                                            next.baseNPCs = [...(next.baseNPCs || []), miaBaseNPC];
                                             next.experience += 80;
                                             setGameState(next);
-                                            triggerToast("MIA BOUND AS SAFE-HOUSE MAID");
+                                            triggerToast("MIA BOUND AS SAFE-HOUSE MAID & RECRUITED TO BASE!");
                                             setActiveDialogue(null);
                                           }}
                                           className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
@@ -4285,17 +5521,48 @@ export default function App() {
                                         {gameState.credits >= 30 ? (
                                           <button
                                             onClick={() => {
+                                              const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                              if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                return;
+                                              }
                                               let next = { ...gameState };
+                                              const miaBaseNPC = {
+                                                id: "mia",
+                                                name: "Mia",
+                                                role: "Base Specialist / Chef",
+                                                avatar: "🌸",
+                                                image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
+                                                description: "Mia is cleaning the server stacks in the safehouse core. Her posture is fragile but her eyes show a deep, quiet gratitude for rescuing her from the slums.",
+                                                dialogue: "Um... hello, commander. Thank you so much for bringing me here. It's so warm and safe compared to the rainy back-alleys. I've prepared a hot meal if you are hungry.",
+                                                reaction: null,
+                                                happiness: 95,
+                                                affection: "Warm",
+                                                affectionValue: 78,
+                                                willpower: 45,
+                                                corruption: 10,
+                                                hygiene: "Excellent",
+                                                discipline: 60,
+                                                hunger: "Satiated",
+                                                respect: 85,
+                                                withdrawRisk: "None",
+                                                anger: 0,
+                                                defiance: 5,
+                                                fear: 15,
+                                                inventory: ["Copper-Wire Ring"],
+                                                currentJob: "Base Supply Chef"
+                                              };
                                               next.credits -= 30;
                                               next.experience += 100;
                                               next.inventory.push("Ether Mana-Cell (Mana)");
+                                              next.baseNPCs = [...(next.baseNPCs || []), miaBaseNPC];
                                               setGameState(next);
-                                              triggerToast("SAVED MIA! Gained Ether Mana-Cell");
+                                              triggerToast("SAVED MIA! Guided her to your Safehouse Base");
                                               setActiveDialogue(null);
                                             }}
                                             className="bg-cyan-600 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-cyan-500"
                                           >
-                                            🪙 Give 30¤ & Guide to Safety
+                                            🪙 Give 30¤ & Guide to Safehouse
                                           </button>
                                         ) : (
                                           <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
@@ -4474,11 +5741,27 @@ export default function App() {
                                       : "OPERATIONAL RESPONSES PREPARED AT LOCATION:"}
                                   </p>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {(activePOIView === "ventilation_shaft" && ventFailed
-                                      ? ["Force Fan Blades (STR Check)", "Trigger EMP Burst (EMP Explosion!)", "Hack Fan Console (INT Check)"]
-                                      : (MAP_POIS.find(p => p.id === activePOIView)?.buttons || [])
-                                    ).map((action, idx) => {
+                                    {(() => {
+                                      let btns = activePOIView === "ventilation_shaft" && ventFailed
+                                        ? ["Force Fan Blades (STR Check)", "Trigger EMP Burst (EMP Explosion!)", "Hack Fan Console (INT Check)"]
+                                        : [...(MAP_POIS.find(p => p.id === activePOIView)?.buttons || [])];
+                                      
+                                      if (gameState && gameState.stamina <= 35) {
+                                        if (gameState.credits >= 25) {
+                                          btns.push("💉 Emergency Adrenaline Dose (-25¤)");
+                                        }
+                                        if (gameState.hp > 12) {
+                                          btns.push("💤 Heavy Rest on Back-Alley Grate (+20 Stamina, -10 HP)");
+                                        }
+                                        const isPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+                                        if (!isPrologue) {
+                                          btns.push("🚀 Fast-Travel Home to Sleep");
+                                        }
+                                      }
+                                      return btns;
+                                    })().map((action, idx) => {
                                       const isCompleted = isActionCompleted(activePOIView, action);
+                                      const isEmergencyBtn = action.startsWith("💉") || action.startsWith("💤") || action.startsWith("🚀");
                                       return (
                                         <button
                                           key={idx}
@@ -4487,9 +5770,11 @@ export default function App() {
                                           className={`text-left px-3.5 py-2.5 rounded-lg border font-mono text-xs transition-all flex items-center justify-between cursor-pointer group ${
                                             isCompleted
                                               ? "border-slate-950 bg-slate-950/40 text-slate-500 cursor-not-allowed opacity-50"
-                                              : activePOIView === "ventilation_shaft" && ventFailed
-                                                ? "border-red-500/30 bg-red-950/40 hover:bg-red-900/50 hover:border-red-500/60 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
-                                                : "border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white"
+                                              : isEmergencyBtn
+                                                ? "border-amber-500/40 bg-amber-950/30 hover:bg-amber-900/40 hover:border-amber-500 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                                : activePOIView === "ventilation_shaft" && ventFailed
+                                                  ? "border-red-500/30 bg-red-950/40 hover:bg-red-900/50 hover:border-red-500/60 text-red-100 shadow-[0_0_10px_rgba(239,68,68,0.15)]"
+                                                  : "border-white/5 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-500/30 text-white"
                                           }`}
                                         >
                                           <span className="truncate group-hover:text-cyan-300">
@@ -6850,6 +8135,17 @@ export default function App() {
             );
           })()}
         </AnimatePresence>
+
+        {/* Base Crew Management Screen (NPC Interaction Hub) */}
+        {baseNPCManagerOpen && gameState && (
+          <NPCBaseManagement
+            isOpen={baseNPCManagerOpen}
+            onClose={() => setBaseNPCManagerOpen(false)}
+            gameState={gameState}
+            setGameState={setGameState}
+            triggerToast={triggerToast}
+          />
+        )}
 
       </main>
 

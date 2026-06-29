@@ -611,7 +611,8 @@ export const MAP_POIS: MapPOI[] = [
     buttons: [
       "Rest & Recover at Hideout",
       "Check Stash Inventory",
-      "Manage Passive Server Work"
+      "Manage Passive Server Work",
+      "Base Crew Management (NPCs)"
     ]
   },
   {
@@ -660,6 +661,21 @@ export const MAP_POIS: MapPOI[] = [
       "Contract Hire Scythe (100¤)",
       "Contract Hire Vex (80¤)",
       "Contract Hire Brick (90¤)"
+    ]
+  },
+  {
+    id: "auction_market",
+    name: "Slave & Outcast Auction Market",
+    district: "aurus",
+    description: "An underground syndicate trade room filled with low-level high-flicker sodium glow pipes. Here, the Cyber-Syndicate auctions contracts of debt-outcasts, recaptured corporate defectors, and specialized servant sub-systems. You can bid to purchase their absolute contract, rescue them to join your rebel safehouse base, or put them to work.",
+    image: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=600",
+    x: 65,
+    y: 80,
+    type: "hiring",
+    buttons: [
+      "Enter Auction Lobby",
+      "Inspect Holdout Pens",
+      "Bribe Syndicate Warden (-40¤)"
     ]
   },
 
@@ -942,6 +958,21 @@ export function getInitialState(archetype: Archetype): GameState {
       headpiece: null,
       trinket: null
     },
-    completedPOIActions: []
+    completedPOIActions: [],
+    stamina: 100,
+    maxStamina: 100,
+    weather: "clear",
+    baseNPCs: [],
+    activeBaseNPCId: null,
+    safehouseDefenses: {
+      securityLevel: 1,
+      turrets: 0,
+      shieldStrength: 100,
+      fortifiedDoors: false,
+      intrusionLogs: [
+        "🔋 Safehouse initial power grid linked successfully.",
+        "📡 Stealth frequency beacon activated - safehouse hidden from city radars."
+      ]
+    }
   };
 }

@@ -1,4 +1,4 @@
-import { GameState, CompanionState } from "./types";
+import { GameState, CompanionState, QuestState } from "./types";
 
 export interface Archetype {
   name: string;
@@ -392,6 +392,44 @@ export const ITEM_METADATA: Record<string, ItemDetails> = {
     name: "Shatter-Ridge Scrap Metal",
     slot: "valuable",
     desc: "Dense alloy fragments from broken structural walls."
+  },
+  "Synthetic Muscle Splice": {
+    name: "Synthetic Muscle Splice",
+    slot: "trinket",
+    rarity: "deluxe",
+    desc: "Increases strength and reflex speeds (+10 Max HP, +2 Str).",
+    stats: { maxHp: 10, str: 2 }
+  },
+  "Chrono-Shift Augment": {
+    name: "Chrono-Shift Augment",
+    slot: "trinket",
+    rarity: "epic",
+    desc: "High-end corporate reflex booster (+15 Max HP, +30 Max Mana, +2 Dex).",
+    stats: { maxHp: 15, maxMana: 30, dex: 2 }
+  },
+  "Stolen Weapon Crate": {
+    name: "Stolen Weapon Crate",
+    slot: "valuable",
+    rarity: "deluxe",
+    desc: "A heavy shipping crate carrying high-grade experimental kinetic rifles."
+  },
+  "Neural Regulator": {
+    name: "Neural Regulator",
+    slot: "valuable",
+    rarity: "deluxe",
+    desc: "Military-grade neural processor harvested from Ares defense drone patrol cores."
+  },
+  "Prototype Singularity Battery": {
+    name: "Prototype Singularity Battery",
+    slot: "valuable",
+    rarity: "legendary",
+    desc: "An extremely high-density energy battery containing cold-fusion containment fields."
+  },
+  "VIP Afterlife Keycard": {
+    name: "VIP Afterlife Keycard",
+    slot: "valuable",
+    rarity: "deluxe",
+    desc: "Cipher's personal security bypass keycard used for Club Afterlife VIP decks."
   }
 };
 
@@ -690,9 +728,10 @@ export const MAP_POIS: MapPOI[] = [
     y: 40,
     type: "social",
     buttons: [
+      "Accept 'The Smuggler's Run' Side-Quest",
+      "Deliver Recovered Weapon Crate to Freight Hub",
       "Scavenge Shipping Containers",
-      "Interface with Cargo Logs",
-      "Inquire for Off-the-Record Freight Tasks"
+      "Interface with Cargo Logs"
     ]
   },
   {
@@ -722,6 +761,36 @@ export const MAP_POIS: MapPOI[] = [
       "Hunt Toxic Swamp Beast",
       "Scavenge Glowing Slime pools",
       "Search Discarded Sewer Grates"
+    ]
+  },
+  {
+    id: "shipyard",
+    name: "Rusty Anchor Shipyard",
+    district: "docks",
+    description: "An abandoned, rust-colored drydock smelling of seawater and grease. Heavy cargo container cranes dangle unstable loads. The Iron Anchor syndicate gang uses this sector to hoard stolen pre-collapse military caches.",
+    image: "https://images.unsplash.com/photo-1516259762381-22954d7d3ad2?auto=format&fit=crop&q=80&w=600",
+    x: 45,
+    y: 80,
+    type: "combat",
+    buttons: [
+      "Raid Syndicate Caches (Triggers Combat!)",
+      "Steal Crane Master Control Key (DEX Check)",
+      "Scavenge Submerged Hull for Scrap Metal"
+    ]
+  },
+  {
+    id: "marv_clinic",
+    name: "Dr. Marv's Cyber-Genetics Clinic",
+    district: "docks",
+    description: "A dim medical office hidden behind a pressurized hatch in Sector 3 of the docks. Dr. Marv is an ex-Ares chief geneticist who went rogue. He stitches custom bio-circuitry and cyberware for outlaws. Marv needs rare neural regulators to complete his experimental bio-stims.",
+    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
+    x: 15,
+    y: 20,
+    type: "shop",
+    buttons: [
+      "Talk to Dr. Marv (Accept Side-Quest: Cybernetic Harvest)",
+      "Deliver Neural Regulators to Dr. Marv",
+      "Undergo Experimental Bio-Splice (STR check)"
     ]
   },
 
@@ -768,6 +837,52 @@ export const MAP_POIS: MapPOI[] = [
     buttons: [
       "Bribe Security Automated Bot (-15¤)",
       "View Ares Commercial Holograms"
+    ]
+  },
+  {
+    id: "nouveau_chrome",
+    name: "Nouveau Cybernetic Showroom",
+    district: "downtown",
+    description: "A glamorous, high-security boutique showroom showcasing elite cyber-implants and legendary-class defensive gear behind pressurized glass shields. The snobbish hologram dealer looks down on street-level operators: 'Our wares require extreme credit liquidity, client.' Inquire here about high-stakes heist opportunities.",
+    image: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=600",
+    x: 85,
+    y: 25,
+    type: "shop",
+    buttons: [
+      "Inquire about 'Nouveau Heist' Side-Quest",
+      "Hack Nouveau Pressure Shields (INT check)",
+      "Loot Prototype Singularity Battery"
+    ]
+  },
+  {
+    id: "club_afterlife",
+    name: "Club Afterlife VIP Lounge",
+    district: "downtown",
+    description: "The premier multi-tiered entertainment penthouse floating between skyway arches of Downtown. Wealthy corporate suits mingle with high-profile matrix data brokers in neon lounge pools. Agent Jax's ex-associate, Cipher, holds court in the VIP booth.",
+    image: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=600",
+    x: 55,
+    y: 55,
+    type: "social",
+    buttons: [
+      "Talk to Cipher (VIP Deck - INT Check)",
+      "Buy Round of Luxury Champagne (-30¤)",
+      "Eavesdrop on Corporate Executives",
+      "Slip VIP Keycard into pocket (DEX Check)"
+    ]
+  },
+  {
+    id: "homicide_site",
+    name: "Highwalk Homicide Site",
+    district: "downtown",
+    description: "A corporate skybridge sealed off with flickering yellow holo-tape. An Ares internal security drone patrol is currently scanning a pool of blood and shredded server plates. Marv's target neural regulators might be found on these patrol units.",
+    image: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=1200",
+    x: 15,
+    y: 40,
+    type: "combat",
+    buttons: [
+      "Ambush Security Patrols (Triggers Combat!)",
+      "Hack Rebel Courier's Cyberdeck (INT Check)",
+      "Search Wreckage for Cargo Pass"
     ]
   },
 
@@ -878,6 +993,54 @@ export const ENEMIES: Record<string, EnemyTemplate[]> = {
       creditReward: [100, 160],
       expReward: 60
     }
+  ],
+  shipyard: [
+    {
+      name: "Iron Anchor Smuggler",
+      hp: 75,
+      maxHp: 75,
+      shields: 15,
+      maxShields: 15,
+      attackText: "fires a rusted automatic carbine with armor-piercing bullets!",
+      damageRange: [11, 20],
+      creditReward: [55, 90],
+      expReward: 40
+    },
+    {
+      name: "Heavy Cargo Loader Mech",
+      hp: 120,
+      maxHp: 120,
+      shields: 40,
+      maxShields: 40,
+      attackText: "smashes down with massive hydraulic clamps!",
+      damageRange: [16, 26],
+      creditReward: [110, 180],
+      expReward: 65
+    }
+  ],
+  homicide_site: [
+    {
+      name: "Ares Patrol Drone",
+      hp: 70,
+      maxHp: 70,
+      shields: 25,
+      maxShields: 25,
+      attackText: "discharges a high-intensity localized plasma burst!",
+      damageRange: [12, 19],
+      creditReward: [50, 85],
+      expReward: 40
+    },
+    {
+      name: "Skybridge Security Enforcer",
+      hp: 100,
+      maxHp: 100,
+      shields: 50,
+      maxShields: 50,
+      attackText: "fires an electrified smart-carbine!",
+      damageRange: [14, 24],
+      creditReward: [90, 150],
+      expReward: 55
+    }
   ]
 };
 
@@ -896,6 +1059,23 @@ export function getInitialState(archetype: Archetype): GameState {
     party: ["Vice", "Tracker"],
     activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
     completedQuests: [],
+    structuredQuests: [
+      {
+        id: "prologue",
+        title: "Subsurface AI Catacombs",
+        category: "Main Quest",
+        description: "Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech.",
+        status: "ACTIVE",
+        objectives: [
+          { id: "hack_terminal", text: "Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech", current: 0, target: 1, completed: false }
+        ],
+        rewards: [
+          { type: "experience", amount: 100 },
+          { type: "credits", amount: 150 }
+        ],
+        log: ["Infiltrated Level B4 corridors. Evading drone alerts."]
+      }
+    ],
     inventory: [...archetype.startingEquipment],
     companions: [
       {

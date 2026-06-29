@@ -38,6 +38,7 @@ export interface GameState {
   party: string[];
   activeQuests: string[];
   completedQuests: string[];
+  structuredQuests?: QuestState[];
   inventory: string[];
   companions: CompanionState[];
   combatState: CombatState | null;
@@ -136,3 +137,31 @@ export interface LogMessage {
   district?: string;
   poi?: string;
 }
+
+export interface QuestObjective {
+  id: string;
+  text: string;
+  current: number;
+  target: number;
+  completed: boolean;
+}
+
+export interface QuestReward {
+  type: "credits" | "experience" | "item" | "maxMana" | "maxHp" | "attribute";
+  amount?: number;
+  itemName?: string;
+  attributeName?: string;
+}
+
+export interface QuestState {
+  id: string;
+  title: string;
+  category: "Main Quest" | "Side Quest";
+  description: string;
+  objectives: QuestObjective[];
+  rewards: QuestReward[];
+  status: "NOT_STARTED" | "ACTIVE" | "COMPLETED" | "FAILED";
+  log: string[]; // Progression/narrative log notes
+  rewardClaimed?: boolean;
+}
+

@@ -61,6 +61,13 @@ export interface GameState {
   };
   equipment?: EquipmentState;
   completedPOIActions?: string[];
+  // Customized Character Properties
+  playerName?: string;
+  playerAge?: number;
+  playerRace?: string;
+  playerAvatarUrl?: string;
+  playerBackground?: string;
+  playerPerks?: string[];
 }
 
 export interface LogMessage {

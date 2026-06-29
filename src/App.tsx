@@ -94,13 +94,30 @@ const getItemIcon = (itemName: string, slot?: string) => {
 };
 
 export default function App() {
-  // Screens: "menu" | "game" | "character_select"
-  const [currentScreen, setCurrentScreen] = useState<"menu" | "game" | "character_select">("menu");
+  // Screens: "menu" | "game" | "character_select" | "intro_story"
+  const [currentScreen, setCurrentScreen] = useState<"menu" | "game" | "character_select" | "intro_story">("menu");
   
   const [selectedArchetype, setSelectedArchetype] = useState(ARCHETYPES[0]);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [logs, setLogs] = useState<LogMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // --- CHARACTER CUSTOMIZATION STATES ---
+  const [customName, setCustomName] = useState("Kaelen");
+  const [customAge, setCustomAge] = useState(24);
+  const [customRace, setCustomRace] = useState("Human");
+  const [customAvatarUrl, setCustomAvatarUrl] = useState("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300");
+  const [customBackground, setCustomBackground] = useState("Street Rat");
+  const [selectedPerks, setSelectedPerks] = useState<string[]>(["Hardened Chassis"]);
+  const [statPointsPool, setStatPointsPool] = useState(10);
+  const [addedStats, setAddedStats] = useState({
+    str: 0,
+    dex: 0,
+    int: 0,
+    will: 0,
+    eth: 0,
+  });
+  const [previewSkillTreeClass, setPreviewSkillTreeClass] = useState<string>("Cyber-Blade");
   
   // Custom manual terminal commands
   const [customInput, setCustomInput] = useState("");
@@ -192,6 +209,14 @@ export default function App() {
     let maxHp = gameState.maxHp || 100;
     let maxMana = gameState.maxMana || 50;
     let startingShields = 0;
+
+    // Apply active perks
+    if (gameState.playerPerks?.includes("Hardened Chassis")) {
+      maxHp += 20;
+    }
+    if (gameState.playerPerks?.includes("Cyber-Optimizer")) {
+      startingShields += 10;
+    }
     
     let str = gameState.attributes?.str || 10;
     let dex = gameState.attributes?.dex || 10;
@@ -1279,10 +1304,81 @@ export default function App() {
     setIsLoading(true);
     const initial = getInitialState(selectedArchetype);
     
+    // Set custom properties
+    initial.playerName = customName.trim() || "Kaelen";
+    initial.playerAge = customAge;
+    initial.playerRace = customRace;
+    initial.playerAvatarUrl = customAvatarUrl;
+    initial.playerBackground = customBackground;
+    initial.playerPerks = selectedPerks;
+    
+    // Establish base attributes
+    const baseAttrs = { ...initial.attributes };
+    
+    // Add player's distributed stat points
+    baseAttrs.str = (baseAttrs.str || 10) + addedStats.str;
+    baseAttrs.dex = (baseAttrs.dex || 10) + addedStats.dex;
+    baseAttrs.int = (baseAttrs.int || 10) + addedStats.int;
+    baseAttrs.will = (baseAttrs.will || 10) + addedStats.will;
+    baseAttrs.eth = (baseAttrs.eth || 10) + addedStats.eth;
+    
+    // Apply Race stat modifiers
+    if (customRace === "Human") {
+      baseAttrs.str += 1;
+      baseAttrs.dex += 1;
+    } else if (customRace === "Cyborg") {
+      baseAttrs.dex += 2;
+      baseAttrs.int += 1;
+      baseAttrs.will -= 1;
+    } else if (customRace === "Mutant") {
+      baseAttrs.str += 2;
+      baseAttrs.eth += 2;
+      baseAttrs.int -= 2;
+    } else if (customRace === "Neuro-Elf") {
+      baseAttrs.int += 2;
+      baseAttrs.will += 2;
+      baseAttrs.str -= 1;
+    } else if (customRace === "Chrome-Dwarf") {
+      baseAttrs.str += 2;
+      baseAttrs.will += 2;
+      baseAttrs.dex -= 1;
+    }
+    
+    // Apply Background modifiers
+    if (customBackground === "Street Rat") {
+      initial.credits += 20;
+      baseAttrs.dex += 1;
+    } else if (customBackground === "Ex-Corp Agent") {
+      initial.credits += 50;
+      initial.maxHp = Math.max(40, (initial.maxHp || 100) - 10);
+      initial.hp = initial.maxHp;
+      baseAttrs.int += 1;
+    } else if (customBackground === "Glitched Specimen") {
+      initial.maxHp = (initial.maxHp || 100) + 20;
+      initial.hp = initial.maxHp;
+      initial.credits = Math.max(10, initial.credits - 30);
+      baseAttrs.str += 1;
+      baseAttrs.eth += 1;
+    } else if (customBackground === "Grid Drifter") {
+      baseAttrs.str += 1;
+      baseAttrs.will += 1;
+    }
+    
+    // Apply Perk modifiers during creation
+    if (selectedPerks.includes("Lucky Jack")) {
+      initial.credits += 40;
+    }
+    if (selectedPerks.includes("Hardened Chassis")) {
+      initial.maxHp = (initial.maxHp || 100) + 20;
+      initial.hp = initial.maxHp;
+    }
+    
+    initial.attributes = baseAttrs;
+    
     const welcomeLog: LogMessage = {
       id: crypto.randomUUID(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      text: `DEPLOYED AGENT [${initial.archetype}] into Megacity-9 slums. Initial equipment established: ${initial.inventory.join(", ")}. Primary credits balance: ${initial.credits}¤.\n\nYour organic cybernetic cortex aligns with sol-prime parameters. The neon glow hums underneath your heels.\n\nSelect districts on the overland map to scan. Enter POIs to trigger local interaction consoles.`,
+      text: `DEPLOYED AGENT [${initial.playerName}] (${customRace} ${selectedArchetype.name}) into Megacity-9 slums. Background: ${customBackground}. Perks: ${selectedPerks.join(", ") || "None"}. Initial gear established: ${initial.inventory.join(", ")}. Primary credits balance: ${initial.credits}¤.\n\nYour organic cybernetic cortex aligns with sol-prime parameters. The neon glow hums underneath your heels.\n\nSelect districts on the overland map to scan. Enter POIs to trigger local interaction consoles.`,
       type: "system",
       district: initial.district,
       poi: initial.poi
@@ -1292,7 +1388,7 @@ export default function App() {
     setGameState(initial);
     setActiveRegionId("conduit09");
     setActivePOIView("ventilation_shaft"); // Start initialized right inside the Ventilation Shaft detailed view!
-    setCurrentScreen("game");
+    setCurrentScreen("intro_story");
     setIsLoading(false);
   };
 
@@ -2629,115 +2725,672 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="max-w-4xl mx-auto w-full grid grid-cols-1 md:grid-cols-12 glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 gap-6"
+              className="max-w-6xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-6"
             >
               {/* Back button to main menu */}
               <button
-                onClick={() => setCurrentScreen("menu")}
-                className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1 text-xs font-mono border border-white/5 px-2 py-1 rounded bg-slate-900/60 transition-all cursor-pointer"
+                onClick={() => {
+                  setCurrentScreen("menu");
+                }}
+                className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1 text-xs font-mono border border-white/5 px-2 py-1 rounded bg-slate-900/60 transition-all cursor-pointer z-10"
               >
                 <ArrowLeft size={13} /> Back to Terminal
               </button>
 
-              <div className="md:col-span-5 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between mt-8 md:mt-0">
-                <div>
-                  <span className="font-mono text-3xs uppercase tracking-[0.2em] text-cyan-400 font-black block mb-2">[SELECTION PROFILE]</span>
-                  <h3 className="font-display font-extrabold text-xl text-white uppercase tracking-wider leading-none">
-                    OPERATIVE FILE
-                  </h3>
-                  <div className="w-10 h-0.5 bg-cyan-400 my-3" />
-                  
-                  <div className="space-y-4 text-xs text-slate-400 leading-relaxed font-sans">
-                    <p>
-                      Before establishing neural uplink to Megacity-9 slums, select your database file record profile. Each sector profile injects customized credits and combat resources.
-                    </p>
-                    <div className="border border-white/10 bg-white/5 p-3 rounded-md font-mono text-[10px] text-slate-300">
-                      "Each neural file begins at level 1 with automated base parameters inside the Aurus Safehouse District."
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 pt-4 border-t border-white/5 font-mono text-[10px] text-slate-400 space-y-1">
-                  <p className="flex items-center gap-1.5">
-                    <CheckCircle size={12} className="text-cyan-400" /> Complete Offline Sandbox Loop
-                  </p>
-                  <p className="flex items-center gap-1.5">
-                    <CheckCircle size={12} className="text-cyan-400" /> Immersive Detailed POI View
-                  </p>
-                </div>
+              {/* Title Header */}
+              <div className="text-center pt-4 pb-2 border-b border-white/5">
+                <span className="font-mono text-xs uppercase tracking-[0.25em] text-cyan-400 font-bold block mb-1">
+                  [ COGNITIVE UPLINK REGISTRATION ]
+                </span>
+                <h2 className="font-display font-extrabold text-2xl text-white uppercase tracking-wider leading-none">
+                  OPERATIVE SPECIFICATION SHEET
+                </h2>
+                <p className="text-3xs text-slate-500 font-mono mt-1.5 uppercase">
+                  INITIALIZE BIOMETRICS, SYSTEM HARDWARE PROTOCOLS, AND SECURE MEMORY SYNAPSES
+                </p>
               </div>
 
-              {/* Specializations selectors */}
-              <div className="md:col-span-7 flex flex-col justify-between space-y-6">
-                <div className="space-y-3">
-                  <span className="font-mono text-3xs uppercase tracking-[0.15em] text-cyan-400 block font-bold">[COGNITIVE ARCHETYPES LIST]</span>
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {ARCHETYPES.map((arch) => (
-                      <button
-                        key={arch.name}
-                        onClick={() => setSelectedArchetype(arch)}
-                        className={`text-left p-4 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${
-                          selectedArchetype.name === arch.name
-                            ? "bg-gradient-to-r from-cyan-950/30 to-rose-950/10 border-cyan-400/80 text-white shadow-[0_0_15px_rgba(6,182,212,0.15)]"
-                            : "bg-slate-900/40 border-white/5 text-slate-300 hover:border-white/20 hover:bg-slate-900/60"
-                        }`}
-                      >
-                        <div>
-                          <p className="font-display font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
-                            {arch.name}
-                            {selectedArchetype.name === arch.name && <Sparkles size={11} className="text-cyan-400 animate-spin" />}
-                          </p>
-                          <p className="text-[11px] text-slate-400 font-sans mt-1 line-clamp-1">{arch.description}</p>
+              {/* Real-time calculated statistics for preview */}
+              {(() => {
+                const selectedBaseStats = {
+                  str: selectedArchetype.name === "Cyber-Blade" ? 14 : selectedArchetype.name === "Techno-Mage" ? 9 : 10,
+                  dex: selectedArchetype.name === "Cyber-Blade" ? 15 : selectedArchetype.name === "Techno-Mage" ? 11 : 13,
+                  int: selectedArchetype.name === "Cyber-Blade" ? 10 : selectedArchetype.name === "Techno-Mage" ? 14 : 15,
+                  will: selectedArchetype.name === "Cyber-Blade" ? 11 : selectedArchetype.name === "Techno-Mage" ? 12 : 11,
+                  eth: selectedArchetype.name === "Cyber-Blade" ? 10 : selectedArchetype.name === "Techno-Mage" ? 15 : 11,
+                };
+
+                const selectedRaceMods = { str: 0, dex: 0, int: 0, will: 0, eth: 0 };
+                if (customRace === "Human") {
+                  selectedRaceMods.str += 1;
+                  selectedRaceMods.dex += 1;
+                } else if (customRace === "Cyborg") {
+                  selectedRaceMods.dex += 2;
+                  selectedRaceMods.int += 1;
+                  selectedRaceMods.will -= 1;
+                } else if (customRace === "Mutant") {
+                  selectedRaceMods.str += 2;
+                  selectedRaceMods.eth += 2;
+                  selectedRaceMods.int -= 2;
+                } else if (customRace === "Neuro-Elf") {
+                  selectedRaceMods.int += 2;
+                  selectedRaceMods.will += 2;
+                  selectedRaceMods.str -= 1;
+                } else if (customRace === "Chrome-Dwarf") {
+                  selectedRaceMods.str += 2;
+                  selectedRaceMods.will += 2;
+                  selectedRaceMods.dex -= 1;
+                }
+
+                const selectedBgMods = { str: 0, dex: 0, int: 0, will: 0, eth: 0 };
+                if (customBackground === "Street Rat") {
+                  selectedBgMods.dex += 1;
+                } else if (customBackground === "Ex-Corp Agent") {
+                  selectedBgMods.int += 1;
+                } else if (customBackground === "Glitched Specimen") {
+                  selectedBgMods.str += 1;
+                  selectedBgMods.eth += 1;
+                } else if (customBackground === "Grid Drifter") {
+                  selectedBgMods.str += 1;
+                  selectedBgMods.will += 1;
+                }
+
+                const previewStr = selectedBaseStats.str + selectedRaceMods.str + selectedBgMods.str + addedStats.str;
+                const previewDex = selectedBaseStats.dex + selectedRaceMods.dex + selectedBgMods.dex + addedStats.dex;
+                const previewInt = selectedBaseStats.int + selectedRaceMods.int + selectedBgMods.int + addedStats.int;
+                const previewWill = selectedBaseStats.will + selectedRaceMods.will + selectedBgMods.will + addedStats.will;
+                const previewEth = selectedBaseStats.eth + selectedRaceMods.eth + selectedBgMods.eth + addedStats.eth;
+
+                let previewHp = selectedArchetype.maxHp;
+                if (customBackground === "Ex-Corp Agent") previewHp -= 10;
+                if (customBackground === "Glitched Specimen") previewHp += 20;
+                if (selectedPerks.includes("Hardened Chassis")) previewHp += 20;
+
+                let previewCredits = selectedArchetype.credits;
+                if (customBackground === "Street Rat") previewCredits += 20;
+                if (customBackground === "Ex-Corp Agent") previewCredits += 50;
+                if (customBackground === "Glitched Specimen") previewCredits -= 30;
+                if (selectedPerks.includes("Lucky Jack")) previewCredits += 40;
+
+                const portraitChoices = [
+                  { name: "Blade", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200" },
+                  { name: "Mage", url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" },
+                  { name: "Hacker", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200" },
+                  { name: "Rebel", url: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=200" },
+                  { name: "Mercenary", url: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200" }
+                ];
+
+                const raceOptions = [
+                  { name: "Human", bonus: "+1 Str, +1 Dex", desc: "Adaptable biological genome." },
+                  { name: "Cyborg", bonus: "+2 Dex, +1 Int, -1 Will", desc: "Refined mechanoid micro-coils." },
+                  { name: "Mutant", bonus: "+2 Str, +2 Eth, -2 Int", desc: "Radiation-infused chemical muscle." },
+                  { name: "Neuro-Elf", bonus: "+2 Int, +2 Will, -1 Str", desc: "Ether-sensitive neuron networks." },
+                  { name: "Chrome-Dwarf", bonus: "+2 Will, +2 Str, -1 Dex", desc: "Reinforced titanium skeletal plates." }
+                ];
+
+                const backgroundOptions = [
+                  { name: "Street Rat", bonus: "+20 Credits, +1 Dex", desc: "Scavenging courier inside level 1 slums." },
+                  { name: "Ex-Corp Agent", bonus: "+50 Credits, -10 HP, +1 Int", desc: "Former security analyst fleeing Biotech Tower." },
+                  { name: "Glitched Specimen", bonus: "+20 Max HP, -30 Credits", desc: "Illicit mind-bender subject breakouts." },
+                  { name: "Grid Drifter", bonus: "+1 Str, +1 Will", desc: "Hardened wanderer mapping outer deserts." }
+                ];
+
+                const perkOptions = [
+                  { id: "adrenaline_junkie", name: "Adrenaline Junkie", desc: "+15% Melee damage at low health (<40% HP)" },
+                  { id: "cyber_optimizer", name: "Cyber-Optimizer", desc: "+10 starting combat shielding permanently" },
+                  { id: "ether_conduit", name: "Ether Conduit", desc: "Regenerate +2 Ether MP at start of every combat turn" },
+                  { id: "hardened_chassis", name: "Hardened Chassis", desc: "+20 Max HP permanent core integrity boost" },
+                  { id: "lucky_jack", name: "Lucky Jack", desc: "+40 starting Credits bonus from hacked accounts" }
+                ];
+
+                const skillTrees: Record<string, { name: string; cost: string; desc: string; icon: string }[]> = {
+                  "Cyber-Blade": [
+                    { name: "Viper Strike (Tier 1)", cost: "10 MP", desc: "Melee blow dealing +150% physical damage with a chemical armor-dissolving corrosion debuff.", icon: "⚔️" },
+                    { name: "Adrenaline Surge (Tier 2)", cost: "15 MP", desc: "Inject fast combat-stimulants, granting +2 AP and +15% Critical Hit Chance for 2 turns.", icon: "⚡" },
+                    { name: "Phantom Dash (Tier 3)", cost: "20 MP", desc: "Bypass defensive fields to blink behind a target, performing a guaranteed 300% backstab crit.", icon: "👤" }
+                  ],
+                  "Techno-Mage": [
+                    { name: "Ether Spark (Tier 1)", cost: "8 MP", desc: "Bends ambient ley structures to fire a direct energy bolt, dealing 18 Ether damage.", icon: "🔮" },
+                    { name: "Net Shield (Tier 2)", cost: "12 MP", desc: "Materialize an active firewall barrier over your neural interface, granting +15 Shields.", icon: "🛡️" },
+                    { name: "Feedback Burn (Tier 3)", cost: "22 MP", desc: "Overload target cerebral deck terminals, causing a spell explosion for 35 damage and 1 turn Silence.", icon: "💥" }
+                  ],
+                  "Outlaw Hacker": [
+                    { name: "ICE Disruption (Tier 1)", cost: "10 MP", desc: "Inject corrupted software into enemy combat sub-routines, lowering accuracy by 30%.", icon: "💻" },
+                    { name: "Targeting Link (Tier 2)", cost: "12 MP", desc: "Paint the target with an orbital micro-laser, boosting all ranged damage they take by +25%.", icon: "🎯" },
+                    { name: "Systems Overload (Tier 3)", cost: "25 MP", desc: "Trigger remote battery/munition discharges, inflicting 28 range damage and stun.", icon: "🔋" }
+                  ],
+                  "Mindmancer": [
+                    { name: "Mind Hack (Tier 1)", cost: "15 MP", desc: "Direct synaptic rewrite, hacking target motor functions and forcing them to attack allies.", icon: "👁️" },
+                    { name: "Neural Overload (Tier 2)", cost: "20 MP", desc: "Psychic cortex shock inflicting 25 damage, completely ignoring physical armor layers.", icon: "🧠" },
+                    { name: "Synaptic Cascade (Tier 3)", cost: "30 MP", desc: "Meltdown blast on all nearby targets dealing 40 psychic damage, locking brains in vegetative sleep.", icon: "🌀" }
+                  ]
+                };
+
+                const handleStatChange = (stat: "str" | "dex" | "int" | "will" | "eth", amount: number) => {
+                  if (amount > 0 && statPointsPool > 0) {
+                    setAddedStats(prev => ({ ...prev, [stat]: prev[stat] + 1 }));
+                    setStatPointsPool(prev => prev - 1);
+                  } else if (amount < 0 && addedStats[stat] > 0) {
+                    setAddedStats(prev => ({ ...prev, [stat]: prev[stat] - 1 }));
+                    setStatPointsPool(prev => prev + 1);
+                  }
+                };
+
+                const handleTogglePerk = (perkId: string) => {
+                  if (selectedPerks.includes(perkId)) {
+                    setSelectedPerks(prev => prev.filter(p => p !== perkId));
+                  } else {
+                    if (selectedPerks.length >= 2) {
+                      triggerToast("MAXIMUM OF 2 PERKS CAN BE CONFIGURED");
+                    } else {
+                      setSelectedPerks(prev => [...prev, perkId]);
+                    }
+                  }
+                };
+
+                const randomizeName = () => {
+                  const names = ["Kaelen_X", "Valerie_Dex", "Cipher_09", "Vance_Street", "Zero_Net", "Specter_V", "Rogue_Prime", "Echo_Chrome", "Rift_Blade", "Viper_T"];
+                  const selected = names[Math.floor(Math.random() * names.length)];
+                  setCustomName(selected);
+                };
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                    {/* COLUMN 1: IDENTITY & ORIGIN (col-span-4) */}
+                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col gap-5 font-mono text-left">
+                      <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
+                        👤 IDENTITY COGNITION
+                      </span>
+                      
+                      {/* Name input */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-slate-400 uppercase font-bold block">OPERATIVE CODENAME</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customName}
+                            onChange={(e) => setCustomName(e.target.value.slice(0, 18))}
+                            className="flex-1 bg-slate-900 border border-white/10 rounded px-3 py-2 text-sm text-white uppercase focus:border-cyan-400 outline-none font-semibold"
+                            placeholder="Enter Name..."
+                          />
+                          <button
+                            onClick={randomizeName}
+                            title="Randomize Name"
+                            className="bg-slate-900 border border-cyan-500/20 text-cyan-400 text-sm px-3 py-2 rounded hover:bg-cyan-950/40 cursor-pointer flex items-center justify-center"
+                          >
+                            🎲
+                          </button>
                         </div>
-                        <ChevronRight size={16} className={selectedArchetype.name === arch.name ? "text-cyan-400" : "text-slate-500"} />
-                      </button>
-                    ))}
+                      </div>
+
+                      {/* Age selection */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs text-slate-400 uppercase font-bold">
+                          <span>COGNITIVE CYCLE AGE</span>
+                          <span className="text-cyan-400 font-extrabold text-sm">{customAge} YEARS</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="18"
+                          max="70"
+                          value={customAge}
+                          onChange={(e) => setCustomAge(parseInt(e.target.value))}
+                          className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                        />
+                      </div>
+
+                      {/* Race dropdown list */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-slate-400 uppercase font-bold block">GENETIC SPECIES SPEC</label>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-[165px] overflow-y-auto pr-1">
+                          {raceOptions.map((r) => (
+                            <button
+                              key={r.name}
+                              onClick={() => setCustomRace(r.name)}
+                              className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
+                                customRace === r.name
+                                  ? "bg-cyan-950/50 border-cyan-400 text-white"
+                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                              }`}
+                            >
+                              <div className="max-w-[70%]">
+                                <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{r.name}</p>
+                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">{r.desc}</p>
+                              </div>
+                              <span className="text-[10px] font-black text-rose-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/10 shrink-0">{r.bonus}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Portrait thumbnail selection list - NOW LARGER */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-slate-400 uppercase font-bold block">UPLINK PORTRAIT CHROME</label>
+                        <div className="flex justify-between items-center gap-3 bg-slate-900/85 p-3 rounded-lg border border-white/10">
+                          <img
+                            src={customAvatarUrl}
+                            alt="Selected custom portrait"
+                            referrerPolicy="no-referrer"
+                            className="w-20 h-20 object-cover rounded-lg border-2 border-cyan-400 grayscale-0 shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0"
+                          />
+                          <div className="grid grid-cols-5 gap-1.5 flex-1">
+                            {portraitChoices.map((p, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setCustomAvatarUrl(p.url)}
+                                className={`w-11 h-11 rounded-lg overflow-hidden border transition-all cursor-pointer relative ${
+                                  customAvatarUrl === p.url ? "border-cyan-400 ring-2 ring-cyan-400/40 grayscale-0 opacity-100" : "border-white/5 grayscale hover:grayscale-0 opacity-70 hover:opacity-100"
+                                }`}
+                              >
+                                <img src={p.url} alt="option" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Background selection list */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-slate-400 uppercase font-bold block">OPERATIVE CHRONOLOGY BACKGROUND</label>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-[165px] overflow-y-auto pr-1">
+                          {backgroundOptions.map((bg) => (
+                            <button
+                              key={bg.name}
+                              onClick={() => setCustomBackground(bg.name)}
+                              className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
+                                customBackground === bg.name
+                                  ? "bg-cyan-950/50 border-cyan-400 text-white"
+                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                              }`}
+                            >
+                              <div className="max-w-[70%]">
+                                <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{bg.name}</p>
+                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">{bg.desc}</p>
+                              </div>
+                              <span className="text-[10px] font-black text-amber-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/10 shrink-0">{bg.bonus}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* COLUMN 2: ARCHETYPE, STAT ALLOCATION & PERKS (col-span-4) */}
+                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col gap-5 font-mono text-left">
+                      <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
+                        🧬 CLASS &amp; COMBAT STATISTICS
+                      </span>
+
+                      {/* Class Selection buttons */}
+                      <div className="space-y-1.5">
+                        <label className="text-xs text-slate-400 uppercase font-bold block">SELECT COGNITIVE ARCHETYPE CLASS</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {ARCHETYPES.map((arch) => (
+                            <button
+                              key={arch.name}
+                              onClick={() => {
+                                setSelectedArchetype(arch);
+                                setPreviewSkillTreeClass(arch.name);
+                              }}
+                              className={`py-3 px-1.5 rounded-lg text-center border font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                                selectedArchetype.name === arch.name
+                                  ? "bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                              }`}
+                            >
+                              <span className="text-xs uppercase font-black truncate max-w-full block">{arch.name.replace("Cyber-", "").replace("Techno-", "").replace("Outlaw ", "")}</span>
+                              <span className="text-[9px] text-rose-400 bg-slate-950 px-1.5 py-0.5 rounded border border-white/5 font-black uppercase tracking-wider">
+                                {arch.name === "Cyber-Blade" ? "Blade" : arch.name === "Techno-Mage" ? "Spell" : "Hacks"}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Stat allocation +/- */}
+                      <div className="bg-slate-900/85 border border-white/10 p-3.5 rounded-lg flex flex-col gap-2.5 relative">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                          <span className="text-xs uppercase font-black text-slate-300">ATTRIBUTE MATRICES</span>
+                          <span className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
+                            {statPointsPool} POINTS POOL
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 mt-1">
+                          {[
+                            { key: "str", name: "STR (STRENGTH)", desc: "Physical armor, physical damage scaling." },
+                            { key: "dex", name: "DEX (DEXTERITY)", desc: "Reflex speed, blade skills & dodge rate." },
+                            { key: "int", name: "INT (INTELLIGENCE)", desc: "Cyberware compatibility, deck bypass speed." },
+                            { key: "will", name: "WILL (WILLPOWER)", desc: "Cognitive ether defenses, spell shielding." },
+                            { key: "eth", name: "ETH (ETHER COGNITION)", desc: "Raw mental energy pools, spell potency." }
+                          ].map((s) => {
+                            const currentVal = s.key === "str" ? previewStr : s.key === "dex" ? previewDex : s.key === "int" ? previewInt : s.key === "will" ? previewWill : previewEth;
+                            const addedCount = addedStats[s.key as "str" | "dex" | "int" | "will" | "eth"];
+                            
+                            return (
+                              <div key={s.key} className="flex justify-between items-center text-xs p-2 bg-slate-950/50 rounded-lg border border-white/5 leading-normal">
+                                <div className="text-left max-w-[65%]">
+                                  <p className="font-extrabold text-xs text-slate-200">{s.name}</p>
+                                  <p className="text-[10px] text-slate-400 leading-tight font-sans mt-0.5">{s.desc}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {/* Minus button */}
+                                  <button
+                                    onClick={() => handleStatChange(s.key as any, -1)}
+                                    disabled={addedCount === 0}
+                                    className={`w-6 h-6 rounded-md text-center font-black text-sm transition-all border flex items-center justify-center cursor-pointer ${
+                                      addedCount > 0
+                                        ? "bg-slate-900 border-white/10 text-rose-400 hover:bg-slate-800"
+                                        : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    -
+                                  </button>
+                                  <span className="text-sm text-white font-extrabold w-6 text-center">
+                                    {currentVal}
+                                  </span>
+                                  {/* Plus button */}
+                                  <button
+                                    onClick={() => handleStatChange(s.key as any, 1)}
+                                    disabled={statPointsPool === 0}
+                                    className={`w-6 h-6 rounded-md text-center font-black text-sm transition-all border flex items-center justify-center cursor-pointer ${
+                                      statPointsPool > 0
+                                        ? "bg-cyan-950 border-cyan-500/40 text-cyan-400 hover:bg-cyan-900"
+                                        : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Perks Selection List */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-xs text-slate-400 uppercase font-bold">
+                          <span>UPLINK SKILL PERKS SETUP</span>
+                          <span className="text-cyan-400 font-extrabold">{selectedPerks.length} / 2 CONFIGURED</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                          {perkOptions.map((perk) => {
+                            const isInstalled = selectedPerks.includes(perk.id);
+                            return (
+                              <button
+                                key={perk.id}
+                                onClick={() => handleTogglePerk(perk.id)}
+                                className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
+                                  isInstalled
+                                    ? "bg-cyan-950/50 border-cyan-400 text-white font-semibold"
+                                    : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                                }`}
+                              >
+                                <div className="max-w-[75%]">
+                                  <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{perk.name}</p>
+                                  <p className="text-[10px] text-slate-400 font-sans mt-0.5">{perk.desc}</p>
+                                </div>
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase shrink-0 ${isInstalled ? "bg-cyan-500 text-slate-950 border-cyan-400" : "bg-slate-950 text-slate-600 border-white/5"}`}>
+                                  {isInstalled ? "Active" : "Unlock"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* COLUMN 3: CLASS SKILL TREE PREVIEW & DEPLOYMENT (col-span-4) */}
+                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
+                      
+                      {/* Skill tree tabs - MINDMANCER TAB HIDDEN AS SPOILER PREVENTER */}
+                      <div className="flex flex-col gap-3 flex-1">
+                        <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
+                          📶 ACTIVE SKILL TREE PREVIEWS
+                        </span>
+
+                        {/* Skill tree tabs selectors - ONLY show 3 core start classes */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {["Cyber-Blade", "Techno-Mage", "Outlaw Hacker"].map((clName) => (
+                            <button
+                              key={clName}
+                              onClick={() => setPreviewSkillTreeClass(clName)}
+                              className={`py-2 px-1 rounded-md text-center border font-extrabold transition-all cursor-pointer text-xs uppercase ${
+                                previewSkillTreeClass === clName
+                                  ? "bg-cyan-950/50 border-cyan-500/50 text-cyan-400"
+                                  : "bg-slate-900/40 border-white/5 text-slate-500 hover:text-slate-300 hover:bg-slate-900/60"
+                              }`}
+                            >
+                              {clName === "Cyber-Blade" ? "Blade" : clName === "Techno-Mage" ? "Mage" : "Hacker"}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Abilities corresponding to the previewSkillTreeClass tab */}
+                        <div className="bg-slate-900/60 border border-white/10 p-3 rounded-lg flex-1 flex flex-col gap-2.5">
+                          <div className="flex justify-between items-center text-xs border-b border-white/5 pb-1.5 text-slate-400 uppercase font-black leading-none">
+                            <span>Abilities &amp; Spells List</span>
+                            <span>Class Level Unlocks</span>
+                          </div>
+
+                          <div className="flex flex-col gap-2 overflow-y-auto max-h-[190px] pr-1 mt-0.5">
+                            {skillTrees[previewSkillTreeClass === "Mindmancer" ? "Cyber-Blade" : previewSkillTreeClass]?.map((sk, idx) => (
+                              <div key={idx} className="bg-slate-950/60 border border-white/5 p-2 rounded-md text-xs leading-normal">
+                                <div className="flex justify-between items-center font-extrabold text-xs text-slate-200">
+                                  <span className="flex items-center gap-1.5 uppercase tracking-wide">
+                                    <span>{sk.icon}</span> {sk.name}
+                                  </span>
+                                  <span className="text-cyan-400 text-[10px] bg-slate-900 border border-white/10 px-2 py-0.5 rounded-md font-bold shrink-0">{sk.cost}</span>
+                                </div>
+                                <p className="text-[11px] text-slate-400 mt-1 leading-normal text-left font-sans">{sk.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary & Deploy button block */}
+                      <div className="bg-slate-900/85 border border-white/10 p-4 rounded-lg flex flex-col gap-3">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-1.5 text-xs font-extrabold text-slate-400">
+                          <span>SUMMARY REGISTRY</span>
+                          <span className="text-cyan-400 text-3xs font-black tracking-widest">STATUS.CONFIRMED</span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2.5 text-center text-xs leading-tight">
+                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
+                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">HEALTH</span>
+                            <span className="text-white font-extrabold text-xs">{previewHp} HP</span>
+                          </div>
+                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
+                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">ETHER</span>
+                            <span className="text-cyan-400 font-extrabold text-xs">{selectedArchetype.maxMana} MP</span>
+                          </div>
+                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
+                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">CREDITS</span>
+                            <span className="text-amber-400 font-extrabold text-xs">{previewCredits}¤</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleDeployAgent}
+                          className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-[0.99] uppercase flex items-center justify-center gap-2"
+                        >
+                          <Play size={12} fill="currentColor" /> Deploy Operative
+                        </button>
+                      </div>
+                    </div>
                   </div>
+                );
+              })()}
+            </motion.div>
+          )}
+
+          {/* ==============================================
+              SCREEN 2.5: INTRO STORY & CONTROLS GUIDE
+             ============================================== */}
+          {currentScreen === "intro_story" && gameState && (
+            <motion.div
+              key="intro-story"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="max-w-5xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-6 box-glow-cyan text-left font-mono"
+            >
+              {/* Top tag */}
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div className="flex items-center gap-2">
+                  <Terminal size={14} className="text-cyan-400 animate-pulse" />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-extrabold">
+                    NEURAL UPLINK STABLE // SECTOR 4 SECURE CONDUIT
+                  </span>
                 </div>
-
-                {/* Selected Bio Metric Board */}
-                <div className="bg-slate-950/80 border border-white/10 p-4 rounded-xl flex flex-col gap-3 font-mono text-xs">
-                  <div className="flex justify-between items-center bg-white/5 px-2 py-1.5 rounded">
-                    <span className="text-[10px] uppercase font-bold text-cyan-400">SYSTEM SPECIALTY</span>
-                    <span className="text-[10px] font-black tracking-wide text-rose-400">{selectedArchetype.specialty}</span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2.5 text-center leading-none">
-                    <div className="bg-slate-900/80 border border-white/5 p-2 rounded-lg">
-                      <Heart size={14} className="text-rose-500 mx-auto mb-1" />
-                      <span className="text-[8px] text-slate-400 block uppercase">Max HP</span>
-                      <span className="text-xs font-black text-rose-400 block mt-1">{selectedArchetype.maxHp} HP</span>
-                    </div>
-                    <div className="bg-slate-900/80 border border-white/5 p-2 rounded-lg">
-                      <Zap size={14} className="text-cyan-400 mx-auto mb-1" />
-                      <span className="text-[8px] text-slate-400 block uppercase">Max Ether</span>
-                      <span className="text-xs font-black text-cyan-400 block mt-1">{selectedArchetype.maxMana} MP</span>
-                    </div>
-                    <div className="bg-slate-900/80 border border-white/5 p-2 rounded-lg">
-                      <Coins size={14} className="text-amber-400 mx-auto mb-1" />
-                      <span className="text-[8px] text-slate-400 block uppercase">Credits Cache</span>
-                      <span className="text-xs font-black text-amber-400 block mt-1">{selectedArchetype.credits}¤</span>
-                    </div>
-                  </div>
-
-                  <div className="text-[10px] bg-slate-900/20 p-2.5 rounded border border-white/5">
-                    <span className="font-bold text-slate-200 block">INITIAL GEAR IN MATRIX:</span>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {selectedArchetype.startingEquipment.map((eq, i) => (
-                        <span key={i} className="bg-slate-900 text-slate-300 px-2 py-0.5 rounded text-[9px] border border-white/5">{eq}</span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Submit trigger button */}
-                <button
-                  onClick={handleDeployAgent}
-                  className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-xl py-3.5 text-xs tracking-widest transition-all cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] active:scale-[0.99] uppercase flex items-center justify-center gap-2"
-                >
-                  <Play size={14} fill="currentColor" /> Initialize Neural Uplink
-                </button>
+                <span className="font-mono text-3xs text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded font-black tracking-widest uppercase">
+                  HEIST PRIORITY: ALPHA
+                </span>
               </div>
+
+              {/* Grid content */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                
+                {/* Visual Banner column (col-span-5) */}
+                <div className="lg:col-span-5 flex flex-col gap-4">
+                  <div className="relative rounded-xl border border-white/10 overflow-hidden shadow-2xl group h-48 md:h-64">
+                    {/* Widescreen visual banner */}
+                    <img
+                      src="https://images.unsplash.com/photo-1515621061946-eff1c2a352bd?auto=format&fit=crop&q=80&w=800"
+                      alt="Cyberpunk megacity night keyart"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+                    <div className="absolute bottom-4 left-4 right-4">
+                      <span className="font-mono text-[8px] uppercase tracking-widest text-cyan-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/5 inline-block mb-1.5 font-bold">
+                        [ LOCALITY PROFILE // MEGACITY-9 ]
+                      </span>
+                      <h3 className="font-display font-black text-lg text-white uppercase tracking-wider leading-none">
+                        SECTOR 4 SLUMS
+                      </h3>
+                      <p className="text-[10px] text-slate-400 font-mono mt-1">THE UNDERBELLY OF THE EMPIRE</p>
+                    </div>
+                  </div>
+
+                  {/* Operational parameters overlay */}
+                  <div className="bg-slate-950/70 border border-white/10 p-4 rounded-xl flex flex-col gap-3 font-mono text-left">
+                    <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-black border-b border-white/5 pb-1">
+                      OPERATIVE BIO-CACHE
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
+                        <span className="text-[9px] text-slate-500 block font-bold">CODENAME</span>
+                        <span className="text-white font-extrabold uppercase">{gameState.playerName}</span>
+                      </div>
+                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
+                        <span className="text-[9px] text-slate-500 block font-bold">SPECIES SPEC</span>
+                        <span className="text-rose-400 font-extrabold uppercase">{gameState.playerRace}</span>
+                      </div>
+                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
+                        <span className="text-[9px] text-slate-500 block font-bold">ARCHETYPE</span>
+                        <span className="text-cyan-400 font-extrabold uppercase">{selectedArchetype.name.replace("Cyber-", "").replace("Techno-", "")}</span>
+                      </div>
+                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
+                        <span className="text-[9px] text-slate-500 block font-bold">BACKGROUND</span>
+                        <span className="text-amber-400 font-extrabold uppercase">{gameState.playerBackground}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Narrative prose & Controls Guide (col-span-7) */}
+                <div className="lg:col-span-7 flex flex-col gap-5 text-left">
+                  
+                  {/* Part 1: Lore and narrative */}
+                  <div className="bg-slate-950/40 border border-white/10 p-5 rounded-xl space-y-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-rose-500" />
+                      <h4 className="font-display font-black text-sm text-white uppercase tracking-wider">THE BRIEFING // THE SOL-PRIME GIG</h4>
+                    </div>
+                    
+                    <div className="space-y-3 text-xs text-slate-300 font-sans leading-relaxed">
+                      <p>
+                        In <strong className="text-white">Megacity-9</strong>, meat is cheap and data is the ultimate currency. Beneath the towering chrome peaks of the Biotech conglomerates, the radioactive fog of Sector 4 acts as your sanctuary and your hunting ground.
+                      </p>
+                      <p>
+                        Your contact, a broken corporate defector, sold you a keycard and a dream: the <strong className="text-cyan-400 font-semibold">Sector 9 Data Vault</strong>. Inside lies the <em className="text-white not-italic font-semibold">Sol-Prime Ley Core</em>—an infinite, self-sustaining energy matrix. If you crack the vault and extract the core, you buy your ticket out of these rusted alleys forever.
+                      </p>
+                      <p className="border-l-2 border-cyan-400 pl-3 bg-cyan-950/20 py-2 rounded-r font-mono text-[11px] text-cyan-300">
+                        "Your gear is locked. Your neural buffers are clear. The vent shafts of Conduit-09 are open. There's no turning back."
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Part 2: Controls and Guide panel */}
+                  <div className="bg-slate-950/70 border border-white/10 p-5 rounded-xl space-y-4">
+                    <div className="flex items-center gap-1.5">
+                      <Cpu size={14} className="text-cyan-400" />
+                      <h4 className="font-display font-black text-sm text-white uppercase tracking-wider">TACTICAL GAMEPLAY INTERFACE INSTRUCTIONS</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+                      {/* Left: General controls */}
+                      <div className="space-y-2 border-r border-white/5 pr-2">
+                        <span className="font-mono text-[10px] text-cyan-400 font-black tracking-widest uppercase block mb-1">[ 🗺️ EXPLORATION ]</span>
+                        <ul className="space-y-1.5 list-disc pl-3 text-slate-400 leading-tight">
+                          <li>
+                            <strong className="text-slate-200">Regional map:</strong> Scan sectors and travel between 4 active regions.
+                          </li>
+                          <li>
+                            <strong className="text-slate-200">Interact:</strong> Click on Points of Interest (POIs) to trigger events, unlock lockboxes, and start missions.
+                          </li>
+                          <li>
+                            <strong className="text-slate-200">Gear up:</strong> Check your character database tab to manage weaponry, implants, and companion skills.
+                          </li>
+                        </ul>
+                      </div>
+
+                      {/* Right: Combat controls */}
+                      <div className="space-y-2">
+                        <span className="font-mono text-[10px] text-rose-500 font-black tracking-widest uppercase block mb-1">[ ⚔️ TURN-BASED COMBAT ]</span>
+                        <ul className="space-y-1.5 list-disc pl-3 text-slate-400 leading-tight">
+                          <li>
+                            <strong className="text-slate-200">Grid system:</strong> Move your token on a tactical tile grid. Movement costs 1 Action Point (AP) per grid tile.
+                          </li>
+                          <li>
+                            <strong className="text-slate-200">Combat actions:</strong> Spend AP to perform melee strikes, ranged shots, or reload your weapons.
+                          </li>
+                          <li>
+                            <strong className="text-slate-200">Mana (MP) spells:</strong> Unleash tactical spells and abilities to shield yourself or bypass enemy physical armors!
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action row */}
+                  <div className="flex gap-4 items-center justify-between border-t border-white/5 pt-4">
+                    <button
+                      onClick={() => {
+                        setCurrentScreen("character_select");
+                      }}
+                      className="text-slate-400 hover:text-white font-mono text-xs border border-white/10 px-4 py-2.5 rounded bg-slate-900/40 hover:bg-slate-900 transition-all cursor-pointer flex items-center gap-1"
+                    >
+                      <ArrowLeft size={13} /> Adjust Biometrics
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setCurrentScreen("game");
+                        triggerToast("NEURAL INTERFACE LOCKED. WELCOME BACK, RUNNER.");
+                      }}
+                      className="bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-slate-950 font-display font-black text-xs uppercase py-2.5 px-6 rounded-lg tracking-widest transition-all cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.35)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] active:scale-[0.98] flex items-center gap-2"
+                    >
+                      <Play size={12} fill="currentColor" /> Commence Infiltration Routine <ArrowRight size={13} />
+                    </button>
+                  </div>
+
+                </div>
+
+              </div>
+
             </motion.div>
           )}
 
@@ -4798,15 +5451,55 @@ export default function App() {
                       <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl -mr-8 -mt-8" />
                       
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-950/80 to-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-extrabold text-lg shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-                          {(gameState.archetype || "Cyber-Blade")[0]}
-                        </div>
+                        {gameState.playerAvatarUrl ? (
+                          <img
+                            src={gameState.playerAvatarUrl}
+                            alt="Operative"
+                            referrerPolicy="no-referrer"
+                            className="w-12 h-12 rounded-xl object-cover border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-950/80 to-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-extrabold text-lg shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0">
+                            {(gameState.playerName || gameState.archetype || "Cyber-Blade")[0]}
+                          </div>
+                        )}
                         <div>
                           <span className="text-[9px] text-cyan-400 uppercase tracking-widest font-black leading-none block">GRID OPERATIVE IDENT</span>
-                          <h3 className="text-white font-black text-sm uppercase mt-0.5 leading-none">{gameState.archetype || "Cyber-Blade"}</h3>
-                          <span className="text-slate-500 text-3xs uppercase tracking-wider block mt-1">LVL {gameState.level ?? 1} • EXP {gameState.experience ?? 0}/100</span>
+                          <h3 className="text-white font-black text-sm uppercase mt-1 leading-none">{gameState.playerName || gameState.archetype || "Rookie"}</h3>
+                          <div className="text-[10px] uppercase font-bold text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="text-cyan-400">{gameState.playerRace || "Human"}</span>
+                            <span className="text-slate-600">•</span>
+                            <span className="text-rose-400">{gameState.archetype || "Cyber-Blade"}</span>
+                          </div>
+                          <p className="text-slate-500 text-[9px] uppercase tracking-wider mt-1 font-sans">
+                            Age: {gameState.playerAge || 24} • BG: {gameState.playerBackground || "Street Rat"}
+                          </p>
+                          <span className="text-slate-500 text-[9px] uppercase tracking-wider block mt-1">LVL {gameState.level ?? 1} • EXP {gameState.experience ?? 0}/100</span>
                         </div>
                       </div>
+
+                      {/* Customized Perks Section */}
+                      {gameState.playerPerks && gameState.playerPerks.length > 0 && (
+                        <div className="bg-slate-950/60 border border-white/5 p-2 rounded-lg text-left mt-1">
+                          <span className="text-[8px] text-cyan-400 font-extrabold uppercase tracking-widest block mb-1">🧠 INSTALLED PERKS</span>
+                          <div className="flex flex-col gap-1">
+                            {gameState.playerPerks.map((pKey) => {
+                              const perkNames: Record<string, string> = {
+                                "adrenaline_junkie": "Adrenaline Junkie (+15% Melee Low-HP)",
+                                "cyber_optimizer": "Cyber-Optimizer (+10 Starting Shields)",
+                                "ether_conduit": "Ether Conduit (+2 MP/Turn)",
+                                "hardened_chassis": "Hardened Chassis (+20 Max HP)",
+                                "lucky_jack": "Lucky Jack (+40 starting credits)"
+                              };
+                              return (
+                                <span key={pKey} className="text-[9px] text-slate-300 font-sans flex items-center gap-1">
+                                  <span className="text-cyan-500">◈</span> {perkNames[pKey] || pKey}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="space-y-3.5 border-t border-white/5 pt-4">
                         {/* HP Gauge */}

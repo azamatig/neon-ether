@@ -30,6 +30,7 @@ import {
   Sparkles,
   ArrowLeft,
   X,
+  XCircle,
   Plus,
   Cpu,
   Gem,
@@ -45,6 +46,7 @@ import { motion, AnimatePresence } from "motion/react";
 
 import WeatherOverlay from "./components/WeatherOverlay";
 import NPCBaseManagement from "./components/NPCBaseManagement";
+import TypewriterText from "./components/TypewriterText";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward } from "./types";
 import {
@@ -58,8 +60,497 @@ import {
   MapPOI,
   Region,
   ITEM_METADATA,
-  ItemDetails
+  ItemDetails,
+  REGION_CONNECTIONS,
+  TravelConnection
 } from "./data";
+
+interface DialogueChoice {
+  text: string;
+  nodeId: string;
+  prereqText?: string;
+  prereq?: (state: GameState) => boolean;
+  onSelect?: (state: GameState) => GameState;
+}
+
+interface DialogueNode {
+  title: string;
+  role: string;
+  image: string;
+  text: string | ((state: GameState) => string);
+  choices: DialogueChoice[];
+}
+
+const BRANCHING_DIALOGUES: Record<"jax" | "marv" | "cipher", Record<string, DialogueNode>> = {
+  jax: {
+    start: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "Rookie, good to see you. The street is a wire-thin path of sparks. The Outlaws are preparing for a massive push against corporate checkpoints in Chapter 2, but we need supplies and secure channels. What's your current status?",
+      choices: [
+        { text: "I'm looking for contract work.", nodeId: "contracts_hub" },
+        { text: "Tell me about the Street Outlaws' vision.", nodeId: "outlaws_lore" },
+        {
+          text: "🔮 Peek into his surface thoughts",
+          nodeId: "jax_mindmance",
+          prereqText: "[Requires Mindmancer Level 1]",
+          prereq: (s) => (s.skills?.mindmancer || 0) >= 1,
+          onSelect: (s) => {
+            if (s.reputations) {
+              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 10);
+            }
+            return s;
+          }
+        },
+        { text: "Understood. I will come back later.", nodeId: "exit" }
+      ]
+    },
+    outlaws_lore: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "Vision? We don't have time for poetry, kid. We are the discarded cells of Megacity-9. Ares corporate elite breathes pure air, while our lungs collapse in sulfur-smog Sewage. We want a clean override of the city grids. True agency, offline from corporate neural relays.",
+      choices: [
+        { text: "How can I support the cause?", nodeId: "contracts_hub" },
+        { text: "Understood. Let's talk about other affairs.", nodeId: "start" }
+      ]
+    },
+    jax_mindmance: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "[SUCCESS] Your eyes flicker with faint purple static. You tap his cognitive field. Instantly, your brain is flooded with the scream of air-raid alarms, holographic battle layouts of the Satoshi checkpoints, and a deep, aching sorrow for lost comrades... Jax rubs his temple, squinting at you: 'Did you feel that chill? Damn under-city draft. You have some strange eyes, kid. But I respect your focus.' (Reputation: +10 Street Outlaws)",
+      choices: [
+        { text: "Let's discuss our operations.", nodeId: "start" }
+      ]
+    },
+    contracts_hub: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "What operation details are you trying to finalize, rookie?",
+      choices: [
+        {
+          text: "Deliver Technical Signal Core",
+          nodeId: "deliver_core_success",
+          prereqText: "[Requires Technical Signal Core]",
+          prereq: (s) => s.inventory.includes("Technical Signal Core"),
+          onSelect: (s) => {
+            s.inventory = s.inventory.filter(i => i !== "Technical Signal Core");
+            s.credits += 150;
+            s.experience += 100;
+            if (s.reputations) {
+              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
+            }
+            s.completedQuests.push("Side Quest: Delivered Signal Core to Jax");
+            return s;
+          }
+        },
+        {
+          text: "Deliver Experimental Drone Chip",
+          nodeId: "deliver_drone_success",
+          prereqText: "[Requires Experimental Drone Chip]",
+          prereq: (s) => s.inventory.includes("Experimental Drone Chip"),
+          onSelect: (s) => {
+            s.inventory = s.inventory.filter(i => i !== "Experimental Drone Chip");
+            s.credits += 200;
+            s.experience += 100;
+            s.activeQuests = s.activeQuests.filter(q => !q.includes("Drone"));
+            if (s.reputations) {
+              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
+            }
+            s.completedQuests.push("Side Quest: Drone Schematic Delivered to Jax");
+            return s;
+          }
+        },
+        { text: "Check my active Street Outlaws reputation Standing", nodeId: "reputation_outlaws" },
+        { text: "Let me look at other options.", nodeId: "start" }
+      ]
+    },
+    deliver_core_success: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "Unbelievable work, rookie! The Technical Signal Core's raw data matrices will keep our encrypted wireless feeds fully synchronized, shielding our safehouse beacon from local security trackers. Take your payment, you've earned it! (+150¤, +100 XP, +15 Street Outlaws Rep)",
+      choices: [
+        { text: "Excellent.", nodeId: "start" }
+      ]
+    },
+    deliver_drone_success: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: "This schematic is pure military gold! With these experimental flight templates, our security drones will completely out-maneuver Ares air interceptors! Your payment is fully processed. (+200¤, +100 XP, +15 Street Outlaws Rep)",
+      choices: [
+        { text: "Glad to assist.", nodeId: "start" }
+      ]
+    },
+    reputation_outlaws: {
+      title: "Agent Jax",
+      role: "Outcast Coordinator",
+      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
+      text: (s: GameState) => {
+        const score = s.reputations?.streetOutlaws ?? 50;
+        let standing = "Neutral Outcast";
+        if (score >= 80) standing = "Rebel Hero (15% Store Discount)";
+        else if (score >= 60) standing = "Amiable Comrade (10% Store Discount)";
+        else if (score < 40) standing = "Untrusted Stray (No Discount)";
+        return `Your active faction score with the Street Outlaws is ${score}%. They view you as a [${standing}]. Standing affects future item pricing and unlocks exclusive resistance contracts in Chapter 2!`;
+      },
+      choices: [
+        { text: "Back to operations.", nodeId: "contracts_hub" }
+      ]
+    }
+  },
+  marv: {
+    start: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Wipes black motor oil and synthetic blood off his latex apron. 'Need a clean patch, some adrenaline stims, or some fresh cybernetic chrome? Don't ask where I source my carbon-mesh, and we'll get along fine.'",
+      choices: [
+        {
+          text: "💬 Ask about his previous corporate work at Ares",
+          nodeId: "marv_ares_lore",
+          prereqText: "[Requires Intelligence Check 12]",
+          prereq: (s) => (s.attributes?.int || 10) >= 12,
+          onSelect: (s) => {
+            s.experience += 30;
+            if (s.reputations) {
+              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 15);
+            }
+            return s;
+          }
+        },
+        { text: "Tell me about the Cybernetic Harvest contract.", nodeId: "harvest_info" },
+        {
+          text: "🔮 Force his mind to reveal his secret prototype blueprints",
+          nodeId: "marv_mindmance",
+          prereqText: "[Requires Mindmancer Level 2]",
+          prereq: (s) => (s.skills?.mindmancer || 0) >= 2,
+          onSelect: (s) => {
+            if (!s.inventory.includes("Smart-Targeting Visor")) {
+              s.inventory.push("Smart-Targeting Visor");
+            }
+            if (s.reputations) {
+              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 10);
+            }
+            return s;
+          }
+        },
+        {
+          text: "I need to undergo experimental bio-splice.",
+          nodeId: "undergo_bio_splice",
+          prereq: (s) => !s.completedPOIActions?.includes("marv_clinic:bio_spliced")
+        },
+        { text: "I must leave now.", nodeId: "exit" }
+      ]
+    },
+    undergo_bio_splice: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Interested in our premium bio-splitting suture? It stitches advanced synthetic muscle fibers directly into your heart valves. It is extremely painful. If your body rejects it, you'll suffer severe systemic fatigue.",
+      choices: [
+        {
+          text: "💪 Let's begin the bio-splice",
+          nodeId: "bio_splice_success",
+          prereqText: "[Requires Strength Check 13]",
+          prereq: (s) => (s.attributes?.str || 10) >= 13,
+          onSelect: (s) => {
+            if (!s.completedPOIActions) s.completedPOIActions = [];
+            s.completedPOIActions.push("marv_clinic:bio_spliced");
+            s.maxHp += 15;
+            s.hp = s.maxHp;
+            s.experience += 30;
+            return s;
+          }
+        },
+        {
+          text: "Let's undergo standard gamble splice (Roll Luck).",
+          nodeId: "bio_splice_gamble"
+        },
+        { text: "On second thought, nevermind.", nodeId: "start" }
+      ]
+    },
+    bio_splice_success: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Superb physical constitution! You didn't even flinch. The synthetic weave binds perfectly to your chest, boosting your cardiovascular threshold permanently. (+15 Max HP, Health Fully Restored!)",
+      choices: [
+        { text: "Superb.", nodeId: "start" }
+      ]
+    },
+    bio_splice_gamble: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: (s: GameState) => {
+        const str = s.attributes?.str || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + str;
+        if (roll >= 16) {
+          return `[ROLL SUCCESS: ${roll} vs 16] Your body successfully fused with the synthetic fibers! Dr. Marv smiles: 'Incredible luck, runner. Permanent Boost: Max HP +15, health fully restored!'`;
+        } else {
+          return `[ROLL CRITICAL FAILURE: ${roll} vs 16] Your central nervous system rejected the synthetics! You sweat heavily as your arteries swell in agony. Dr. Marv sighs: 'A clinical rejection. You survived, but you are severely weakened.' (-25 HP, -20 Stamina)`;
+        }
+      },
+      choices: [
+        {
+          text: "Acknowledge results.",
+          nodeId: "start",
+          onSelect: (s: GameState) => {
+            if (!s.completedPOIActions) s.completedPOIActions = [];
+            const str = s.attributes?.str || 10;
+            const roll = Math.floor(Math.random() * 20) + 1 + str;
+            if (roll >= 16) {
+              s.completedPOIActions.push("marv_clinic:bio_spliced");
+              s.maxHp += 15;
+              s.hp = s.maxHp;
+              s.experience += 30;
+            } else {
+              s.completedPOIActions.push("marv_clinic:bio_spliced");
+              s.hp = Math.max(10, s.hp - 25);
+              s.stamina = Math.max(0, s.stamina - 20);
+            }
+            return s;
+          }
+        }
+      ]
+    },
+    marv_ares_lore: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "You ask too many questions, patient. But... you've got an eye for corporate branding. Yes, I was a Senior Prosthesis Designer for Ares Biotech. I quit when the Executive Board ordered me to harvest neural bio-nodes from healthy under-city subjects. I fled with three cases of experimental cyberware prototypes. Ares is keeping my silence, and I keep theirs. Keep this quiet. (+15 Ares Corporate Rep, +30 XP)",
+      choices: [
+        { text: "Your secret is safe with me, Doctor.", nodeId: "start" }
+      ]
+    },
+    marv_mindmance: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "[SUCCESS] Your gaze drills into Marv's mechanical optic. A tiny purple spark arches across his cybernetic lens. His shoulders drop, and his voice grows monotone: 'The locked... metal floor crate... code is 4F-FF-55... Inside is an experimental sensor visor...' He suddenly blinks, shaking his head with a violent grunt: 'What the... what did you just do? My optic short-circuited. Bah, wait, you found my spare visor? Take it and get out of my sight!' (Acquired: 'Smart-Targeting Visor', +10 Ares Rep!)",
+      choices: [
+        { text: "Thanks for the visor.", nodeId: "start" }
+      ]
+    },
+    harvest_info: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Ares automated patrol drones scout the Highwalk Homicide Site Downtown. Their main control boards carry fluid-cooled Neural Regulators. Bring me two of those pristine regulators, and I'll pay you 250¤ plus a custom Smart-Targeting Visor.",
+      choices: [
+        {
+          text: "Deliver 2x Neural Regulators",
+          nodeId: "harvest_delivery_success",
+          prereqText: "[Requires 2x Neural Regulators]",
+          prereq: (s: GameState) => s.inventory.filter(i => i === "Neural Regulator").length >= 2,
+          onSelect: (s: GameState) => {
+            let count = 0;
+            s.inventory = s.inventory.filter(i => {
+              if (i === "Neural Regulator" && count < 2) {
+                count++;
+                return false;
+              }
+              return true;
+            });
+            s.credits += 250;
+            s.experience += 120;
+            if (!s.inventory.includes("Smart-Targeting Visor")) {
+              s.inventory.push("Smart-Targeting Visor");
+            }
+            s.activeQuests = s.activeQuests.filter(q => !q.includes("Harvest"));
+            if (s.reputations) {
+              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 20);
+            }
+            s.completedQuests.push("Side Quest: Cybernetic Harvest Delivered");
+            return s;
+          }
+        },
+        {
+          text: "Accept the contract details.",
+          nodeId: "harvest_accept",
+          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Harvest")) && !s.completedQuests.some(q => q.includes("Harvest")),
+          onSelect: (s: GameState) => {
+            s.activeQuests.push("Side Quest: Cybernetic Harvest - Harvest 2x Neural Regulators by ambushing patrols at the Highwalk Homicide Site.");
+            return s;
+          }
+        },
+        { text: "Check my active Ares Corporate Reputation standing", nodeId: "reputation_ares" },
+        { text: "Understood, Doctor.", nodeId: "start" }
+      ]
+    },
+    harvest_delivery_success: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Incredible specimens! The neural relays are pristine, completely free of feedback carbon-scab. I've wired 250¤ into your grid deck and injected the smart-targeting telemetry scripts into your visor storage! Pleasure doing business, streetrunner. (+250¤, +120 XP, +20 Ares Rep, 'Smart-Targeting Visor')",
+      choices: [
+        { text: "Excellent.", nodeId: "start" }
+      ]
+    },
+    harvest_accept: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: "Contract recorded in your neural logs. Highwalk skybridges are heavily patrolled, so keep your weapons charged and wait for drone scanning windows.",
+      choices: [
+        { text: "Understood.", nodeId: "start" }
+      ]
+    },
+    reputation_ares: {
+      title: "Dr. Marv",
+      role: "Underground Surgeon",
+      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
+      text: (s: GameState) => {
+        const score = s.reputations?.aresCorporate ?? 30;
+        let standing = "Suspicious Rogue";
+        if (score >= 70) standing = "Valued Associate (15% Nano-stim discount)";
+        else if (score >= 50) standing = "Neutral Client (10% Nano-stim discount)";
+        return `Your active standing with Ares Biotech Corporation is ${score}%. They categorize you as a [${standing}]. Siphoning or completing corporate salvage operations alters this index.`;
+      },
+      choices: [
+        { text: "Back.", nodeId: "harvest_info" }
+      ]
+    }
+  },
+  cipher: {
+    start: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "Sips high-oxygen, self-chilling synthetic champagne inside his custom VIP velvet booth. 'Ah, the rising street runner. My neural sensors record high levels of code activity in your cyberdeck. What digital mischief are we compiling today?'",
+      choices: [
+        {
+          text: "Discuss security mainframes and high-level hacks",
+          nodeId: "slicing_lore",
+          prereqText: "[Requires NetSlicer Level 2]",
+          prereq: (s) => (s.skills?.netSlicer || 0) >= 2,
+          onSelect: (s) => {
+            if (!s.inventory.includes("VIP Afterlife Keycard")) {
+              s.inventory.push("VIP Afterlife Keycard");
+            }
+            if (s.reputations) {
+              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 15);
+            }
+            return s;
+          }
+        },
+        { text: "Let's discuss the Nouveau Cybernetic Showroom Heist.", nodeId: "heist_info" },
+        {
+          text: "🔮 Perform a silent mind-hack into his memory arrays",
+          nodeId: "cipher_mindmance",
+          prereqText: "[Requires Mindmancer Level 1]",
+          prereq: (s) => (s.skills?.mindmancer || 0) >= 1,
+          onSelect: (s) => {
+            if (s.reputations) {
+              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 15);
+            }
+            if (!s.completedPOIActions) s.completedPOIActions = [];
+            if (!s.completedPOIActions.includes("cipher:decrypted_code")) {
+              s.completedPOIActions.push("cipher:decrypted_code");
+            }
+            return s;
+          }
+        },
+        { text: "Just looking around.", nodeId: "exit" }
+      ]
+    },
+    slicing_lore: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "Ha! You understand the code. Hacking isn't just typing digits; it's like bending the electronic ether of Megacity-9. I can tell you're a true slicer. Take my personal Afterlife VIP keycard. It bypasses security shields and gives you +2 extra attempt cycles on any Nouveau showroom terminals! (Acquired: 'VIP Afterlife Keycard', +15 Titan Logistics Rep)",
+      choices: [
+        { text: "This is extremely helpful, thank you.", nodeId: "start" }
+      ]
+    },
+    cipher_mindmance: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "[SUCCESS] Your gaze burns violet. A silent stream of sub-vocal commands overflows Cipher's optic nodes. A brief memory cascade floods your mind... 'Nouveau showroom high-security vault bypass sequence: 5F-AA-BD-FF...' Cipher blink-resets his visor, smiling: 'Whoa. Did you see that spark? The bar's electrical relays must be leaking plasma. Let's stay focused, alright?' (Unlocked decryption sequence clue for Nouveau Heist! +15 Titan Logistics Rep)",
+      choices: [
+        { text: "Thank you, Cipher.", nodeId: "start" }
+      ]
+    },
+    heist_info: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "Nouveau's luxury showroom has a prototype Singularity Battery cell behind polarized energy grids. If you slip inside, override their safe, and bring that battery to me, I'll pay you 350¤ and hand you an Unstable Plasma Core. Deal?",
+      choices: [
+        {
+          text: "Deliver Prototype Singularity Battery",
+          nodeId: "heist_delivery_success",
+          prereqText: "[Requires Prototype Singularity Battery]",
+          prereq: (s: GameState) => s.inventory.includes("Prototype Singularity Battery"),
+          onSelect: (s: GameState) => {
+            s.inventory = s.inventory.filter(i => i !== "Prototype Singularity Battery");
+            s.credits += 350;
+            s.experience += 150;
+            if (!s.inventory.includes("Unstable Plasma Core")) {
+              s.inventory.push("Unstable Plasma Core");
+            }
+            s.activeQuests = s.activeQuests.filter(q => !q.includes("Heist"));
+            if (s.reputations) {
+              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 25);
+            }
+            s.completedQuests.push("Side Quest: Nouveau Heist Complete");
+            return s;
+          }
+        },
+        {
+          text: "Inquire about the heist.",
+          nodeId: "heist_accept",
+          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Heist")) && !s.completedQuests.some(q => q.includes("Heist")),
+          onSelect: (s: GameState) => {
+            s.activeQuests.push("Side Quest: Nouveau Heist - Meet Cipher at Club Afterlife, get a VIP Keycard, and steal the Prototype Singularity Battery from Nouveau Showroom.");
+            return s;
+          }
+        },
+        { text: "Check Titan Logistics reputation standing instead.", nodeId: "reputation_titan" },
+        { text: "Let me think about it.", nodeId: "start" }
+      ]
+    },
+    heist_delivery_success: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "Magnificent execution, runner! The cold-fusion power of this battery is enough to run my private server cluster for a decade. I've processed your 350¤ wire and unlocked the premium Unstable Plasma Core from my cache! Faction reputation updated. (+350¤, +150 XP, +25 Titan Logistics Rep, 'Unstable Plasma Core')",
+      choices: [
+        { text: "Wonderful.", nodeId: "start" }
+      ]
+    },
+    heist_accept: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: "Superb. You'll need an Afterlife VIP keycard to disable their pressure shield easily, otherwise the hacking mainframe puzzle will burn through your attempts fast. Get to work!",
+      choices: [
+        { text: "Understood.", nodeId: "start" }
+      ]
+    },
+    reputation_titan: {
+      title: "Cipher",
+      role: "Elite Code Broker",
+      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+      text: (s: GameState) => {
+        const score = s.reputations?.titanLogistics ?? 50;
+        let standing = "Independent Contractor";
+        if (score >= 80) standing = "Valued Partner (15% Upgrade & Shipyard discount)";
+        else if (score >= 60) standing = "Trusted Hauler (10% Upgrade discount)";
+        return `Your active score with Titan Logistics is ${score}%. They record your status as [${standing}]. Standing lowers safehouse construction costs and unlocks premium black-market items.`;
+      },
+      choices: [
+        { text: "Back to heist contracts.", nodeId: "heist_info" }
+      ]
+    }
+  }
+};
 
 const getItemIcon = (itemName: string, slot?: string) => {
   const nameLower = itemName.toLowerCase();
@@ -435,8 +926,161 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
     }
   }
 
+  // 12. Legendary Companion Quest: Vice's Retribution (Unlocks at Union Rep >= 80)
+  const unionRepValue = state.reputations?.streetOutlaws ?? 50;
+  const viceQuestActive = unionRepValue >= 80 && !state.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
+  const viceQuestCompleted = state.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
+  
+  if (viceQuestActive || viceQuestCompleted) {
+    const q = getOrCreate("vice_retribution", {
+      title: "Vice's Retribution: Shatter Ridge Ledger",
+      category: "Side Quest",
+      description: "Unlock Vice's personal companion quest by reaching 80% Outcast Union reputation. Infiltrate the Ares secure server farm in Shatter Ridge (Downtown Region) to retrieve the Encrypted Ares Ledger and deliver it directly to Vice.",
+      objectives: [
+        { id: "find_ledger", text: "Retrieve the Encrypted Ares Ledger from Shatter Ridge Server", current: state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted ? 1 : 0, target: 1, completed: state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted },
+        { id: "deliver_ledger", text: "Hand over the ledger to Vice in the Aurus Safehouse", current: viceQuestCompleted ? 1 : 0, target: 1, completed: viceQuestCompleted }
+      ],
+      rewards: [
+        { type: "credits", amount: 400 },
+        { type: "experience", amount: 250 }
+      ],
+      log: ["Infiltrating Downtown server nodes to retrieve Ares black ledger files for Vice."]
+    });
+    
+    q.objectives[0].current = state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted ? 1 : 0;
+    q.objectives[0].completed = state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted;
+    q.objectives[1].current = viceQuestCompleted ? 1 : 0;
+    q.objectives[1].completed = viceQuestCompleted;
+    
+    if (viceQuestCompleted) {
+      q.status = "COMPLETED";
+    } else {
+      q.status = "ACTIVE";
+      if (state.inventory.includes("Encrypted Ares Ledger")) {
+        q.log = ["Secured the Encrypted Ares Ledger from Shatter Ridge. Fast-travel home to hand it to Vice!"];
+      } else {
+        q.log = ["Breach the secure server farm at Shatter Ridge Corridors in Downtown Region."];
+      }
+    }
+  }
+
   return quests;
 }
+
+// Helper to derive perks based on Level
+export function getPerksForLevel(level: number): string[] {
+  const perks: string[] = [];
+  if (level >= 2) {
+    perks.push("adrenaline_junkie");
+    perks.push("Adrenaline Junkie");
+  }
+  if (level >= 3) {
+    perks.push("cyber_optimizer");
+    perks.push("Cyber-Optimizer");
+  }
+  if (level >= 4) {
+    perks.push("ether_conduit");
+    perks.push("Ether Conduit");
+  }
+  if (level >= 5) {
+    perks.push("hardened_chassis");
+    perks.push("Hardened Chassis");
+  }
+  if (level >= 6) {
+    perks.push("lucky_jack");
+    perks.push("Lucky Jack");
+  }
+  return perks;
+}
+
+export interface CombatSkill {
+  name: string;
+  cost: number;
+  costType: "MP" | "SP";
+  desc: string;
+  icon: string;
+  scope: "enemy" | "self" | "all_enemies";
+}
+
+export const COMBAT_SKILL_DETAILS: Record<string, CombatSkill> = {
+  // Cyber-Blade
+  "Viper Strike (Tier 1)": { name: "Viper Strike (Tier 1)", cost: 10, costType: "MP", desc: "Melee blow dealing +150% physical damage with a chemical armor-dissolving corrosion debuff.", icon: "⚔️", scope: "enemy" },
+  "Adrenaline Surge (Tier 2)": { name: "Adrenaline Surge (Tier 2)", cost: 15, costType: "SP", desc: "Inject fast combat-stimulants, granting +2 AP and +15% Critical Hit Chance for 2 turns.", icon: "⚡", scope: "self" },
+  "Phantom Dash (Tier 3)": { name: "Phantom Dash (Tier 3)", cost: 20, costType: "MP", desc: "Bypass defensive fields to blink behind a target, performing a guaranteed 300% backstab crit.", icon: "👤", scope: "enemy" },
+  "Razor Tempest (Tier 4)": { name: "Razor Tempest (Tier 4)", cost: 25, costType: "MP", desc: "Unleash a whirlwind of molecular edge sweeps, dealing 30 Physical damage to all targets and bleeding them.", icon: "🌪️", scope: "all_enemies" },
+  "Cyber-Celerity (Tier 5)": { name: "Cyber-Celerity (Tier 5)", cost: 18, costType: "MP", desc: "Accelerate neural clock-rate, dodging the next 2 physical attacks completely.", icon: "🏃", scope: "self" },
+  "Executioner's Wake (Tier 6)": { name: "Executioner's Wake (Tier 6)", cost: 35, costType: "MP", desc: "Ultimate single-target execution, dealing massive 55 damage. If the target dies, immediately refunds 50% mana.", icon: "☠️", scope: "enemy" },
+
+  // Techno-Mage
+  "Ether Spark (Tier 1)": { name: "Ether Spark (Tier 1)", cost: 8, costType: "MP", desc: "Bends ambient ley structures to fire a direct energy bolt, dealing 18 Ether damage.", icon: "🔮", scope: "enemy" },
+  "Net Shield (Tier 2)": { name: "Net Shield (Tier 2)", cost: 12, costType: "MP", desc: "Materialize an active firewall barrier over your neural interface, granting +15 Shields.", icon: "🛡️", scope: "self" },
+  "Feedback Burn (Tier 3)": { name: "Feedback Burn (Tier 3)", cost: 22, costType: "MP", desc: "Overload target cerebral deck terminals, causing a spell explosion for 35 damage and 1 turn Silence.", icon: "💥", scope: "enemy" },
+  "Quantum Singularity (Tier 4)": { name: "Quantum Singularity (Tier 4)", cost: 28, costType: "MP", desc: "Force-collapse local gravity, pulling all hostiles together, dealing 25 void damage, and pinning them down (Stun).", icon: "🌌", scope: "all_enemies" },
+  "Bio-Electric Surge (Tier 5)": { name: "Bio-Electric Surge (Tier 5)", cost: 20, costType: "MP", desc: "Chain cyber-organic lightning through up to 3 hostiles, inflicting 30 shock damage and disabling robotic components.", icon: "⚡", scope: "enemy" },
+  "Absolute Zero Code (Tier 6)": { name: "Absolute Zero Code (Tier 6)", cost: 40, costType: "MP", desc: "Freeze target CPU units entirely, dealing 50 frost-code damage and completely incapacitating them for 2 turns.", icon: "❄️", scope: "enemy" },
+
+  // Outlaw Hacker
+  "ICE Disruption (Tier 1)": { name: "ICE Disruption (Tier 1)", cost: 10, costType: "MP", desc: "Inject corrupted software into enemy combat sub-routines, lowering accuracy by 30%.", icon: "💻", scope: "enemy" },
+  "Targeting Link (Tier 2)": { name: "Targeting Link (Tier 2)", cost: 12, costType: "MP", desc: "Paint the target with an orbital micro-laser, boosting all ranged damage they take by +25%.", icon: "🎯", scope: "enemy" },
+  "Systems Overload (Tier 3)": { name: "Systems Overload (Tier 3)", cost: 25, costType: "MP", desc: "Trigger remote battery/munition discharges, inflicting 28 range damage and stun.", icon: "🔋", scope: "enemy" },
+  "Glitch Protocol (Tier 4)": { name: "Glitch Protocol (Tier 4)", cost: 18, costType: "MP", desc: "Siphon active shield energy from hostiles, turning their own protective grids into a massive defensive shield (+20 Shields).", icon: "🛰️", scope: "enemy" },
+  "Nano-Swarm Hack (Tier 5)": { name: "Nano-Swarm Hack (Tier 5)", cost: 22, costType: "MP", desc: "Reprogram nanite aerosol injectors to eat away enemy components, dealing 12 corrosion damage per turn for 3 turns.", icon: "🐜", scope: "enemy" },
+  "Satellite Guillotine (Tier 6)": { name: "Satellite Guillotine (Tier 6)", cost: 35, costType: "MP", desc: "Command a decommissioned spy satellite to fire a high-orbit kinetic rod on the grid, dealing 55 heavy impact damage.", icon: "☄️", scope: "enemy" },
+
+  // Mindmancer
+  "Mind Hack (Tier 1)": { name: "Mind Hack (Tier 1)", cost: 15, costType: "MP", desc: "Direct synaptic rewrite, hacking target motor functions and forcing them to attack allies.", icon: "👁️", scope: "enemy" },
+  "Neural Overload (Tier 2)": { name: "Neural Overload (Tier 2)", cost: 20, costType: "MP", desc: "Psychic cortex shock inflicting 25 damage, completely ignoring physical armor layers.", icon: "🧠", scope: "enemy" },
+  "Synaptic Cascade (Tier 3)": { name: "Synaptic Cascade (Tier 3)", cost: 30, costType: "MP", desc: "Meltdown blast on all nearby targets dealing 40 psychic damage, locking brains in vegetative sleep.", icon: "🌀", scope: "all_enemies" },
+  "Ether Shroud (Tier 4)": { name: "Ether Shroud (Tier 4)", cost: 18, costType: "MP", desc: "Banish yourself to the digital ether plane, becoming completely untargetable and immune to damage for 1 turn.", icon: "🌫️", scope: "self" },
+  "Hallucinatory Echo (Tier 5)": { name: "Hallucinatory Echo (Tier 5)", cost: 24, costType: "MP", desc: "Clone your neural signature, creating 2 holograms that absorb incoming single-target spells.", icon: "👥", scope: "self" },
+  "Cerebro-Collapse (Tier 6)": { name: "Cerebro-Collapse (Tier 6)", cost: 45, costType: "MP", desc: "Total psychic execution. Obliterates target neural paths for 60 psychic damage, transferring 50% of the damage dealt as active health to yourself.", icon: "🥀", scope: "enemy" }
+};
+
+export interface RepTierInfo {
+  name: string;
+  range: string;
+  pricing: string;
+  perks: string[];
+  statusColor: string;
+}
+
+export const FACTION_TIERS: Record<"streetOutlaws" | "titanLogistics" | "aresCorporate", RepTierInfo[]> = {
+  streetOutlaws: [
+    { name: "Allied", range: "80% - 100%", pricing: "20% Shop Discount", perks: ["Dr. Marv's Clinic items cost 20% less", "Unlocks legendary quest 'Vice's Retribution'", "Enables rogue dialog check outcomes"], statusColor: "text-cyan-400 border-cyan-500/30 bg-cyan-950/30" },
+    { name: "Friendly", range: "61% - 79%", pricing: "10% Shop Discount", perks: ["Dr. Marv's Clinic items cost 10% less", "Favorable street reactions and chatter"], statusColor: "text-sky-400 border-sky-500/20 bg-sky-950/20" },
+    { name: "Neutral", range: "41% - 60%", pricing: "Standard Market Prices", perks: ["Base medical treatment costs", "Standard dialog paths"], statusColor: "text-slate-400 border-slate-500/20 bg-slate-950/40" },
+    { name: "Distant", range: "21% - 40%", pricing: "20% Price Markup", perks: ["Dr. Marv's Clinic items cost 20% more", "Scrutiny on the streets, colder dialog"], statusColor: "text-amber-500 border-amber-500/20 bg-amber-950/20" },
+    { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["Dr. Marv's Clinic items cost 50% more", "Street Outlaws brawls and locked questlines"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
+  ],
+  titanLogistics: [
+    { name: "Allied", range: "80% - 100%", pricing: "20% Shop Discount", perks: ["Non-specialized merchant prices reduced by 20%", "Regional travel stamina cost reduced by 100% (Free)", "Unlocks elite black-market gear blueprints"], statusColor: "text-amber-400 border-amber-500/30 bg-amber-950/30" },
+    { name: "Friendly", range: "61% - 79%", pricing: "10% Shop Discount", perks: ["Non-specialized merchant prices reduced by 10%", "Transit stamina costs reduced by 50% (5 Stamina)"], statusColor: "text-orange-400 border-orange-500/20 bg-orange-950/20" },
+    { name: "Neutral", range: "41% - 60%", pricing: "Standard Market Prices", perks: ["Standard merchant hardware pricing", "Base travel cost (10 stamina per sector)"], statusColor: "text-slate-400 border-slate-500/20 bg-slate-950/40" },
+    { name: "Distant", range: "21% - 40%", pricing: "20% Price Markup", perks: ["20% markup on generic sector merchants", "Travel costs increased by +5 stamina (15 total)"], statusColor: "text-amber-500 border-amber-500/20 bg-amber-950/20" },
+    { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["50% markup on generic sector merchants", "Travel costs doubled to +10 stamina (20 total)"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
+  ],
+  aresCorporate: [
+    { name: "Allied", range: "80% - 100%", pricing: "20% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 20% less", "Ambush Rate: 0% (Corporate strike teams stand down)", "Elite corporate nanotech clearance"], statusColor: "text-indigo-400 border-indigo-500/30 bg-indigo-950/30" },
+    { name: "Friendly", range: "61% - 79%", pricing: "10% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 10% less", "Ambush Rate: 2% (Sector-wide transit security)"], statusColor: "text-purple-400 border-purple-500/20 bg-purple-950/20" },
+    { name: "Neutral", range: "41% - 60%", pricing: "Standard Showroom Prices", perks: ["Base Nouveau Chrome showroom pricing", "Ambush Rate: 5% (Standard patrol intercept probability)"], statusColor: "text-slate-400 border-slate-500/20 bg-slate-950/40" },
+    { name: "Distant", range: "21% - 40%", pricing: "20% Price Markup", perks: ["Nouveau Chrome showroom items cost 20% more", "Ambush Rate: 15% (Low notoriety triggers corporate intercept)"], statusColor: "text-amber-500 border-amber-500/20 bg-amber-950/20" },
+    { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["Nouveau Chrome showroom items cost 50% more", "Ambush Rate: 30% during travel", "Elite level-3 strike drone interceptors deployed"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
+  ]
+};
+
+export const getTierIndexForRepValue = (rep: number): number => {
+  if (rep >= 80) return 0;
+  if (rep >= 61) return 1;
+  if (rep >= 41) return 2;
+  if (rep >= 21) return 3;
+  return 4;
+};
+
+const slideInVariants = {
+  initial: { opacity: 0, y: 15, scale: 0.98 },
+  animate: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, y: -10, scale: 0.98 },
+};
 
 export default function App() {
   // Screens: "menu" | "game" | "character_select" | "intro_story"
@@ -453,7 +1097,8 @@ export default function App() {
   const [customRace, setCustomRace] = useState("Human");
   const [customAvatarUrl, setCustomAvatarUrl] = useState("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300");
   const [customBackground, setCustomBackground] = useState("Street Rat");
-  const [selectedPerks, setSelectedPerks] = useState<string[]>(["Hardened Chassis"]);
+  const [selectedPerks, setSelectedPerks] = useState<string[]>([]);
+  const [charSelectStep, setCharSelectStep] = useState(1);
   const [statPointsPool, setStatPointsPool] = useState(10);
   const [addedStats, setAddedStats] = useState({
     str: 0,
@@ -468,7 +1113,10 @@ export default function App() {
   const [customInput, setCustomInput] = useState("");
   
   // Tabs for inventory deck
-  const [activeTab, setActiveTab] = useState<"inventory" | "companions" | "quests">("inventory");
+  const [activeTab, setActiveTab] = useState<"inventory" | "companions" | "quests" | "factions">("inventory");
+  const [clickedFaction, setClickedFaction] = useState<"streetOutlaws" | "titanLogistics" | "aresCorporate" | null>(null);
+  const [hoveredFaction, setHoveredFaction] = useState<"streetOutlaws" | "titanLogistics" | "aresCorporate" | null>(null);
+  const [selectedInspectTierIndex, setSelectedInspectTierIndex] = useState<number>(0);
   const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
   const [questFilter, setQuestFilter] = useState<"all" | "main" | "side" | "completed">("all");
 
@@ -486,6 +1134,104 @@ export default function App() {
 
   // State to track whether the Base NPC Management modal is open
   const [baseNPCManagerOpen, setBaseNPCManagerOpen] = useState(false);
+
+  // State for Cyber-Lab clinic and Gear Modding terminal
+  const [cyberLabOpen, setCyberLabOpen] = useState(false);
+  const [gearModdingOpen, setGearModdingOpen] = useState(false);
+  const [selectedWeaponForModding, setSelectedWeaponForModding] = useState<string | null>(null);
+  const [workbenchTab, setWorkbenchTab] = useState<"infusion" | "crafting">("infusion");
+
+  const buyCraftingMaterial = (materialName: string, cost: number) => {
+    if (!gameState) return;
+    if (gameState.credits < cost) {
+      triggerToast(`INSUFFICIENT FUNDS: ${materialName} costs ${cost}¤!`);
+      return;
+    }
+    
+    let nextState = { ...gameState };
+    nextState.credits -= cost;
+    if (!nextState.inventory) {
+      nextState.inventory = [];
+    }
+    nextState.inventory.push(materialName);
+    
+    setGameState(nextState);
+    triggerToast(`💰 PURCHASED: Obtained 1x '${materialName}' for ${cost}¤.`);
+  };
+
+  const handleCraftWeaponMod = () => {
+    if (!gameState) return;
+    if (!selectedWeaponForModding) {
+      triggerToast("CALIBRATION FAULT: Please select a weapon from the left first!");
+      return;
+    }
+    
+    const inventory = gameState.inventory || [];
+    const hasScrap = inventory.includes("High-Grade Scrap Salvage");
+    const hasCircuitry = inventory.includes("Rusted Circuitry");
+    
+    if (!hasScrap || !hasCircuitry) {
+      triggerToast("COMPONENTS MISSING: Requires 1x High-Grade Scrap Salvage and 1x Rusted Circuitry!");
+      return;
+    }
+    
+    // Choose random mod
+    const possibleMods = [
+      { id: "Toxic Vials", name: "🧪 Bio-Toxic Vials", tier: 1 },
+      { id: "Bio-Shocks", name: "⚡ Bio-Electric Shock Capacitor", tier: 1 },
+      { id: "Electromagnetic Chambers", name: "🌐 Electromagnetic EMP Chamber", tier: 1 },
+      { id: "Plasma Heat Coil", name: "🔥 Plasma Heat Coil", tier: 1 },
+      { id: "Cryo-Fluid Injector", name: "❄️ Cryo-Fluid Injector", tier: 1 },
+      { id: "Nano-Laser Sight", name: "🎯 Nano-Laser Sight", tier: 1 }
+    ];
+    
+    const rolledMod = possibleMods[Math.floor(Math.random() * possibleMods.length)];
+    
+    // Deduct ingredients from inventory (exactly one of each)
+    let nextState = { ...gameState };
+    let removedScrap = false;
+    let removedCircuitry = false;
+    
+    nextState.inventory = (nextState.inventory || []).filter(item => {
+      if (item === "High-Grade Scrap Salvage" && !removedScrap) {
+        removedScrap = true;
+        return false;
+      }
+      if (item === "Rusted Circuitry" && !removedCircuitry) {
+        removedCircuitry = true;
+        return false;
+      }
+      return true;
+    });
+    
+    if (!nextState.weaponMods) {
+      nextState.weaponMods = {};
+    }
+    nextState.weaponMods[selectedWeaponForModding] = rolledMod.id;
+    
+    setGameState(nextState);
+    triggerToast(`🔧 CRAFT SUCCESS: Assembled and mounted ${rolledMod.name} onto ${selectedWeaponForModding}!`);
+    
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: timeString,
+        text: `🔧 GEAR WORKBENCH CRAFTING: Combined 1x [High-Grade Scrap Salvage] and 1x [Rusted Circuitry] to craft a [${rolledMod.id}] Tier-1 Mod. Mounted directly onto ${selectedWeaponForModding}.`,
+        type: "system",
+        district: nextState.district,
+        poi: nextState.poi
+      }
+    ]);
+    
+    setActivePopup({
+      title: "🔧 MOD ASSEMBLED",
+      subtitle: "CRAFTING SUCCESS",
+      type: "loot",
+      text: `You loaded the components into the gear workbench synthesizer. Hydraulic pistons press, sparks ignite, and laser nodes fuse the micro-circuits into: \n\n💎 ${rolledMod.name} (Tier-1)\n\nIt has been immediately mounted onto your selected [${selectedWeaponForModding}].`
+    });
+  };
 
   // Shop Filter for buying items
   const [shopFilter, setShopFilter] = useState<string>("all");
@@ -508,7 +1254,7 @@ export default function App() {
 
   // Squad dialogue state for conversations with Vice & Tracker
   const [squadDialogue, setSquadDialogue] = useState<{
-    sceneId: "banter" | "peptalk" | "tactics";
+    sceneId: "banter" | "peptalk" | "tactics" | "transit_conduit_to_ridge" | "transit_ridge_to_vault";
     nodeId: string;
   } | null>(null);
 
@@ -562,10 +1308,10 @@ export default function App() {
 
     // Apply active perks
     if (gameState.playerPerks?.includes("Hardened Chassis")) {
-      maxHp += 20;
+      maxHp += 30;
     }
-    if (gameState.playerPerks?.includes("Cyber-Optimizer")) {
-      startingShields += 10;
+    if (gameState.playerPerks?.includes("Cyber-Optimizer") || gameState.playerPerks?.includes("Cybernetic Optimizer")) {
+      startingShields += 15;
     }
     
     let str = gameState.attributes?.str || 10;
@@ -617,7 +1363,7 @@ export default function App() {
 
   // Squad dialogue system configurations with companions Vice and Tracker
   const SQUAD_DIALOGUES: Record<
-    "banter" | "peptalk" | "tactics",
+    "banter" | "peptalk" | "tactics" | "transit_conduit_to_ridge" | "transit_ridge_to_vault",
     Record<
       string,
       {
@@ -660,7 +1406,29 @@ export default function App() {
         portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
         text: "Confidence is cheap, kid. But I like the fire in your circuit board. Keep that SMG ready—I'm getting faint energy spikes ahead. We're not alone in these shafts.",
         choices: [
+          { text: "Ask: 'What's the history of Conduit 09?'", nodeId: "history_conduit" },
+          { text: "Ask: 'What should we expect from Ares Security?'", nodeId: "ares_security" },
           { text: "Roger that. Let's advance. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      history_conduit: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Conduit 09 was built during the great silicon rush fifty years ago. Ares used it as a subterranean waste disposal tube for high-capacity cooling pipes. When the lower city flooded, they sealed it off and left it to decay. Ideal for us outcasts, except the security arrays are still powered on.",
+        choices: [
+          { text: "Go back.", nodeId: "start" },
+          { text: "Understood. Let's move. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      ares_security: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "They use old autonomous MK-II drones armed with high-frequency pulse-lasers. They ignore energy shields sometimes, so watch your physical armor. My bio-scanners suggest there's a guard locker nearby containing high-tech flak armor. Keep an eye out for a barracks room.",
+        choices: [
+          { text: "Go back.", nodeId: "start" },
+          { text: "I'll keep my eyes open. Let's move. (Exit Conversation)", nodeId: null }
         ]
       },
       vesper_worried: {
@@ -669,7 +1437,29 @@ export default function App() {
         portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
         text: "Always is, rookie. The Ares database crystals contain bio-synthetic schemas that the Outcast union will buy for ten thousand credits. We split that, and we can finally afford tickets out of Megacity-9 slums. Hang tight.",
         choices: [
+          { text: "Ask: 'Ten thousand credits is a lot. How do we fence corporate crystals?'", nodeId: "fencing_crystals" },
+          { text: "Ask: 'Is the danger really worth tickets to the high orbit cities?'", nodeId: "orbit_cities" },
           { text: "Understood. Let's get it done. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      fencing_crystals: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "I've got a contact in the Red Neon slums, goes by 'Solder'. He strips the encryption sleeves and cleans the memory chips. He'll pay cold, hard credits. None of that traceable corporate script. Don't worry, kid, Solder's reliable.",
+        choices: [
+          { text: "Go back.", nodeId: "start" },
+          { text: "Good to know. Let's move. (Exit Conversation)", nodeId: null }
+        ]
+      },
+      orbit_cities: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Vesper, the high orbit habitats like 'Elysian Canopy' have real sunlight. Pure oxygen. Clean synthetic water. Down here in Megacity-9, we breathe recycled copper-dust and industrial smog. If this heist goes right, we can buy clean bio-breathers or a shuttle ticket. Yes, it's worth it.",
+        choices: [
+          { text: "Go back.", nodeId: "start" },
+          { text: "Let's win our ticket then. (Exit Conversation)", nodeId: null }
         ]
       },
       tracker_agrees: {
@@ -785,6 +1575,148 @@ export default function App() {
         text: "A tactical choke point. Yes, the narrow bridge of the reactor well restricts their flight patterns. We'll bottleneck them easily. You've got a sharp tactical processor, Vesper.",
         choices: [
           { text: "Agreed. Let's move. (Exit Conversation)", nodeId: null }
+        ]
+      }
+    },
+    transit_conduit_to_ridge: {
+      start: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Wait. Before we climb through that gate into Shatter-Ridge Core, we need to decide on our insertion strategy. Ares Biotech has a secure cargo scanner running on that gate. If we push through directly, they'll tag our energy signatures immediately.",
+        choices: [
+          {
+            text: "[SNEAK] 'Can we run a silent EMP pulse to temporarily scramble their scanner grids?'",
+            nodeId: "sneak_emp"
+          },
+          {
+            text: "[OVERLOAD] 'What if we feed a massive feedback loop into their power coupling, blowing the breakers?'",
+            nodeId: "overload_grid"
+          },
+          {
+            text: "[FORCE] 'No time. We charge through with weapons hot and handle whatever turns up.'",
+            nodeId: "force_through"
+          }
+        ]
+      },
+      sneak_emp: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Smart. If I discharge my auxiliary cyber-deck battery, I can generate a micro-EMP. It'll keep us off their thermal sensors, but it drains some of my deck capacity. Vesper, this will grant you a localized active-shroud shield for the next district! (+20 starting Shields)",
+        choices: [
+          {
+            text: "Excellent. Initiate the pulse and proceed. (Enter Shatter-Ridge Core)",
+            nodeId: null,
+            effect: (state) => {
+              state.shields = Math.min(state.maxShields || 100, (state.shields || 0) + 20);
+              return state;
+            }
+          }
+        ]
+      },
+      overload_grid: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "I like the way you think, recruit! A clean energy overload will short-circuit their automated turret docks. They won't be able to lock onto us when we breach. It costs us some conduit coolant, but it'll make any automated systems in the next district spark out! (You gain +20 Stamina for systemic preparedness)",
+        choices: [
+          {
+            text: "Do it. Let's overload the breakers and proceed. (Enter Shatter-Ridge Core)",
+            nodeId: null,
+            effect: (state) => {
+              state.stamina = Math.min(state.maxStamina || 100, (state.stamina || 0) + 20);
+              return state;
+            }
+          }
+        ]
+      },
+      force_through: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "Hell yeah! That's what I'm talking about! Let the corporate pigs hear us coming. It gets the adrenaline pumping. Look at you—your cyber-muscles are flexing under the pressure. Let's kick that gate in! (Adrenaline rush restores +20 Health!)",
+        choices: [
+          {
+            text: "Weapons ready. Let's push through. (Enter Shatter-Ridge Core)",
+            nodeId: null,
+            effect: (state) => {
+              state.hp = Math.min(state.maxHp || 100, (state.hp || 0) + 20);
+              return state;
+            }
+          }
+        ]
+      }
+    },
+    transit_ridge_to_vault: {
+      start: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "The lift is ready, recruit. We are descending into the holy grail: the Ares Biotech Deep Data Vault. This is where they store their core genetic crystals. Once we breach that chamber, there's no turning back. How's your neural matrix holding up?",
+        choices: [
+          {
+            text: "'My mind has never been clearer. Let's hack that terminal.'",
+            nodeId: "clear_mind"
+          },
+          {
+            text: "'I'm feeling a massive build-up of raw psychic energy inside me...'",
+            nodeId: "psychic_surge"
+          },
+          {
+            text: "'Let's make sure we get those crystals. For the Outcast union.'",
+            nodeId: "for_union"
+          }
+        ]
+      },
+      clear_mind: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Good. Decrypting corporate vault crystal schemas requires cold logic and precise synaptic timing. Maintain that focus. Here, take this military-grade neural stim-pack I salvaged. It will stabilize your cognitive deck. (+30 Mana for the upcoming puzzle!)",
+        choices: [
+          {
+            text: "Plug it in. Ready for decryption. (Enter Data Vault Sanctuary)",
+            nodeId: null,
+            effect: (state) => {
+              state.mana = Math.min(state.maxMana || 100, (state.mana || 0) + 30);
+              return state;
+            }
+          }
+        ]
+      },
+      psychic_surge: {
+        speakerName: "Tracker",
+        speakerRole: "Decker & Squad Leader",
+        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        text: "Fascinating... the exposure to the ancient relic is mutating your cerebral pathways at an exponential rate. Your brain is generating biological ether waves. Let it flow, Vesper—but guide it carefully. (Your maximum psychic potential expands! Maximum Mana permanently increased by +15!)",
+        choices: [
+          {
+            text: "I can feel the network... Let's descend. (Enter Data Vault Sanctuary)",
+            nodeId: null,
+            effect: (state) => {
+              state.maxMana = (state.maxMana || 50) + 15;
+              state.mana = Math.min(state.maxMana, (state.mana || 0) + 15);
+              return state;
+            }
+          }
+        ]
+      },
+      for_union: {
+        speakerName: "Vice",
+        speakerRole: "Heavy Weapons & Smuggler",
+        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        text: "For the Union! Those suits up in their ivory towers have sucked the life out of this city for too long. Today, we claw some of it back. Take this alloy-shroud weave to reinforce your chest armor. We aren't dying in there! (Maximum Health permanently increased by +15!)",
+        choices: [
+          {
+            text: "Armored and ready. Let's descend. (Enter Data Vault Sanctuary)",
+            nodeId: null,
+            effect: (state) => {
+              state.maxHp = (state.maxHp || 100) + 15;
+              state.hp = Math.min(state.maxHp, (state.hp || 0) + 15);
+              return state;
+            }
+          }
         ]
       }
     }
@@ -1112,6 +2044,7 @@ export default function App() {
     x: number;
     y: number;
     avatar: string;
+    image?: string;
     color: string;
     range: number;
     damage: number;
@@ -1120,25 +2053,559 @@ export default function App() {
     initiative: number;
     isDead: boolean;
     isCompanion?: boolean;
+    statuses?: string[];
+    overclockTurns?: number;
+    glitchTurns?: number;
+    corrodedTurns?: number;
+    panicTurns?: number;
+    stunnedTurns?: number;
+    silencedTurns?: number;
+    bleedTurns?: number;
+  }
+
+  interface GridInteractiveObject {
+    id: string;
+    name: string;
+    type: 'terminal' | 'battery' | 'shield_cover';
+    x: number;
+    y: number;
+    hp: number;
+    maxHp: number;
+    isDestroyed: boolean;
+    isHacked: boolean;
+    avatar: string;
+    color: string;
+    description: string;
   }
 
   interface GridCombatState {
     combatants: GridCombatant[];
     turnOrder: string[];
     currentTurnIdx: number;
-    selectedAction: "move" | "attack" | "spell" | "item" | null;
+    selectedAction: "move" | "attack" | "meleeAtk" | "rangedAtk" | "spell" | "item" | null;
     turnLog: string;
+    interactiveObjects?: GridInteractiveObject[];
   }
 
   const [gridCombat, setGridCombat] = useState<GridCombatState | null>(null);
-
-  // Hex matching hacking mini-game state
-  const [hackingPuzzle, setHackingPuzzle] = useState<{
-    targets: { hex: string; matched: boolean }[];
-    options: string[];
-    selectedTargetIdx: number | null;
-    status: "idle" | "playing" | "success" | "failure";
+  const [combatActionTab, setCombatActionTab] = useState<"attacks" | "skills" | "support">("attacks");
+  const [hoveredAction, setHoveredAction] = useState<"move" | "meleeAtk" | "rangedAtk" | "spell" | "mind" | "neural" | null>(null);
+  const [hoveredEntity, setHoveredEntity] = useState<any | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<{
+    name: string;
+    cost: number;
+    costType: "MP" | "SP";
+    desc: string;
+    icon: string;
+    scope: "enemy" | "self" | "all_enemies";
   } | null>(null);
+
+  // Upgraded Immersive retro-themed cyberdeck hex matrix hacking state
+  interface HackingPuzzleState {
+    type: "sanctuary" | "cargo_logs" | "security_mainframe" | "cryo_bypass" | "nouveau_safe" | "rebel_courier" | "shatter_ridge_server";
+    status: "idle" | "playing" | "success" | "failure";
+    targets: string[];
+    buffer: string[];
+    maxBuffer: number;
+    grid: { hex: string; row: number; col: number; isClicked: boolean; isHighlighted: boolean }[][];
+    attemptsLeft: number;
+    maxAttempts: number;
+    activeLineType: "row" | "col";
+    activeLineIdx: number;
+    netSlicerLevel: number;
+    intelligence: number;
+    usedPerkBuffer: boolean;
+    usedPerkAttempts: boolean;
+  }
+
+  const [hackingPuzzle, setHackingPuzzle] = useState<HackingPuzzleState | null>(null);
+
+  const initHackingGame = (
+    type: "sanctuary" | "cargo_logs" | "security_mainframe" | "cryo_bypass" | "nouveau_safe" | "rebel_courier" | "shatter_ridge_server",
+    intScore: number,
+    netSlicerLevel: number,
+    hasBonusCard: boolean = false
+  ): HackingPuzzleState => {
+    let targetLen = 3;
+    if (type === "sanctuary") targetLen = 2;
+    if (type === "nouveau_safe" || type === "security_mainframe" || type === "shatter_ridge_server") targetLen = 4;
+
+    const hexPool = ["1C", "E9", "BD", "55", "FF", "AA", "7A", "4F", "D4", "7C", "3B", "2E"];
+    const targets: string[] = [];
+    for (let i = 0; i < targetLen; i++) {
+      targets.push(hexPool[Math.floor(Math.random() * hexPool.length)]);
+    }
+
+    const grid: { hex: string; row: number; col: number; isClicked: boolean; isHighlighted: boolean }[][] = [];
+    for (let r = 0; r < 6; r++) {
+      const rowArr = [];
+      for (let c = 0; c < 6; c++) {
+        rowArr.push({
+          hex: hexPool[Math.floor(Math.random() * hexPool.length)],
+          row: r,
+          col: c,
+          isClicked: false,
+          isHighlighted: false
+        });
+      }
+      grid.push(rowArr);
+    }
+
+    let curR = 0;
+    let curC = Math.floor(Math.random() * 6);
+    grid[curR][curC].hex = targets[0];
+    const path = [{ r: curR, c: curC }];
+
+    for (let i = 1; i < targetLen; i++) {
+      if (i % 2 === 1) {
+        let nextR = curR;
+        while (nextR === curR) {
+          nextR = Math.floor(Math.random() * 6);
+        }
+        curR = nextR;
+      } else {
+        let nextC = curC;
+        while (nextC === curC) {
+          nextC = Math.floor(Math.random() * 6);
+        }
+        curC = nextC;
+      }
+      grid[curR][curC].hex = targets[i];
+      path.push({ r: curR, c: curC });
+    }
+
+    if (netSlicerLevel >= 3) {
+      path.forEach(({ r, c }) => {
+        grid[r][c].isHighlighted = true;
+      });
+    }
+
+    let maxAttempts = 5;
+    if (netSlicerLevel >= 2) maxAttempts += 2;
+    if (hasBonusCard) maxAttempts += 1;
+
+    let maxBuffer = 5;
+    if (netSlicerLevel >= 1) maxBuffer += 2;
+
+    return {
+      type,
+      status: "playing",
+      targets,
+      buffer: [],
+      maxBuffer,
+      grid,
+      attemptsLeft: maxAttempts,
+      maxAttempts,
+      activeLineType: "row",
+      activeLineIdx: 0,
+      netSlicerLevel,
+      intelligence: intScore,
+      usedPerkBuffer: false,
+      usedPerkAttempts: false
+    };
+  };
+
+  const handleHackingSuccess = () => {
+    if (!hackingPuzzle) return;
+    let nextState = { ...gameState! };
+    const type = hackingPuzzle.type;
+    
+    if (type === "sanctuary") {
+      nextState.poi = "Mysterious Relic Altar";
+      setActivePOIView("relic_altar");
+      nextState.inventory.push("Ares Data Crystal");
+      nextState.experience += 50;
+      setActivePopup({
+        title: "DATABASE COPIED",
+        subtitle: "HEX DECRYPTION SUCCESS",
+        type: "loot",
+        text: "You successfully bypassed the Ares mainframe and extracted the Ares Data Crystal! The secure lockpins holding the golden relic chamber have fully retracted. Access the altar immediately."
+      });
+      setGameState(nextState);
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💾 DECRYPTION SUCCESS: You safely extract the 'Ares Data Crystal' into your inventory stash. The heavy security door behind the terminal slides back silently, revealing a glowing chamber with a floating golden relic on a black altar...",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "cargo_logs") {
+      nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+      nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+      if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+        nextState.inventory.push("Decrypted Ares Transit Token");
+      }
+      nextState.experience += 40;
+      setActivePopup({
+        title: "💾 SECURITY BYPASSED",
+        subtitle: "LOGISTICS ARCHIVE BREACHED",
+        type: "check_success",
+        text: "With superb neural execution, you bypassed the Titan Logistics security nodes. You isolated the transport log for Subject ID: Vice.\n\nDestination: Cryo-Locked Detainment Bay B, beneath Ares Biotech Corporate Plaza, Downtown.\n\nYou have also siphoned an encrypted 'Decrypted Ares Transit Token' into your active stash database!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💾 SECURITY BYPASSED: You hacked the main cargo logistics node safely! Copied decrypted manifests and secured a transit token.",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "security_mainframe") {
+      nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
+      nextState.experience += 40;
+      setActivePopup({
+        title: "💾 DECRYPT COMPLETE",
+        subtitle: "MAINBOARD COVERT OVERRIDE",
+        type: "check_success",
+        text: "With brilliant neural flow, you bypassed the security nodes. You looped the video feeds and injected a simulated security authorization. The heavy titanium elevator slides open smoothly. You step inside to descend to the detention sub-level!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💾 MAINBOARD OVERRIDDEN: Bypassed the corporate plaza security checkpoint terminal covertly! Staff lift unlocked.",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "cryo_bypass") {
+      nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice") && !q.includes("The Hunt for Vice"));
+      nextState.completedQuests.push("Chapter 1 Completed: Vice Rescued from Cryo-Detention");
+      
+      const viceIdx = nextState.companions.findIndex(c => c.name === "Vice");
+      if (viceIdx >= 0) {
+        nextState.companions[viceIdx].status = "in_party";
+      } else {
+        nextState.companions.push({
+          name: "Vice",
+          fee: 0,
+          status: "in_party",
+          role: "Tactical Leader",
+          bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
+          avatar: "👩‍🎤",
+          image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+          equipment: {
+            meleeWeapon: "Vibroblade",
+            rangedWeapon: "Battle Pistol BP132",
+            armor: "Light Neon Leather Armor",
+            headpiece: null,
+            trinket: null
+          },
+          inventory: []
+        });
+      }
+      if (!nextState.party.includes("Vice")) {
+        nextState.party.push("Vice");
+      }
+
+      const viceBaseNPC = {
+        id: "vice",
+        name: "Vice",
+        role: "Weapons & Field Coordinator",
+        avatar: "👩‍🎤",
+        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+        description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
+        dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
+        reaction: null,
+        happiness: 90,
+        affection: "Warm",
+        affectionValue: 75,
+        willpower: 80,
+        corruption: 15,
+        hygiene: "Normal",
+        discipline: 75,
+        hunger: "Satiated",
+        respect: 80,
+        withdrawRisk: "None",
+        anger: 0,
+        defiance: 0,
+        fear: 0,
+        inventory: ["Heavy Plasma Pistol", "Reinforced Flak Guard"],
+        currentJob: "Defensive Security Guard"
+      };
+      nextState.baseNPCs = [...(nextState.baseNPCs || []), viceBaseNPC];
+      nextState.credits += 300;
+      nextState.experience += 150;
+
+      setActivePopup({
+        title: "🔓 CHAPTER 1 COMPLETED!",
+        subtitle: "VICE HAS BEEN EXTRACTED",
+        type: "check_success",
+        text: "The cryo-glass seal cracks, releasing pressurized white nitrogen gas. Vice stumbles out of the pod, coughing and shivering but grinning. He slams his organic fist onto your armored shoulder:\n\n'Kid... you came. You actually breached an Ares security plaza for me. Respect.'\n\nReward: Vice joins your Hideout Base & active party squad!\n+300¤ Credits, +150 XP!\n\nSpeak to Agent Jax at Neon Abyss Bar to prepare for Chapter 2!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💻 OVERRIDE SUCCESSFUL: Bypassed cryo-computer thermal governor! Vice is safely released!",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "nouveau_safe") {
+      nextState.completedPOIActions.push("nouveau_chrome:shields_hacked");
+      nextState.experience += 40;
+      setActivePopup({
+        title: "💾 BYPASS COMPLETED",
+        subtitle: "EM SHIELDS OFFLINE",
+        type: "check_success",
+        text: "The security console screen flickers to an authorized state. The high-pitched electromagnetic hum dies down instantly as the force fields slide into the floor registers. The Prototype Singularity Battery stands exposed on its pedestal!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💾 SHIELDS DEACTIVATED: Successfully bypassed Nouveau's luxury showroom terminal pressure shields!",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "shatter_ridge_server") {
+      nextState.inventory.push("Encrypted Ares Ledger");
+      nextState.experience += 50;
+      setActivePopup({
+        title: "💻 ACCESS GRANTED",
+        subtitle: "BLACK LEDGER DECRYPTED",
+        type: "check_success",
+        text: "Success! You bypass the database mainframe security grid. A heavy carbon-plated data storage cylinder unlocks with a soft hiss, revealing the Encrypted Ares Ledger! Hand this over to Vice at the Aurus Safehouse to finish the legendary quest."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💻 SERVER FARM BREACHED: Stole the Encrypted Ares Ledger from the server databases!",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "rebel_courier") {
+      nextState.credits += 80;
+      nextState.experience += 25;
+      setActivePopup({
+        title: "🔓 COURIER DECK DECRYPTED",
+        subtitle: "CREDIT TRANSFER COMPLETE",
+        type: "check_success",
+        text: "You bypassed the dead rebel courier's cyberdeck biometric lock! Successfully routed and wired +80¤ credits and downloaded highly valuable neural matrix schemas (+25 XP)."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "💾 COURIER DECRYPTED: Successfully siphoned +80¤ from dead courier's cyberdeck.",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+  };
+
+  const handleHackingFailure = () => {
+    if (!hackingPuzzle) return;
+    let nextState = { ...gameState! };
+    const type = hackingPuzzle.type;
+
+    if (type === "sanctuary") {
+      nextState.hp = Math.max(10, nextState.hp - 10);
+      setActivePopup({
+        title: "⚠️ COGNITIVE FEEDBACK",
+        subtitle: "SHOCK BARRIER TRIGGERED",
+        type: "check_failure",
+        text: "Your cyberdeck suffered a severe feedback surge! Dealt -10 cognitive HP damage. Clean your deck buffer and reinitialize when ready."
+      });
+      setGameState(nextState);
+      setHackingPuzzle(null);
+    }
+    else if (type === "cargo_logs") {
+      nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+      nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+      nextState.hp = Math.max(10, nextState.hp - 20);
+      setActivePopup({
+        title: "⚠️ NEURAL BACKLASH",
+        subtitle: "FIREWALL TRAP ENGAGED",
+        type: "check_failure",
+        text: "The terminal detected your intrusion vector. A feedback voltage shock surge scorched your synapse arrays, dealing -20 HP damage!\n\nHowever, a partial transfer manifest was successfully cached:\n\nSubject ID: Vice has been relocated to the cryogenic holding block beneath Ares Biotech Corporate Plaza (Downtown Region). Proceed there immediately!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "⚠️ BACKLASH ERROR: A proxy-firewall triggered a neural feedback loop! Dealt -20 HP damage. Fragmented transfer logs salvaged.",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "security_mainframe") {
+      nextState.combatState = {
+        enemyName: "Ares Plasma Sentinel",
+        enemyHp: 110,
+        enemyMaxHp: 110,
+        enemyShields: 60,
+        enemyMaxShields: 60,
+        isActive: true,
+        turnLog: "🚨 ALERT: SECURITY BREACH DETECTED! Sentry guns deploy with emergency combat shielding!"
+      };
+      setActivePopup({
+        title: "🚨 SECURITY ALARM",
+        subtitle: "SYS-ADMIN TRAP ENGAGED",
+        type: "check_failure",
+        text: "You failed the override hack! Red strobe lights spin across the plaza walls. An Ares Plasma Sentinel with boosted defense shields deploys immediately to incinerate your neural signature!"
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "🚨 SECURITY ALARM: Failed the security checkpoint override! Red strobe lights spinning.",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "cryo_bypass") {
+      nextState.hp = Math.max(10, nextState.hp - 15);
+      setActivePopup({
+        title: "❌ OVERRIDE FAILURE",
+        subtitle: "THERMAL EXPLOIT LOCKED",
+        type: "check_failure",
+        text: "The cryo-computer detected your host intrusion. It immediately locked you out and triggered an auxiliary coolant purge! Slipped ice frost blast dealing -15 HP."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "❌ OVERRIDE FAILURE: Cryo-computer system locked out, venting freezing coolant (-15 HP).",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "nouveau_safe") {
+      nextState.hp = Math.max(10, nextState.hp - 20);
+      setActivePopup({
+        title: "🚨 LASER OVERRIDE ENGAGED",
+        subtitle: "THERMAL COUNTER-DEFENSE",
+        type: "check_failure",
+        text: "The safe terminal detected your intrusion vector. A thermal security laser fired directly into your forearm plating! Dealt -20 HP thermal damage."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "🚨 SECURITY LASER SECTOR: Caught hacking Nouveau safe terminal, shot by defense laser (-20 HP).",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "shatter_ridge_server") {
+      nextState.hp = Math.max(10, nextState.hp - 15);
+      setActivePopup({
+        title: "🚨 SERVER BACKLASH",
+        subtitle: "VOLTAGE SURGE DEPLOYED",
+        type: "check_failure",
+        text: "Your exploit code faulted! The server terminal fired a high-voltage electrostatic discharge through your hand connectors, dealing -15 HP electrical damage."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "🚨 SERVER EXPLOIT FAULT: High-voltage feedback loop hit your frame during hacking (-15 HP).",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+    else if (type === "rebel_courier") {
+      nextState.mana = Math.max(0, nextState.mana - 20);
+      setActivePopup({
+        title: "⚠️ THERMITE COIL EXPLOSION",
+        subtitle: "SELF-DESTRUCT SECURED",
+        type: "check_failure",
+        text: "The courier deck's self-destruct thermite coil triggered upon intrusion! Discharged a heavy neural feedback spike, draining -20 Mana."
+      });
+      setGameState(nextState);
+      setActivePOIView("default");
+      setHackingPuzzle(null);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          text: "⚠️ CYBERDECK BURST ERROR: Dead rebel courier deck self-destructed (-20 Mana feedback).",
+          type: "narration",
+          district: nextState.district,
+          poi: nextState.poi
+        }
+      ]);
+    }
+  };
 
   const logsEndRef = useRef<HTMLDivElement>(null);
 
@@ -1250,6 +2717,7 @@ export default function App() {
         x: 1,
         y: 2,
         avatar: pAvatar,
+        image: gameState?.playerAvatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300",
         color: "border-cyan-500 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.4)]",
         range: pRange,
         damage: pDmg,
@@ -1272,7 +2740,8 @@ export default function App() {
         maxShields: 0,
         x: 1,
         y: 1,
-        avatar: "🔫",
+        avatar: "👩‍🎤",
+        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
         color: "border-rose-500 text-rose-400",
         range: 3,
         damage: 16,
@@ -1293,6 +2762,7 @@ export default function App() {
         x: 0,
         y: 3,
         avatar: "📟",
+        image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=600",
         color: "border-amber-500 text-amber-400",
         range: 3,
         damage: 12,
@@ -1313,7 +2783,8 @@ export default function App() {
         maxShields: 0,
         x: 1,
         y: 1,
-        avatar: "🔫",
+        avatar: "👩‍🎤",
+        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
         color: "border-rose-500 text-rose-400",
         range: 3,
         damage: 16,
@@ -1338,6 +2809,7 @@ export default function App() {
             x: 0,
             y: idx + 1,
             avatar: "🥷",
+            image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=600",
             color: "border-teal-500 text-teal-400",
             range: 1,
             damage: 24,
@@ -1359,6 +2831,7 @@ export default function App() {
             x: 0,
             y: idx + 1,
             avatar: "🔮",
+            image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
             color: "border-purple-500 text-purple-400",
             range: 4,
             damage: 26,
@@ -1380,6 +2853,7 @@ export default function App() {
             x: 0,
             y: idx + 1,
             avatar: "🦾",
+            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600",
             color: "border-stone-500 text-stone-400",
             range: 1,
             damage: 18,
@@ -1401,6 +2875,7 @@ export default function App() {
             x: 0,
             y: idx + 1,
             avatar: "🔫",
+            image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=600",
             color: "border-emerald-500 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.3)]",
             range: 4,
             damage: 20,
@@ -1410,12 +2885,35 @@ export default function App() {
             isDead: false,
             isCompanion: true
           });
+        } else if (name === "Vice") {
+          combatants.push({
+            id: "vice",
+            name: "Vice (Companion)",
+            team: "player",
+            hp: 120,
+            maxHp: 120,
+            shields: 10,
+            maxShields: 10,
+            x: 0,
+            y: idx + 1,
+            avatar: "👩‍🎤",
+            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            color: "border-rose-500 text-rose-400",
+            range: 3,
+            damage: 18,
+            ap: 2,
+            maxAp: 2,
+            initiative: 14,
+            isDead: false,
+            isCompanion: true
+          });
         }
       });
     }
 
     // Add primary enemy
     const isBoss = enemyName.includes("Behemoth") || enemyName.includes("Ares Prime") || enemyName.includes("Special Ops Commander");
+    const isDrone = enemyName.includes("Drone") || enemyName.includes("Sentry") || enemyName.includes("Watcher");
     combatants.push({
       id: "enemy-1",
       name: enemyName,
@@ -1426,9 +2924,14 @@ export default function App() {
       maxShields: enemyMaxShields,
       x: 6,
       y: 2,
-      avatar: isBoss ? "👹" : enemyName.includes("Drone") ? "🤖" : "🕴️",
+      avatar: isBoss ? "👹" : isDrone ? "🤖" : "🕴️",
+      image: isBoss 
+        ? "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=600" 
+        : isDrone 
+          ? "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&q=80&w=600" 
+          : "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=600",
       color: "border-red-500 text-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]",
-      range: isBoss ? 2 : enemyName.includes("Drone") ? 3 : 2,
+      range: isBoss ? 2 : isDrone ? 3 : 2,
       damage: isBoss ? 24 : 14,
       ap: 2,
       maxAp: 2,
@@ -1450,6 +2953,9 @@ export default function App() {
         x: 7,
         y: isMech ? 1 : 3,
         avatar: isMech ? "🛸" : "👮",
+        image: isMech 
+          ? "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&q=80&w=600" 
+          : "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=600",
         color: "border-red-400 text-red-400",
         range: isMech ? 3 : 2,
         damage: isMech ? 8 : 10,
@@ -1460,15 +2966,73 @@ export default function App() {
       });
     }
 
-    const sorted = [...combatants].sort((a, b) => b.initiative - a.initiative);
+    const finalizedCombatants = combatants.map(c => ({
+      ...c,
+      statuses: [] as string[],
+      overclockTurns: 0,
+      glitchTurns: 0,
+      corrodedTurns: 0,
+      panicTurns: 0,
+      stunnedTurns: 0,
+      silencedTurns: 0,
+      bleedTurns: 0
+    }));
+
+    const sorted = [...finalizedCombatants].sort((a, b) => b.initiative - a.initiative);
     const turnOrder = sorted.map(c => c.id);
 
+    const interactiveObjects: GridInteractiveObject[] = [
+      {
+        id: "obj-battery-1",
+        name: "Plasma Battery",
+        type: "battery",
+        x: 2,
+        y: 4,
+        hp: 10,
+        maxHp: 10,
+        isDestroyed: false,
+        isHacked: false,
+        avatar: "🔋",
+        color: "border-amber-500 text-amber-500 bg-amber-950/20",
+        description: "Unstable plasma core. Deals 30 Heavy Fire damage to all adjacent cells when destroyed."
+      },
+      {
+        id: "obj-terminal-1",
+        name: "Tech Mainframe",
+        type: "terminal",
+        x: 2,
+        y: 1,
+        hp: 20,
+        maxHp: 20,
+        isDestroyed: false,
+        isHacked: false,
+        avatar: "💻",
+        color: "border-cyan-500 text-cyan-400 bg-cyan-950/20",
+        description: "Local mainframe. Hackable (requires 10 MP) to siphon grid power, shocking all enemies for 20 damage and silencing them."
+      },
+      {
+        id: "obj-shield-1",
+        name: "Energy Cover",
+        type: "shield_cover",
+        x: 5,
+        y: 3,
+        hp: 30,
+        maxHp: 30,
+        isDestroyed: false,
+        isHacked: false,
+        avatar: "🛰️",
+        color: "border-indigo-500 text-indigo-400 bg-indigo-950/20",
+        description: "Electromagnetic cover. Activate (requires 1 AP) to grant adjacent player units +20 Shields."
+      }
+    ];
+
     return {
-      combatants,
+      combatants: finalizedCombatants,
       turnOrder,
       currentTurnIdx: 0,
       selectedAction: "move" as const,
-      turnLog: `Tactical grid combat initialized. All units deployed. ${sorted[0].name} has the initiative!`
+      turnLog: `Tactical grid combat initialized. All units deployed. ${sorted[0].name} has the initiative!`,
+      interactiveObjects
     };
   };
 
@@ -1765,6 +3329,7 @@ export default function App() {
     ]);
 
     setActivePOIView("hideout");
+    setActiveRegionId("aurus");
     setActiveDialogue(null);
     setCurrentScreen("game");
     triggerToast("CHAPTER 1 BEGUN: BASE CREW CONSOLE OPENED");
@@ -1864,6 +3429,24 @@ export default function App() {
       }
     }
 
+    // 7. Corporate Notoriety Check: If Ares Corporate rep is <= 30, there's a 15% chance of a sudden Elite Interceptor ambush!
+    const aresRep = nextState.reputations?.aresCorporate ?? 50;
+    if (aresRep <= 30 && (!nextState.combatState || !nextState.combatState.isActive)) {
+      if (Math.random() < 0.15) {
+        nextState.combatState = {
+          enemyName: "Ares Elite Strike Drone",
+          enemyHp: 130,
+          enemyMaxHp: 130,
+          enemyShields: 60,
+          enemyMaxShields: 60,
+          isActive: true,
+          turnLog: "🚨 WARNING: Your high Ares notoriety has triggered immediate corporate interception! An Ares Elite Strike Drone has cornered you during transit. Protect your cyberware frame!"
+        };
+        warningText = "🚨 CORPORATE AMBUSH: Low Ares reputation triggered an immediate elite drone strike!";
+        logsText.push(`🚨 AMBUSH DETECTED: Ares Biotech elite hit-squad intercepted your coordinates during sector travel. Engage combat immediately!`);
+      }
+    }
+
     // Transform logsText array into LogMessage structures
     logsText.forEach(txt => {
       logs.push({
@@ -1890,7 +3473,7 @@ export default function App() {
     initial.playerRace = customRace;
     initial.playerAvatarUrl = customAvatarUrl;
     initial.playerBackground = customBackground;
-    initial.playerPerks = selectedPerks;
+    initial.playerPerks = [...selectedPerks, ...getPerksForLevel(initial.level || 1)];
     
     // Establish base attributes
     const baseAttrs = { ...initial.attributes };
@@ -1901,6 +3484,36 @@ export default function App() {
     baseAttrs.int = (baseAttrs.int || 10) + addedStats.int;
     baseAttrs.will = (baseAttrs.will || 10) + addedStats.will;
     baseAttrs.eth = (baseAttrs.eth || 10) + addedStats.eth;
+
+    // Apply selected starting perks stat bonuses
+    if (selectedPerks.includes("Genius")) {
+      baseAttrs.int = (baseAttrs.int || 10) + 2;
+    }
+    if (selectedPerks.includes("Iron Will")) {
+      baseAttrs.will = (baseAttrs.will || 10) + 2;
+    }
+    if (selectedPerks.includes("Shadow Operative")) {
+      baseAttrs.dex = (baseAttrs.dex || 10) + 1;
+    }
+    if (selectedPerks.includes("Heavy Hitter")) {
+      baseAttrs.str = (baseAttrs.str || 10) + 1;
+    }
+    if (selectedPerks.includes("Apex Reflexes")) {
+      baseAttrs.dex = (baseAttrs.dex || 10) + 2;
+    }
+    if (selectedPerks.includes("Technomancer Catalyst")) {
+      baseAttrs.eth = (baseAttrs.eth || 10) + 1;
+    }
+    if (selectedPerks.includes("Hardened Chassis")) {
+      initial.maxHp = (initial.maxHp || 100) + 30;
+      initial.hp = initial.maxHp;
+    }
+    if (selectedPerks.includes("Street Smart")) {
+      initial.credits += 30;
+    }
+    if (selectedPerks.includes("Lucky Jack")) {
+      initial.credits += 40;
+    }
     
     // Apply Race stat modifiers
     if (customRace === "Human") {
@@ -1944,21 +3557,12 @@ export default function App() {
       baseAttrs.will += 1;
     }
     
-    // Apply Perk modifiers during creation
-    if (selectedPerks.includes("Lucky Jack")) {
-      initial.credits += 40;
-    }
-    if (selectedPerks.includes("Hardened Chassis")) {
-      initial.maxHp = (initial.maxHp || 100) + 20;
-      initial.hp = initial.maxHp;
-    }
-    
     initial.attributes = baseAttrs;
     
     const welcomeLog: LogMessage = {
       id: crypto.randomUUID(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      text: `DEPLOYED AGENT [${initial.playerName}] (${customRace} ${selectedArchetype.name}) into Megacity-9 slums. Background: ${customBackground}. Perks: ${selectedPerks.join(", ") || "None"}. Initial gear established: ${initial.inventory.join(", ")}. Primary credits balance: ${initial.credits}¤.\n\nYour organic cybernetic cortex aligns with sol-prime parameters. The neon glow hums underneath your heels.\n\nSelect districts on the overland map to scan. Enter POIs to trigger local interaction consoles.`,
+      text: `DEPLOYED AGENT [${initial.playerName}] (${customRace} ${selectedArchetype.name}) into Megacity-9 slums. Background: ${customBackground}. Cognitive passives fully integrated. Initial gear established: ${initial.inventory.join(", ")}. Primary credits balance: ${initial.credits}¤.\n\nYour organic cybernetic cortex aligns with sol-prime parameters. The neon glow hums underneath your heels.\n\nSelect districts on the overland map to scan. Enter POIs to trigger local interaction consoles.`,
       type: "system",
       district: initial.district,
       poi: initial.poi
@@ -1983,48 +3587,77 @@ export default function App() {
       return;
     }
 
+    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     if (gameState.stamina <= 0) {
-      triggerToast("STAMINA EXHAUSTED: Transit channel locked. You must rest/sleep at Aurus Safehouse.");
+      let collapseState = { ...gameState };
+      collapseState.stamina = collapseState.maxStamina || 100;
+      collapseState.hp = Math.max(collapseState.hp, 25);
+      collapseState.district = "aurus";
+      collapseState.poi = "Main Headquarters (The Hideout)";
+      setActiveRegionId("aurus");
+      setActivePOIView("hideout");
+      
+      setGameState(collapseState);
       setLogs(prev => [
         ...prev,
         {
           id: crypto.randomUUID(),
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          text: `❌ TRANSIT INTERRUPTED: Monorail interface refused neural link. Locomotor stamina depleted (0/100). Return to Aurus Safehouse immediately.`,
+          timestamp: timeString,
+          text: `🚨 NEURAL BLACKOUT ON TRANSIT: You attempted to initiate monorail transit with 0/100 Stamina. Your motor processors shut down on the platform. The transit security system triggered your recovery beacon, returning you to the Aurus Safehouse to stabilize. Stamina fully restored.`,
           type: "system",
-          district: gameState.district,
-          poi: gameState.poi
+          district: "aurus",
+          poi: "Main Headquarters (The Hideout)"
         }
       ]);
+      triggerToast("EXHAUSTED: Returned to Safehouse");
       return;
     }
 
-    const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    // Auto-travel to the first POI in that region to maintain visual cohesion
-    const firstPOI = MAP_POIS.find(p => p.district === regionId);
     let nextState = { ...gameState };
-    
-    if (firstPOI) {
-      nextState.district = regionId;
-      nextState.poi = firstPOI.name;
-      setActivePOIView(firstPOI.id);
-    }
+    nextState.district = regionId;
+    nextState.poi = "Transit Node";
     
     setActiveRegionId(regionId);
+    setActivePOIView(null);
 
     // Deduct stamina and process weather consequences
     const travelResult = handleStaminaAndWeatherOnTravel(nextState, true, reg.name);
     nextState = travelResult.nextState;
+
+    if (nextState.stamina <= 0) {
+      nextState.stamina = nextState.maxStamina || 100;
+      nextState.hp = Math.max(nextState.hp, 25);
+      nextState.district = "aurus";
+      nextState.poi = "Main Headquarters (The Hideout)";
+      setActiveRegionId("aurus");
+      setActivePOIView("hideout");
+      
+      setGameState(nextState);
+      setLogs(prev => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          timestamp: timeString,
+          text: `🚨 NEURAL BLACKOUT ON TRANSIT: Your stamina hit 0% during travel to ${reg.name}. You collapsed on the platform. Your emergency recovery beacon returned you to the Aurus Safehouse, restoring your systems.`,
+          type: "system",
+          district: "aurus",
+          poi: "Main Headquarters (The Hideout)"
+        }
+      ]);
+      triggerToast("EXHAUSTED: Returned to Safehouse");
+      return;
+    }
+
     setGameState(nextState);
 
     const log: LogMessage = {
       id: crypto.randomUUID(),
       timestamp: timeString,
-      text: `[TRANSIT CHANNEL OPEN]: Deployed magnetic monorail to ${reg.name}. Scanning coordinates at local POI: ${firstPOI ? firstPOI.name : "Highwalks"}...`,
+      text: `[TRANSIT CHANNEL OPEN]: Deployed magnetic monorail to ${reg.name}. Scanning regional coordinate nodes...`,
       type: "system",
       district: regionId,
-      poi: firstPOI ? firstPOI.name : "Transit Node"
+      poi: "Transit Node"
     };
     setLogs(prev => [...prev, log, ...travelResult.logs]);
 
@@ -2072,20 +3705,52 @@ export default function App() {
 
     // 1. Stamina depletion guard: block standard actions if stamina is 0 and it's not a rest/emergency/combat action
     if (gameState.stamina <= 0 && !isRestAction && !isEmergency && !gameState.combatState?.isActive) {
-      setIsLoading(false);
-      triggerToast("STAMINA EXHAUSTED: Rest/Sleep required.");
-      setLogs(prev => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          timestamp: timeString,
-          text: `❌ ACTION REJECTED: Neural stamina fully depleted (0/100). Perform an Emergency Action or Rest/Sleep immediately!`,
-          type: "system",
-          district: gameState.district,
-          poi: gameState.poi
-        }
-      ]);
-      return;
+      const isPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+      if (!isPrologue) {
+        let collapseState = { ...gameState };
+        collapseState.stamina = collapseState.maxStamina || 100;
+        collapseState.hp = Math.max(collapseState.hp, 25);
+        collapseState.district = "aurus";
+        collapseState.poi = "Main Headquarters (The Hideout)";
+        setActiveRegionId("aurus");
+        setActivePOIView("hideout");
+        
+        setGameState(collapseState);
+        setLogs(prev => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            timestamp: timeString,
+            text: `🚨 EMERGENCY EVACUATION: Your systems are completely exhausted (0/100 Stamina). To prevent critical hardware failure, your auto-beacon has returned you to the Aurus Safehouse bunk and fully restored your Stamina.`,
+            type: "system",
+            district: "aurus",
+            poi: "Main Headquarters (The Hideout)"
+          }
+        ]);
+        triggerToast("EXHAUSTED: Returned to Safehouse");
+        setIsLoading(false);
+        return;
+      } else {
+        // In prologue, they cannot go back to Aurus Safehouse since they are in a linear sequence
+        // Let's give them some stamina so they don't get stuck in the prologue!
+        let prologueState = { ...gameState };
+        prologueState.stamina = 50; // Give them a second wind in the prologue
+        setGameState(prologueState);
+        setLogs(prev => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            timestamp: timeString,
+            text: `🔋 SECOND WIND: Neural modules overloaded! Companion Vice overrides your cyberdeck constraints, injecting an emergency backup recharge: +50 Stamina.`,
+            type: "system",
+            district: gameState.district,
+            poi: gameState.poi
+          }
+        ]);
+        triggerToast("Prologue Second Wind: +50 Stamina");
+        setIsLoading(false);
+        return;
+      }
     }
 
     // 2. Handle Emergency actions
@@ -2303,6 +3968,75 @@ export default function App() {
           buffText = isDojoUpgraded ? " [Dojo Buff +30%]" : " [Dojo Buff +15%]";
         }
 
+        // --- Optical HUDs Critical Hit Check ---
+        let hudText = "";
+        if (nextState.installedCyberware?.includes("Optical HUDs") && Math.random() < 0.25) {
+          pDmg = Math.floor(pDmg * 1.5);
+          hudText = " ⚡CRITICAL OVERDRIVE!⚡";
+        }
+
+        // --- Weapon Mod Damage Check ---
+        let modText = "";
+        const equippedMelee = nextState.equipment?.meleeWeapon;
+        if (equippedMelee && nextState.weaponMods?.[equippedMelee]) {
+          const mod = nextState.weaponMods[equippedMelee];
+          const enemyLower = combat.enemyName.toLowerCase();
+          
+          let modDmg = 12;
+          let isVulnerable = false;
+          
+          if (mod === "Toxic Vials") {
+            if (enemyLower.includes("corporate") || enemyLower.includes("ares") || enemyLower.includes("enforcer") || enemyLower.includes("officer") || enemyLower.includes("commander")) {
+              modDmg = 25;
+              isVulnerable = true;
+            }
+            pDmg += modDmg;
+            modText = isVulnerable 
+              ? ` 🧪 [Toxic Vials EXPLOIT: +${modDmg} Acid Damage! Melted Corporate Armor!]`
+              : ` 🧪 [Toxic Vials: +${modDmg} Acid Damage]`;
+          } else if (mod === "Bio-Shocks") {
+            if (enemyLower.includes("mutant") || enemyLower.includes("sludge") || enemyLower.includes("behemoth") || enemyLower.includes("beast") || enemyLower.includes("orc")) {
+              modDmg = 25;
+              isVulnerable = true;
+            }
+            pDmg += modDmg;
+            modText = isVulnerable 
+              ? ` ⚡ [Bio-Shocks EXPLOIT: +${modDmg} Electric Shock! Disrupted Bio-systems!]`
+              : ` ⚡ [Bio-Shocks: +${modDmg} Shock Damage]`;
+          } else if (mod === "Electromagnetic Chambers") {
+            if (enemyLower.includes("drone") || enemyLower.includes("sentinel") || enemyLower.includes("mech") || enemyLower.includes("robotic") || enemyLower.includes("autonomous") || enemyLower.includes("mainframe") || enemyLower.includes("terminal")) {
+              modDmg = 25;
+              isVulnerable = true;
+            }
+            pDmg += modDmg;
+            modText = isVulnerable 
+              ? ` 🌐 [EMP Chamber EXPLOIT: +${modDmg} Electromagnetic Burst! Short-circuited Robotic Sensors!]`
+              : ` 🌐 [EMP Chamber: +${modDmg} EMP Damage]`;
+          } else if (mod === "Plasma Heat Coil") {
+            if (enemyLower.includes("corporate") || enemyLower.includes("ares") || enemyLower.includes("enforcer") || enemyLower.includes("officer") || enemyLower.includes("commander") || enemyLower.includes("drone") || enemyLower.includes("sentinel") || enemyLower.includes("mech")) {
+              modDmg = 25;
+              isVulnerable = true;
+            }
+            pDmg += modDmg;
+            modText = isVulnerable 
+              ? ` 🔥 [Plasma Heat Coil EXPLOIT: +${modDmg} Plasma Heat! Melted Heavy Defense Layers!]`
+              : ` 🔥 [Plasma Heat Coil: +${modDmg} Plasma Damage]`;
+          } else if (mod === "Cryo-Fluid Injector") {
+            if (enemyLower.includes("mutant") || enemyLower.includes("sludge") || enemyLower.includes("behemoth") || enemyLower.includes("beast") || enemyLower.includes("orc")) {
+              modDmg = 25;
+              isVulnerable = true;
+            }
+            pDmg += modDmg;
+            modText = isVulnerable 
+              ? ` ❄️ [Cryo-Fluid Injector EXPLOIT: +${modDmg} Cryo Freeze! Brittle Armor Shattered!]`
+              : ` ❄️ [Cryo-Fluid Injector: +${modDmg} Cryo Damage]`;
+          } else if (mod === "Nano-Laser Sight") {
+            modDmg = 18;
+            pDmg += modDmg;
+            modText = ` 🎯 [Nano-Laser Sight: +${modDmg} Piercing Laser Damage]`;
+          }
+        }
+
         if (combat.enemyShields > 0) {
           const rem = combat.enemyShields - pDmg;
           if (rem < 0) {
@@ -2315,7 +4049,7 @@ export default function App() {
           combat.enemyHp -= pDmg;
         }
 
-        narrative = `⚔️ STRIKE RETALIATED: You flash your blade into ${combat.enemyName}! Dealt ${pDmg} physical damage.${buffText}`;
+        narrative = `⚔️ STRIKE RETALIATED: You flash your blade into ${combat.enemyName}! Dealt ${pDmg} physical damage.${buffText}${hudText}${modText}`;
       }
       else if (cleanAction.includes("spell slash") || cleanAction.includes("spend mp") || cleanAction.includes("plasma")) {
         if (nextState.mana < 15) {
@@ -2326,8 +4060,80 @@ export default function App() {
           if (nextState.inventory.includes("Coven Ether-deck v3")) {
             mDmg = Math.floor(mDmg * 1.35);
           }
+
+          // --- Optical HUDs Critical Check ---
+          let hudText = "";
+          if (nextState.installedCyberware?.includes("Optical HUDs") && Math.random() < 0.25) {
+            mDmg = Math.floor(mDmg * 1.5);
+            hudText = " ⚡CRITICAL OVERDRIVE!⚡";
+          }
+
+          // --- Weapon Mod Damage Check (Spell focus/weapon mod) ---
+          let modText = "";
+          const equippedMelee = nextState.equipment?.meleeWeapon;
+          const equippedRanged = nextState.equipment?.rangedWeapon;
+          const activeWeapon = equippedMelee || equippedRanged;
+          if (activeWeapon && nextState.weaponMods?.[activeWeapon]) {
+            const mod = nextState.weaponMods[activeWeapon];
+            const enemyLower = combat.enemyName.toLowerCase();
+            
+            let modDmg = 12;
+            let isVulnerable = false;
+            
+            if (mod === "Toxic Vials") {
+              if (enemyLower.includes("corporate") || enemyLower.includes("ares") || enemyLower.includes("enforcer") || enemyLower.includes("officer") || enemyLower.includes("commander")) {
+                modDmg = 25;
+                isVulnerable = true;
+              }
+              mDmg += modDmg;
+              modText = isVulnerable 
+                ? ` 🧪 [Toxic Vials EXPLOIT: +${modDmg} Acid Damage! Melted Corporate Armor!]`
+                : ` 🧪 [Toxic Vials: +${modDmg} Acid Damage]`;
+            } else if (mod === "Bio-Shocks") {
+              if (enemyLower.includes("mutant") || enemyLower.includes("sludge") || enemyLower.includes("behemoth") || enemyLower.includes("beast") || enemyLower.includes("orc")) {
+                modDmg = 25;
+                isVulnerable = true;
+              }
+              mDmg += modDmg;
+              modText = isVulnerable 
+                ? ` ⚡ [Bio-Shocks EXPLOIT: +${modDmg} Electric Shock! Disrupted Bio-systems!]`
+                : ` ⚡ [Bio-Shocks: +${modDmg} Shock Damage]`;
+            } else if (mod === "Electromagnetic Chambers") {
+              if (enemyLower.includes("drone") || enemyLower.includes("sentinel") || enemyLower.includes("mech") || enemyLower.includes("robotic") || enemyLower.includes("autonomous") || enemyLower.includes("mainframe") || enemyLower.includes("terminal")) {
+                modDmg = 25;
+                isVulnerable = true;
+              }
+              mDmg += modDmg;
+              modText = isVulnerable 
+                ? ` 🌐 [EMP Chamber EXPLOIT: +${modDmg} Electromagnetic Burst! Short-circuited Robotic Sensors!]`
+                : ` 🌐 [EMP Chamber: +${modDmg} EMP Damage]`;
+            } else if (mod === "Plasma Heat Coil") {
+              if (enemyLower.includes("corporate") || enemyLower.includes("ares") || enemyLower.includes("enforcer") || enemyLower.includes("officer") || enemyLower.includes("commander") || enemyLower.includes("drone") || enemyLower.includes("sentinel") || enemyLower.includes("mech")) {
+                modDmg = 25;
+                isVulnerable = true;
+              }
+              mDmg += modDmg;
+              modText = isVulnerable 
+                ? ` 🔥 [Plasma Heat Coil EXPLOIT: +${modDmg} Plasma Heat! Melted Heavy Defense Layers!]`
+                : ` 🔥 [Plasma Heat Coil: +${modDmg} Plasma Damage]`;
+            } else if (mod === "Cryo-Fluid Injector") {
+              if (enemyLower.includes("mutant") || enemyLower.includes("sludge") || enemyLower.includes("behemoth") || enemyLower.includes("beast") || enemyLower.includes("orc")) {
+                modDmg = 25;
+                isVulnerable = true;
+              }
+              mDmg += modDmg;
+              modText = isVulnerable 
+                ? ` ❄️ [Cryo-Fluid Injector EXPLOIT: +${modDmg} Cryo Freeze! Brittle Armor Shattered!]`
+                : ` ❄️ [Cryo-Fluid Injector: +${modDmg} Cryo Damage]`;
+            } else if (mod === "Nano-Laser Sight") {
+              modDmg = 18;
+              mDmg += modDmg;
+              modText = ` 🎯 [Nano-Laser Sight: +${modDmg} Piercing Laser Damage]`;
+            }
+          }
+
           combat.enemyHp -= mDmg;
-          narrative = `🔮 ETHER DISCHARGE: Cast Spell Slash on ${combat.enemyName}! Dealt ${mDmg} armor-bypassing magic damage. (-15 Mana)`;
+          narrative = `🔮 ETHER DISCHARGE: Cast Spell Slash on ${combat.enemyName}! Dealt ${mDmg} armor-bypassing magic damage. (-15 Mana)${hudText}${modText}`;
         }
       }
       else if (cleanAction.includes("cyber hack") || cleanAction.includes(" ransomware") || cleanAction.includes("hack")) {
@@ -2335,8 +4141,16 @@ export default function App() {
         if (nextState.inventory.includes("Smart-Targeting Visor")) {
           hDmg += 8;
         }
+
+        // --- Optical HUDs Critical Check ---
+        let hudText = "";
+        if (nextState.installedCyberware?.includes("Optical HUDs") && Math.random() < 0.25) {
+          hDmg = Math.floor(hDmg * 1.5);
+          hudText = " ⚡CRITICAL OVERDRIVE!⚡";
+        }
+
         combat.enemyHp -= hDmg;
-        narrative = `💾 NODE OVERLOAD: You inject a system-overload ransomware trigger! Dealt ${hDmg} neuro-bypass damage directly.`;
+        narrative = `💾 NODE OVERLOAD: You inject a system-overload ransomware trigger! Dealt ${hDmg} neuro-bypass damage directly.${hudText}`;
       }
       else if (cleanAction.includes("mind hack")) {
         if (nextState.mana < 20) {
@@ -2405,12 +4219,11 @@ export default function App() {
 
         // Check Prologue map transitions on combat victory
         if (combat.enemyName.includes("Security Drones") || combat.enemyName.includes("Autonomous Security Drones")) {
-          nextState.district = "data_vault";
-          nextState.poi = "Sanctuary Hacking Terminal";
-          setActiveRegionId("data_vault");
-          setActivePOIView("terminal_hacking_puzzle");
-          nextState.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
-          narrative += `\n\n🛡️ SECURITY BYPASSED: The final security drone sparks and explodes! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector! Get inside the core vault chamber.' You travel to the Data Vault Sanctuary.`;
+          setSquadDialogue({
+            sceneId: "transit_ridge_to_vault",
+            nodeId: "start"
+          });
+          narrative += `\n\n🛡️ SECURITY BYPASSED: The final security drone sparks and explodes! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector!' Talk to your squad to initiate the transition briefing.`;
         }
         else if (combat.enemyName.includes("Corporate Enforcers") || combat.enemyName.includes("Ambush")) {
           nextState.poi = "Mysterious Relic Altar";
@@ -2467,7 +4280,18 @@ export default function App() {
           nextState.maxMana += 15;
           nextState.hp = nextState.maxHp;
           nextState.mana = nextState.maxMana;
+          nextState.playerPerks = getPerksForLevel(nextState.level);
+          
           narrative += `\n\n📶 SYSTEM LEVEL EXPANDED: Congratulations! Ascended to Level ${nextState.level}. Max health and mana stats fully restored!`;
+          
+          const unlockedPerk = nextState.level === 2 ? "Adrenaline Junkie" :
+                               nextState.level === 3 ? "Cyber-Optimizer" :
+                               nextState.level === 4 ? "Ether Conduit" :
+                               nextState.level === 5 ? "Hardened Chassis" :
+                               nextState.level === 6 ? "Lucky Jack" : null;
+          if (unlockedPerk) {
+            narrative += `\n\n🧠 PASSIVE PERK INTEGRATED: Your synaptic cortex has adapted! [${unlockedPerk}] is now permanently active!`;
+          }
         }
 
         nextState.combatState = null;
@@ -2476,11 +4300,35 @@ export default function App() {
       } else {
         // Enemy Counter-Attacks
         const eDmg = Math.floor(Math.random() * 11) + 12; // 12-22
-        nextState.hp -= eDmg;
-        narrative += `\n\n⚠️ HOSTILE REACTION: ${combat.enemyName} strikes back, dealing ${eDmg} kinetic damage to your armor.`;
+        let finalDmg = eDmg;
+        let evaded = false;
+        
+        if (nextState.installedCyberware?.includes("Neural Reflex-Boosters") && Math.random() < 0.20) {
+          evaded = true;
+        }
+
+        if (evaded) {
+          narrative += `\n\n🏃 CYBERWARE EVASION: Neural Reflex-Boosters flared! You cleanly evaded ${combat.enemyName}'s counter-attack!`;
+        } else {
+          let defenseText = "";
+          if (nextState.installedCyberware?.includes("Sub-dermal Armor")) {
+            finalDmg = Math.max(2, finalDmg - 5);
+            defenseText = " (Sub-dermal Armor absorbed -5 damage)";
+          }
+          nextState.hp -= finalDmg;
+          narrative += `\n\n⚠️ HOSTILE REACTION: ${combat.enemyName} strikes back, dealing ${finalDmg} kinetic damage to your armor.${defenseText}`;
+        }
 
         if (nextState.hp <= 0) {
-          if (["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district)) {
+          if (nextState.playerPerks?.includes("Iron Will") && !combat.ironWillTriggered) {
+            combat.ironWillTriggered = true;
+            const reviveHp = Math.floor(nextState.maxHp * 0.25);
+            nextState.hp = reviveHp;
+            narrative += `\n\n🛡️ [PERK: IRON WILL ACTIVATED] Your heart stops, but your cybernetic pacing nodes and indomitable grit reboot your systems! You self-revive at 25% HP (${reviveHp}/${nextState.maxHp}) with a surge of renewed combat adrenaline!`;
+            combat.turnLog = `Enemy HP: ${combat.enemyHp}/${combat.enemyMaxHp}. Action requested!`;
+            nextState.combatState = combat;
+            logType = "combat";
+          } else if (["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district)) {
             // PROLOGUE GAME OVER / RETRY
             nextState.hp = nextState.maxHp;
             nextState.mana = nextState.maxMana;
@@ -3093,18 +4941,11 @@ export default function App() {
 
       // Next Section Gate (Transit to Map 2)
       else if (cleanAction.includes("proceed to shatter-ridge core")) {
-        nextState.district = "shatter_ridge_core";
-        nextState.poi = "Shatter-Ridge Security Checkpoint";
-        setActiveRegionId("shatter_ridge_core");
-        setActivePOIView("shatter_ridge_security_post");
-        nextState.activeQuests = ["Prologue: Shatter-Ridge - Infiltrate deeper to disable the defensive cyber-barriers."];
-        narrative = "🚀 TRANSITING DISTRICT: You climb through the heavy gate and seal it behind you. You emerge inside the heavily guarded checkpoint of the Shatter-Ridge Core. Steel security lockers line the barrier corridor.";
-        setActivePopup({
-          title: "SHATTER-RIDGE CORE ACCESS",
-          subtitle: "DISTRICT TRANSLATION",
-          type: "transit",
-          text: "You climb through the heavy gate and seal it behind you. You emerge inside the heavily guarded checkpoint of the Shatter-Ridge Core district. Scan the local defensive barrier console."
+        setSquadDialogue({
+          sceneId: "transit_conduit_to_ridge",
+          nodeId: "start"
         });
+        narrative = "🚀 TRANSITING DISTRICT: Hydraulic gears spin as you release the latch on the heavy transit seal door. Vesper, Vice, and Tracker gather to outline their insertion strategy.";
       }
 
       // ---- PROLOGUE MAP 2: SHATTER-RIDGE CORE ----
@@ -3260,10 +5101,28 @@ export default function App() {
         return;
       }
 
+      // Cyber-Lab clinic
+      else if (cleanAction.includes("access cyber-lab clinic") || cleanAction.includes("cyber-lab")) {
+        setCyberLabOpen(true);
+        narrative = "🔌 CLINIC OFFLINE FREQUENCY ALIGNED: Power grid redirected to the sub-dermal ripper-doc terminal. Select neural or structural cyberware updates to install.";
+        setIsLoading(false);
+        return;
+      }
+
+      // Gear Modding Terminal
+      else if (cleanAction.includes("open gear modding terminal") || cleanAction.includes("gear modding")) {
+        setGearModdingOpen(true);
+        narrative = "🛠️ GEAR MODIFICATION MATRIX UPLINKED: Weapons bracket synchronized. Insert chemical, bio-shocks, or electromagnetic modifications into your active slots.";
+        setIsLoading(false);
+        return;
+      }
+
       // Bar Dialog Jax / Talk Jax
       else if (cleanAction.includes("talk to agent jax") || cleanAction.includes("agent jax")) {
-        setActiveDialogue("jax");
+        nextState.activeBranchingDialogue = { npcId: "jax", nodeId: "start" };
+        setActiveDialogue(null);
         narrative = "You initiate secure transmission layer with Agent Jax.";
+        setGameState(nextState);
         setIsLoading(false);
         return;
       }
@@ -3360,6 +5219,160 @@ export default function App() {
             type: "check_failure",
             text: "The Warden sneers at your small balance ledger. 'You think forty copper bits buy you silence here? Move along.'"
           });
+        }
+      }
+
+      // ---- AURUS ARENA ACTIONS ----
+      else if (cleanAction.includes("enter the arena pit") || cleanAction.includes("enter arena pit") || cleanAction.includes("enter the arena")) {
+        setActiveDialogue("mira_voss_intro");
+        narrative = "You step into the hot, blood-spattered dirt of Aurus Fighting Arena. The roar of the spectator block is overwhelming.";
+        setIsLoading(false);
+        return;
+      }
+      else if (cleanAction.includes("challenge mira voss to an action-ap duel") || cleanAction.includes("challenge mira voss") || cleanAction.includes("action-ap duel")) {
+        if (nextState.baseNPCs?.some(n => n.id === "mira")) {
+          narrative = "Mira Voss is already recruited and stationed at your safehouse base!";
+          setActivePopup({
+            title: "MIRA ALREADY RECRUITED",
+            subtitle: "ACTIVE BASE SQUAD MEMBER",
+            type: "check_failure",
+            text: "Mira Voss has already joined your Safehouse Base. She respects your power."
+          });
+        } else {
+          const strength = nextState.attributes?.str || 10;
+          const roll = Math.floor(Math.random() * 20) + 1 + strength;
+          const targetDC = 15;
+          if (roll >= targetDC) {
+            const maxCap = nextState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+            if ((nextState.baseNPCs || []).length >= maxCap) {
+              narrative = "Challenge won, but Safehouse quarters are fully occupied! Expand your quarters first.";
+              triggerToast("SAFEHOUSE FULL");
+            } else {
+              const mira = {
+                id: "mira",
+                name: "Mira Voss",
+                role: "Combat Trainer / Dojo Training Coach / Sentinel",
+                avatar: "🛡️",
+                image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?auto=format&fit=crop&q=80&w=600",
+                description: "Mira Voss stands tall in her arena combat leather wrappings and cybernetic forearm shields, her face scarred from countless arena fights. She is aggressive, respects action and power, and hates cheap pity.",
+                dialogue: "You think you're strong enough to command me, rookie? Prove it in the field. Keep your guard up and strike hard, otherwise you're just another corporate target.",
+                reaction: null,
+                happiness: 80,
+                affection: "Respectful",
+                affectionValue: 60,
+                willpower: 90,
+                corruption: 20,
+                hygiene: "Normal",
+                discipline: 90,
+                hunger: "Satiated",
+                respect: 85,
+                withdrawRisk: "None",
+                anger: 15,
+                defiance: 25,
+                fear: 5,
+                inventory: ["Spiked Brass Knuckles", "Championship Arena Medal"],
+                currentJob: "Defensive Dojo Coach"
+              };
+              nextState.baseNPCs = [...(nextState.baseNPCs || []), mira];
+              nextState.experience += 150;
+              narrative = `💪 DUEL VICTORY: You slammed Mira Voss onto the steel ring platform with a devastating blow (Roll: ${roll} vs ${targetDC})! Mira wipes blood from her lip and sneers in deep respect: 'A clean strike. You've got fire, kid. I'm yours.'`;
+              setActivePopup({
+                title: "DUEL VICTORY",
+                subtitle: "MIRA VOSS RECRUITED",
+                type: "check_success",
+                text: `With an amazing display of close-quarters tactical supremacy, you completely countered Mira's shield guard!\n\nRoll: ${roll} vs DC ${targetDC}\n\nMira Voss has broken her gang contract to join your Safehouse Dojo as a Combat Trainer!\n\nEarned +150 XP!`
+              });
+            }
+          } else {
+            nextState.hp = Math.max(10, nextState.hp - 35);
+            narrative = `💥 DUEL DEFEAT: Mira Voss completely countered your approach, slamming her steel forearm shield into your rib cage (Roll: ${roll} vs ${targetDC}). Dealt -35 damage!`;
+            setActivePopup({
+              title: "DUEL DEFEAT",
+              subtitle: "MIRA LAUGHS AT YOU",
+              type: "check_failure",
+              text: `You were too slow! Mira predicted your trajectory, ducked beneath your swing, and slammed her heavy shock-shield into your chest, throwing you onto the hazard fence.\n\nRoll: ${roll} vs DC ${targetDC}\n\nDealt -35 kinetic damage. Mira sneers: 'Is that all you've got, rookie? Come back when you learn how to swing a blade!'`
+            });
+          }
+        }
+      }
+      else if (cleanAction.includes("buy mira voss's arena contract") || cleanAction.includes("buy mira") || cleanAction.includes("arena contract")) {
+        if (nextState.baseNPCs?.some(n => n.id === "mira")) {
+          narrative = "Mira Voss is already recruited!";
+        } else {
+          const isBribed = nextState.completedPOIActions?.includes("auction_market:bribed");
+          const price = isBribed ? 150 : 200;
+          if (nextState.credits >= price) {
+            const maxCap = nextState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+            if ((nextState.baseNPCs || []).length >= maxCap) {
+              narrative = `Safehouse quarters are fully occupied (${(nextState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`;
+            } else {
+              nextState.credits -= price;
+              const mira = {
+                id: "mira",
+                name: "Mira Voss",
+                role: "Combat Trainer / Dojo Training Coach / Sentinel",
+                avatar: "🛡️",
+                image: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?auto=format&fit=crop&q=80&w=600",
+                description: "Mira Voss stands tall in her arena combat leather wrappings and cybernetic forearm shields, her face scarred from countless arena fights. She is aggressive, respects action and power, and hates cheap pity.",
+                dialogue: "You think you're strong enough to command me, rookie? Prove it in the field. Keep your guard up and strike hard, otherwise you're just another corporate target.",
+                reaction: null,
+                happiness: 80,
+                affection: "Respectful",
+                affectionValue: 60,
+                willpower: 90,
+                corruption: 20,
+                hygiene: "Normal",
+                discipline: 90,
+                hunger: "Satiated",
+                respect: 85,
+                withdrawRisk: "None",
+                anger: 15,
+                defiance: 25,
+                fear: 5,
+                inventory: ["Spiked Brass Knuckles", "Championship Arena Medal"],
+                currentJob: "Defensive Dojo Coach"
+              };
+              nextState.baseNPCs = [...(nextState.baseNPCs || []), mira];
+              nextState.experience += 90;
+              narrative = `💰 CONTRACT BOUGHT: Purchased Mira's arena contract ledger for ${price}¤! Mira grunts: 'Paid off, huh? Fine. I'd rather guard your safehouse than bleed for these fat bidding corporate scouts.'`;
+              setActivePopup({
+                title: "CONTRACT RE-ALLOCATED",
+                subtitle: "MIRA RECRUITED",
+                type: "loot",
+                text: `You transferred ${price}¤ Credits to the Arena Pit boss, taking over Mira's active contract. She collects her knuckles and joins your base!\n\nEarned +90 XP!`
+              });
+            }
+          } else {
+            narrative = `❌ LIQUIDITY REJECTED: Arena contractor wants ${price}¤ for her contract. Stash balance insufficient!`;
+          }
+        }
+      }
+      else if (cleanAction.includes("gamble on underground arena fight") || cleanAction.includes("gamble")) {
+        if (nextState.credits >= 50) {
+          nextState.credits -= 50;
+          const intScore = nextState.attributes?.int || 10;
+          const winChance = intScore >= 12 ? 0.58 : 0.45;
+          const win = Math.random() < winChance;
+          if (win) {
+            nextState.credits += 100;
+            narrative = "🎰 GAMBLE SUCCESS: Your fighter knocked out the cyborg gladiator in Round 3! Recovered +100¤ Credits!";
+            setActivePopup({
+              title: "🎰 BETTING WIN",
+              subtitle: "UNDERGROUND GLADIATOR BOUT",
+              type: "loot",
+              text: `You analyzed the fighter's telemetry scans correctly!\n\nYour chosen gladiator landed a brutal neural-decoupling punch in Round 3.\n\nPaid out +100¤ Credits (Net Profit: +50¤)!`
+            });
+          } else {
+            narrative = "🎰 GAMBLE DEFEAT: Your fighter's power core overheated in Round 2. Lost -50¤ Credits!";
+            setActivePopup({
+              title: "🎰 BETTING LOSS",
+              subtitle: "FIGHTER DETONATION",
+              type: "check_failure",
+              text: "Bad luck. Your gladiator's kinetic dampener failed, and they were thrown out of the ring boundaries.\n\nLost -50¤ Credits."
+            });
+          }
+        } else {
+          narrative = "❌ GAMBLE ABORTED: You need 50¤ Credits to enter the active bidding board.";
         }
       }
 
@@ -3551,37 +5564,92 @@ export default function App() {
       // ---- MAIN QUEST & SIDE QUEST ACTION HANDLERS ----
       else if (cleanAction.includes("interface with cargo logs") || cleanAction.includes("cargo logs") || cleanAction.includes("cargo terminal")) {
         if (nextState.activeQuests.some(q => q.includes("The Hunt for Vice"))) {
-          const int = nextState.attributes?.int || 10;
-          const netSlicer = nextState.skills?.netSlicer || 1;
-          const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2);
-          
-          if (roll >= 18) {
-            nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-            nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-            if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-              nextState.inventory.push("Decrypted Ares Transit Token");
-            }
-            narrative = `💾 SECURITY BYPASSED (Roll: ${roll} vs 18): You hacked the main cargo logistics node! You successfully decrypted transport manifests showing Vice was shipped to cryogenic detainment sub-levels underneath the Ares Biotech Corporate Plaza in Downtown district. You also siphoned a 'Decrypted Ares Transit Token' to assist with infiltration!`;
-            setActivePopup({
-              title: "💾 SECURITY BYPASSED",
-              subtitle: "LOGISTICS ARCHIVE BREACHED",
-              type: "check_success",
-              text: `With superb neural execution (Roll: ${roll} vs 18), you bypassed the Titan Logistics security nodes. You isolated the transport log for Subject ID: Vice.\n\nDestination: Cryo-Locked Detainment Bay B, beneath Ares Biotech Corporate Plaza, Downtown.\n\nYou have also siphoned an encrypted 'Decrypted Ares Transit Token' into your active stash database!`
-            });
-          } else {
-            nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-            nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-            nextState.hp = Math.max(10, nextState.hp - 20);
-            narrative = `⚠️ BACKLASH ERROR (Roll: ${roll} vs 18): You attempted to crack the node, but a proxy-firewall triggered a neural feedback loop! Dealt -20 cognitive feedback damage. However, before the terminal fully locked down, you copied a fragmented transfer log: Vice has been transported to the cryogenic detention block under Ares Biotech Corporate Plaza in Downtown!`;
-            setActivePopup({
-              title: "⚠️ NEURAL BACKLASH",
-              subtitle: "FIREWALL TRAP ENGAGED",
-              type: "check_failure",
-              text: `The terminal detected your intrusion vector (Roll: ${roll} vs 18). A feedback voltage shock surge scorched your synapse arrays, dealing -20 HP damage!\n\nHowever, a partial transfer manifest was successfully cached:\n\nSubject ID: Vice has been relocated to the cryogenic holding block beneath Ares Biotech Corporate Plaza (Downtown Region). Proceed there immediately!`
-            });
-          }
+          const intScore = nextState.attributes?.int || 10;
+          const netSlicerLevel = nextState.skills?.netSlicer || 1;
+          setHackingPuzzle(initHackingGame("cargo_logs", intScore, netSlicerLevel));
+          setActivePOIView("terminal_hacking_puzzle");
+          setIsLoading(false);
+          return;
         } else {
           narrative = "The cargo terminal lists hundreds of thousands of active logistics lines for Megacity-9. Without a specific query key or active mission, the grid-hash remains unreadable.";
+        }
+      }
+      else if (cleanAction.includes("buy decryption cipher") || cleanAction.includes("corrupt clerk")) {
+        if (nextState.credits >= 150) {
+          nextState.credits -= 150;
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+            nextState.inventory.push("Decrypted Ares Transit Token");
+          }
+          nextState.experience += 70;
+          narrative = "💰 DECIPHER PURCHASED: You slip 150¤ to the twitching warehouse clerk. He grunts, slides a glowing decryption card across the terminal console, and whispers: 'Vice is held in Ares Corporate Plaza sub-level Detention Bay B. Take the encrypted key token and scram!'";
+          setActivePopup({
+            title: "INFORMATION BOUGHT",
+            subtitle: "CIPHER ACQUIRED",
+            type: "loot",
+            text: "You bypassed the security hacking puzzle entirely by paying off a corrupt clerk. He gave you the Decrypted Ares Transit Token and Vice's exact coordinates!\n\nEarned +70 XP!"
+          });
+        } else {
+          narrative = "❌ TRANSACTION REJECTED: Corrupt clerk sneers: 'You think information comes cheap on the docks? Come back with 150¤ credits.'";
+        }
+      }
+      else if (cleanAction.includes("intimidate freight supervisor") || cleanAction.includes("freight supervisor")) {
+        const strength = nextState.attributes?.str || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + strength;
+        const targetDC = 14;
+        if (roll >= targetDC) {
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+            nextState.inventory.push("Decrypted Ares Transit Token");
+          }
+          nextState.experience += 90;
+          narrative = `💪 INTIMIDATION SUCCESS: You grabbed the supervisor's robotic collar and slammed him against the condenser grid (Roll: ${roll} vs ${targetDC})! He whimpers and uploads the coordinate logs directly to your deck.`;
+          setActivePopup({
+            title: "SUPERVISOR CRACKED",
+            subtitle: "FORCE DEMONSTRATION SUCCESS",
+            type: "check_success",
+            text: `Strength Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe terrified supervisor overrides the security block, giving you the Decrypted Ares Transit Token and pointing you to Ares Corporate Plaza sub-levels.\n\nEarned +90 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 25);
+          narrative = `💥 INTIMIDATION FAILURE: The supervisor ducks beneath your grip and slams the alarm buzzer (Roll: ${roll} vs ${targetDC})! Sirens blare, and a ceiling security shock-laser strikes you for -25 damage! You are forced to hack the console manually.`;
+          setActivePopup({
+            title: "ALARM TRIGGERED",
+            subtitle: "FORCE DEMONSTRATION FAILURE",
+            type: "check_failure",
+            text: `Strength Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe supervisor was too fast! He triggers the automated physical hazard grid. Ceiling emitters unleash a high-voltage pulse into your neural chassis.\n\nLost -25 HP. You must now bypass or hack the logs.`
+          });
+        }
+      }
+      else if (cleanAction.includes("pickpocket patrol officer") || cleanAction.includes("patrol officer")) {
+        const dexterity = nextState.attributes?.dex || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + dexterity;
+        const targetDC = 14;
+        if (roll >= targetDC) {
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+            nextState.inventory.push("Decrypted Ares Transit Token");
+          }
+          nextState.experience += 90;
+          narrative = `⚡ PICKPOCKET SUCCESS: Your fingers slip past the patrol officer's electrostatic belt mesh with absolute fluid grace (Roll: ${roll} vs ${targetDC})! You successfully lift the encrypted security token.`;
+          setActivePopup({
+            title: "GHOST OPERATION SECURED",
+            subtitle: "DEXTERITY CHECK SUCCESS",
+            type: "check_success",
+            text: `Dexterity Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou extracted the Decrypted Ares Transit Token directly from the patrolling officer's belt without triggering any sensors!\n\nEarned +90 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 20);
+          narrative = `💥 PICKPOCKET FAILURE: Your hand triggers the patrol officer's sub-dermal security field (Roll: ${roll} vs ${targetDC})! A heavy electrical arc shocks you for -20 damage. The guards alert the hangar.`;
+          setActivePopup({
+            title: "SENSORS ALARMED",
+            subtitle: "DEXTERITY CHECK FAILURE",
+            type: "check_failure",
+            text: `Dexterity Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe officer's belt sparks as your fingers breach the warning perimeter. A corrective electrical discharge strikes your chassis, inflicting -20 shock damage.`
+          });
         }
       }
       else if (cleanAction.includes("bribe security automated bot")) {
@@ -3625,33 +5693,16 @@ export default function App() {
         logType = "combat";
       }
       else if (cleanAction.includes("hack security mainframe")) {
-        const bribed = nextState.completedPOIActions?.includes("corporate_plaza:bot_bribed");
-        const int = nextState.attributes?.int || 10;
-        const netSlicer = nextState.skills?.netSlicer || 1;
-        const bonus = bribed ? 4 : 0;
-        const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2) + bonus;
-
-        if (roll >= 18) {
-          nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
-          narrative = `💾 MAINBOARD OVERRIDDEN (Roll: ${roll} vs 18): You successfully bypassed the security checkpoint terminal! Staff lift unlocked.`;
-          setActivePopup({
-            title: "💾 DECRYPT COMPLETE",
-            subtitle: "MAINBOARD COVERT OVERRIDE",
-            type: "check_success",
-            text: `With brilliant neural flow (Roll: ${roll} vs 18), you bypassed the security nodes. You looped the video feeds and injected a simulated security authorization. The heavy titanium elevator slides open smoothly. You step inside to descend to the detention sub-level!`
-          });
+        if (nextState.completedPOIActions.includes("corporate_plaza:security_bypassed")) {
+          narrative = "⚠️ MAINBOARD DECRYPTED: The staff elevator is already unlocked.";
         } else {
-          nextState.combatState = {
-            enemyName: "Ares Plasma Sentinel",
-            enemyHp: 110,
-            enemyMaxHp: 110,
-            enemyShields: 60, // Boosted shields due to alarm
-            enemyMaxShields: 60,
-            isActive: true,
-            turnLog: "🚨 ALERT: SECURITY BREACH DETECTED! Sentry guns deploy with emergency combat shielding!"
-          };
-          narrative = `🚨 SECURITY ALARM (Roll: ${roll} vs 18): You failed the override hack! Red strobe lights spin. An Ares Plasma Sentinel with boosted defense shields deploys immediately!`;
-          logType = "combat";
+          const intScore = nextState.attributes?.int || 10;
+          const netSlicerLevel = nextState.skills?.netSlicer || 1;
+          const bribed = nextState.completedPOIActions?.includes("corporate_plaza:bot_bribed");
+          setHackingPuzzle(initHackingGame("security_mainframe", intScore, netSlicerLevel, bribed));
+          setActivePOIView("terminal_hacking_puzzle");
+          setIsLoading(false);
+          return;
         }
       }
       else if (cleanAction.includes("forge clearance credentials")) {
@@ -3691,8 +5742,9 @@ export default function App() {
               fee: 0,
               status: "in_party",
               role: "Tactical Leader",
-              bio: "The veteran leader of your shadow-running cell. Armed with years of combat telemetry, tactical insight, and a modified plasma sidearm.",
-              avatar: "🔫",
+              bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
+              avatar: "👩‍🎤",
+              image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
               equipment: {
                 meleeWeapon: "Vibroblade",
                 rangedWeapon: "Battle Pistol BP132",
@@ -3711,9 +5763,9 @@ export default function App() {
             id: "vice",
             name: "Vice",
             role: "Weapons & Field Coordinator",
-            avatar: "🔫",
-            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600",
-            description: "Vice stands tall, adjusting his specialized heavy plasma pistol. His cybernetic eye flickers as he reviews battle tactical logs. His loyalty to you is absolute.",
+            avatar: "👩‍🎤",
+            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
             dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
             reaction: null,
             happiness: 90,
@@ -3749,79 +5801,12 @@ export default function App() {
         }
       }
       else if (cleanAction.includes("override cryogenic suspension")) {
-        const int = nextState.attributes?.int || 10;
-        const netSlicer = nextState.skills?.netSlicer || 1;
-        const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2);
-
-        if (roll >= 16) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice") && !q.includes("The Hunt for Vice"));
-          nextState.completedQuests.push("Chapter 1 Completed: Vice Rescued from Cryo-Detention");
-          
-          const viceIdx = nextState.companions.findIndex(c => c.name === "Vice");
-          if (viceIdx >= 0) {
-            nextState.companions[viceIdx].status = "in_party";
-          } else {
-            nextState.companions.push({
-              name: "Vice",
-              fee: 0,
-              status: "in_party",
-              role: "Tactical Leader",
-              bio: "The veteran leader of your shadow-running cell. Armed with years of combat telemetry, tactical insight, and a modified plasma sidearm.",
-              avatar: "🔫",
-              equipment: {
-                meleeWeapon: "Vibroblade",
-                rangedWeapon: "Battle Pistol BP132",
-                armor: "Light Neon Leather Armor",
-                headpiece: null,
-                trinket: null
-              },
-              inventory: []
-            });
-          }
-          if (!nextState.party.includes("Vice")) {
-            nextState.party.push("Vice");
-          }
-
-          const viceBaseNPC = {
-            id: "vice",
-            name: "Vice",
-            role: "Weapons & Field Coordinator",
-            avatar: "🔫",
-            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600",
-            description: "Vice stands tall, adjusting his specialized heavy plasma pistol. His cybernetic eye flickers as he reviews battle tactical logs. His loyalty to you is absolute.",
-            dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
-            reaction: null,
-            happiness: 90,
-            affection: "Warm",
-            affectionValue: 75,
-            willpower: 80,
-            corruption: 15,
-            hygiene: "Normal",
-            discipline: 75,
-            hunger: "Satiated",
-            respect: 80,
-            withdrawRisk: "None",
-            anger: 0,
-            defiance: 0,
-            fear: 0,
-            inventory: ["Heavy Plasma Pistol", "Reinforced Flak Guard"],
-            currentJob: "Defensive Security Guard"
-          };
-          nextState.baseNPCs = [...(nextState.baseNPCs || []), viceBaseNPC];
-          nextState.credits += 300;
-          nextState.experience += 150;
-
-          setActivePopup({
-            title: "🔓 CHAPTER 1 COMPLETED!",
-            subtitle: "VICE HAS BEEN EXTRACTED",
-            type: "check_success",
-            text: "The cryo-glass seal cracks (Roll: " + roll + " vs 16), releasing pressurized white nitrogen gas. Vice stumbles out of the pod, coughing and shivering but grinning. He slams his organic fist onto your armored shoulder:\n\n'Kid... you came. You actually breached an Ares security plaza for me. Respect.'\n\nReward: Vice joins your Hideout Base & active party squad!\n+300¤ Credits, +150 XP!\n\nSpeak to Agent Jax at Neon Abyss Bar to prepare for Chapter 2!"
-          });
-          narrative = `💻 OVERRIDE SUCCESSFUL (Roll: ${roll} vs 16): You bypassed the cryo-computer's thermal governor! The warm air defrost cycle engages. Vice is safely released!`;
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 15);
-          narrative = `❌ OVERRIDE FAILURE (Roll: ${roll} vs 16): The system detected your terminal exploit and locked out further hacks, releasing a cryogenic frost blast (-15 HP). Choose another vector!`;
-        }
+        const intScore = nextState.attributes?.int || 10;
+        const netSlicerLevel = nextState.skills?.netSlicer || 1;
+        setHackingPuzzle(initHackingGame("cryo_bypass", intScore, netSlicerLevel));
+        setActivePOIView("terminal_hacking_puzzle");
+        setIsLoading(false);
+        return;
       }
       else if (cleanAction.includes("short-circuit power grid coupling")) {
         if (nextState.mana >= 30) {
@@ -3838,8 +5823,9 @@ export default function App() {
               fee: 0,
               status: "in_party",
               role: "Tactical Leader",
-              bio: "The veteran leader of your shadow-running cell. Armed with years of combat telemetry, tactical insight, and a modified plasma sidearm.",
-              avatar: "🔫",
+              bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
+              avatar: "👩‍🎤",
+              image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
               equipment: {
                 meleeWeapon: "Vibroblade",
                 rangedWeapon: "Battle Pistol BP132",
@@ -3858,9 +5844,9 @@ export default function App() {
             id: "vice",
             name: "Vice",
             role: "Weapons & Field Coordinator",
-            avatar: "🔫",
-            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600",
-            description: "Vice stands tall, adjusting his specialized heavy plasma pistol. His cybernetic eye flickers as he reviews battle tactical logs. His loyalty to you is absolute.",
+            avatar: "👩‍🎤",
+            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
             dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
             reaction: null,
             happiness: 90,
@@ -4047,7 +6033,15 @@ export default function App() {
       }
 
       // 3. Dr. Marv's Clinic actions
-      else if (cleanAction.includes("talk to dr. marv") || cleanAction.includes("accept side-quest: cybernetic harvest")) {
+      else if (cleanAction.includes("talk to dr. marv")) {
+        nextState.activeBranchingDialogue = { npcId: "marv", nodeId: "start" };
+        setActiveDialogue(null);
+        narrative = "You initiate secure consultation interface with Dr. Marv.";
+        setGameState(nextState);
+        setIsLoading(false);
+        return;
+      }
+      else if (cleanAction.includes("accept side-quest: cybernetic harvest")) {
         if (nextState.activeQuests.some(q => q.includes("Harvest")) || nextState.completedQuests.some(q => q.includes("Harvest"))) {
           narrative = "⚠️ PATIENT ENCRYPTED: Dr. Marv waving you off. 'You already have my blueprint tasks in your logs, patient.'";
         } else {
@@ -4120,29 +6114,12 @@ export default function App() {
 
       // 4. Club Afterlife VIP Lounge actions
       else if (cleanAction.includes("talk to cipher")) {
-        if (nextState.inventory.includes("VIP Afterlife Keycard") || nextState.inventory.includes("Prototype Singularity Battery")) {
-          narrative = "💬 VIP CHAT: Cipher waves his glass. 'We already have the plan running, runner. Go secure that Prototype battery from Nouveau!'";
-        } else {
-          const int = nextState.attributes?.int || 10;
-          const netSlicer = nextState.skills?.netSlicer || 1;
-          const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2);
-
-          if (roll >= 14) {
-            if (!nextState.inventory.includes("VIP Afterlife Keycard")) {
-              nextState.inventory.push("VIP Afterlife Keycard");
-            }
-            nextState.experience += 30;
-            narrative = `💬 INTELLIGENCE INSIGHT (Roll: ${roll} vs 14): You smoothly convinced Cipher of your hacking credentials. He hands you his personal 'VIP Afterlife Keycard' to assist with the Nouveau heist!`;
-            setActivePopup({
-              title: "💬 CIPHER CONVINCED",
-              subtitle: "VIP SECURITY TRANSIT INJECTION",
-              type: "check_success",
-              text: "Cipher nods slowly, his neon green visor glowing under his hood:\n\n'You've got real balls, runner. Okay, take my VIP security pass keycard. It interfaces directly with the Nouveau Cybernetic Showroom's pressure terminal, giving you +2 hack bonus.\n\nGet me that Prototype Singularity Battery from their safe. Go!'"
-            });
-          } else {
-            narrative = `💬 TRUST LEVEL INSUFFICIENT (Roll: ${roll} vs 14): Cipher remains unimpressed. 'You're small-time, runner. If you want this keycard, buy me high-grade champagne or slip it from my pocket.'`;
-          }
-        }
+        nextState.activeBranchingDialogue = { npcId: "cipher", nodeId: "start" };
+        setActiveDialogue(null);
+        narrative = "You enter secure dialogue link with Cipher.";
+        setGameState(nextState);
+        setIsLoading(false);
+        return;
       }
       else if (cleanAction.includes("buy round of luxury champagne")) {
         if (nextState.credits >= 30) {
@@ -4196,26 +6173,13 @@ export default function App() {
         if (nextState.completedPOIActions.includes("nouveau_chrome:shields_hacked")) {
           narrative = "⚠️ MAINBOARD DECRYPTED: The pressure shields are already disabled. The glass pod is wide open.";
         } else {
+          const intScore = nextState.attributes?.int || 10;
+          const netSlicerLevel = nextState.skills?.netSlicer || 1;
           const hasCard = nextState.inventory.includes("VIP Afterlife Keycard");
-          const int = nextState.attributes?.int || 10;
-          const netSlicer = nextState.skills?.netSlicer || 1;
-          const bonus = hasCard ? 5 : 0;
-          const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2) + bonus;
-
-          if (roll >= 17) {
-            nextState.completedPOIActions.push("nouveau_chrome:shields_hacked");
-            nextState.experience += 40;
-            narrative = `💾 PRESSURE SHIELDS DEACTIVATED (Roll: ${roll} vs 17): You bypassed their high-grade terminal governor! The electromagnetic shields slide down. The Prototype Singularity Battery is exposed!`;
-            setActivePopup({
-              title: "💾 BYPASS COMPLETED",
-              subtitle: "EM SHIELDS OFFLINE",
-              type: "check_success",
-              text: `With exquisite mathematical execution (Roll: ${roll} vs 17), you overloaded their pressure grid.\n\nThe blue lasers flicker out of existence. The glass containment pod slides into the deck, exposing the core prize!`
-            });
-          } else {
-            nextState.hp = Math.max(10, nextState.hp - 20);
-            narrative = `🚨 SECURITY LASER OVERRIDE (Roll: ${roll} vs 17): A thermal defense laser fires directly into your arm plate! Dealt -20 HP damage.`;
-          }
+          setHackingPuzzle(initHackingGame("nouveau_safe", intScore, netSlicerLevel, hasCard));
+          setActivePOIView("terminal_hacking_puzzle");
+          setIsLoading(false);
+          return;
         }
       }
       else if (cleanAction.includes("loot prototype singularity battery")) {
@@ -4274,18 +6238,12 @@ export default function App() {
         logType = "combat";
       }
       else if (cleanAction.includes("hack rebel courier's cyberdeck") || cleanAction.includes("hack rebel courier")) {
-        const int = nextState.attributes?.int || 10;
-        const netSlicer = nextState.skills?.netSlicer || 1;
-        const roll = Math.floor(Math.random() * 20) + 1 + int + (netSlicer * 2);
-
-        if (roll >= 15) {
-          nextState.credits += 80;
-          nextState.experience += 25;
-          narrative = `💾 COURIER DECRYPTED (Roll: ${roll} vs 15): You bypassed the dead courier's biometric lock! Siphoned 80¤ and harvested useful matrix schematics (+25 XP).`;
-        } else {
-          nextState.mana = Math.max(0, nextState.mana - 20);
-          narrative = `⚠️ CYBERDECK BURST ERROR (Roll: ${roll} vs 15): The courier deck's self-destruct thermite coil triggered, discharging a neural feedback spike (-20 Mana).`;
-        }
+        const intScore = nextState.attributes?.int || 10;
+        const netSlicerLevel = nextState.skills?.netSlicer || 1;
+        setHackingPuzzle(initHackingGame("rebel_courier", intScore, netSlicerLevel));
+        setActivePOIView("terminal_hacking_puzzle");
+        setIsLoading(false);
+        return;
       }
       else if (cleanAction.includes("search wreckage for cargo pass")) {
         if (Math.random() > 0.5) {
@@ -4316,11 +6274,182 @@ export default function App() {
         }
       }
 
+      else if (cleanAction.includes("hack ares secure server farm")) {
+        const intScore = nextState.attributes?.intelligence ?? 10;
+        const netSlicerLevel = nextState.skills?.netSlicer ?? 0;
+        const puzzle = initHackingGame("shatter_ridge_server", intScore, netSlicerLevel);
+        setHackingPuzzle(puzzle);
+        setActivePOIView("hacking");
+        narrative = "💻 SECURE SERVER FARM: Initializing host bypass interface on Ares server node...";
+      }
+
+      else if (cleanAction.includes("deliver encrypted ledger directly to vice")) {
+        nextState.inventory = nextState.inventory.filter(i => i !== "Encrypted Ares Ledger");
+        nextState.completedQuests.push("Vice's Retribution: Shatter Ridge Ledger (Completed)");
+        nextState.credits += 400;
+        nextState.experience += 250;
+        nextState.attributes.strength = (nextState.attributes.strength || 10) + 2;
+        nextState.reputations.streetOutlaws = Math.min(100, (nextState.reputations.streetOutlaws || 50) + 15);
+        narrative = "🤝 VICE'S RETRIBUTION COMPLETED: Delivered the Encrypted Ares Ledger directly to Vice! He gives you a respectful salute, some black market credits, and walks you through neural combat enhancement routines (+2 Strength, +400¤, +250 XP, +15% Outcast Union trust).";
+        setActivePopup({
+          title: "🤝 LEGENDARY CONFIDENCE SECURED",
+          subtitle: "VICE'S RETRIBUTION COMPLETE",
+          type: "check_success",
+          text: "Vice plugs the ledger into his wrist console, running dynamic decrypts on the secure databases. 'They thought they could lock down our people,' he says, a heavy cybernetic grin crossing his face. 'This changes everything. Nice work, kid.'\n\nRewards:\n• +400¤ Credits\n• +250 XP\n• +2 Strength (Permanent Neural Combat Upgrade)\n• +15% Outcast Union Reputation"
+        });
+      }
+
+      // ==========================================
+      // ---- NEW UNMAPPED DISTRICT POI ACTIONS ----
+      // ==========================================
+
+      // 1. Grid Waste-Barrens Actions
+      else if (cleanAction.includes("sift through server junk")) {
+        const intVal = nextState.attributes?.intelligence || nextState.attributes?.int || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        if (roll >= 15) {
+          nextState.credits += 80;
+          nextState.experience += 40;
+          nextState.completedPOIActions.push("scavenger_outpost:scavenged");
+          narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 15): You parse the unmapped junked server array and decrypt a cache of obsolete cryptographic ledger addresses! Recovered +80¤ and +40 XP!`;
+          setActivePopup({
+            title: "🎯 CRYPTO ADDRESS DECRYPTED",
+            subtitle: "INT CHECK SUCCESS",
+            type: "check_success",
+            text: `You interface with the dead server rack's interface port (Roll: ${roll} vs 15). Inside, you successfully parse and salvage active cryptographic seed phrases!\n\nRecovered +80¤ Credits and +40 XP.`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 10);
+          narrative = `❌ INT CHECK FAILURE (Roll: ${roll} vs 15): You attempt to force-hack the active power capacitor, but a heavy feedback surge zaps your neural deck! Sustained 10 electrical damage.`;
+          setActivePopup({
+            title: "❌ COGNITIVE ZAP SURGE",
+            subtitle: "INT CHECK FAILURE",
+            type: "check_failure",
+            text: `A sudden electromagnetic static discharge explodes from the broken terminal housing (Roll: ${roll} vs 15)!\n\nSustained -10 HP feedback damage.`
+          });
+        }
+      }
+      else if (cleanAction.includes("trade with scrap-merchant")) {
+        if (nextState.credits >= 30) {
+          nextState.credits -= 30;
+          nextState.inventory.push("Nano Med-Stim (Heal)");
+          narrative = "🤝 TRADING COMPLETE: You purchased a medical-grade injection pack ('Nano Med-Stim (Heal)') from the Scrap-Merchant for 30¤.";
+          setActivePopup({
+            title: "🤝 TRADE ACQUIRED",
+            subtitle: "SCRAP-MERCHANT COMPACT",
+            type: "loot",
+            text: "You hand 30¤ to the hooded cyber-scavenger. He passes you a sealed military-grade medicine canister.\n\nReceived: 'Nano Med-Stim (Heal)' added to inventory!"
+          });
+        } else {
+          narrative = `❌ TRANSACTION REFUSED: The Scrap-Merchant spits. 'Come back when you have 30¤.' Your balance: ${nextState.credits}¤.`;
+          setActivePopup({
+            title: "TRANSACTION REJECTED",
+            subtitle: "INSUFFICIENT LIQUIDITY",
+            type: "check_failure",
+            text: "The Scrap-Merchant sneers at your small balance ledger. 'Come back when you have 30 copper bits, rookie.'"
+          });
+        }
+      }
+
+      // 2. Kurogane Heavy Industrial Actions
+      else if (cleanAction.includes("overload automated grid line")) {
+        const intVal = nextState.attributes?.intelligence || nextState.attributes?.int || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
+        if (roll >= 16) {
+          nextState.credits += 120;
+          nextState.experience += 50;
+          nextState.completedPOIActions.push("blast_furnace_07:overloaded");
+          narrative = `💥 HACK SUCCESS (Roll: ${roll} vs 16): You successfully route a high-voltage surge through the secondary molten sliders, blowing out local camera arrays and prying a pristine Power Core! Sold to streetrunners for +120¤ and +50 XP!`;
+          setActivePopup({
+            title: "💥 AUTOMATED SYSTEM TRIPPED",
+            subtitle: "GRID OVERLOAD SUCCESS",
+            type: "check_success",
+            text: `You bypassed the security transformer and triggered a localized thermal power surge (Roll: ${roll} vs 16). The robotic lifters go dark and you pry a solid corporate energy block from the housing!\n\nEarned +120¤ Credits, +50 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 15);
+          narrative = `❌ GRID OVERLOAD FAILURE (Roll: ${roll} vs 16): A high-voltage thermal arc flashes from the busbar, melting your copper palm circuits! Sustained 15 fire damage.`;
+          setActivePopup({
+            title: "❌ ARC FLASH FAILURE",
+            subtitle: "HACK FAILURE",
+            type: "check_failure",
+            text: `The primary safety breakers failed to trip (Roll: ${roll} vs 16)! A blinding blue electric arc flash vaporizes your probe.\n\nSustained -15 fire damage.`
+          });
+        }
+      }
+      else if (cleanAction.includes("inspect thermal pipes")) {
+        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 20);
+        nextState.experience += 15;
+        nextState.completedPOIActions.push("blast_furnace_07:inspected");
+        narrative = "🔍 THERMAL EXPULSION CHANNEL: You carefully bleed steam from the heat exchangers. The intense warmth calibrates your deck's internal thermistors, boosting cognitive flow (+20 Mana, +15 XP).";
+        setActivePopup({
+          title: "🔍 THERMAL EXPULSION",
+          subtitle: "CALIBRATION REFRESHED",
+          type: "loot",
+          text: "You carefully bleed pressurized steam from the heavy heat exchangers. The warm, circulating energy calibrates your deck's thermal limiters, improving processing throughput!\n\nRecovered +20 Mana, +15 XP."
+        });
+      }
+
+      // 3. Hyperion Neo-Cathedral Actions
+      else if (cleanAction.includes("calibrate deck at the ley-matrix")) {
+        const wilVal = nextState.attributes?.willpower || nextState.attributes?.wil || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + wilVal;
+        if (roll >= 15) {
+          nextState.maxMana += 15;
+          nextState.mana = nextState.maxMana;
+          nextState.experience += 50;
+          nextState.completedPOIActions.push("altar_column:calibrated");
+          narrative = `🔮 WILL CHECK SUCCESS (Roll: ${roll} vs 15): The raw electromagnetic Ley-Matrix aligns perfectly with your mind! Maximum Ether permanently increased by 15. All Mana fully charged! Earned +50 XP.`;
+          setActivePopup({
+            title: "🔮 LEY-MATRIX SYNCHRONIZED",
+            subtitle: "WILL CHECK SUCCESS",
+            type: "check_success",
+            text: `Your mind resonates perfectly with the copper Ley-Matrix spire (Roll: ${roll} vs 15). The violent violet light streams flood your cognitive channels, permanently expanding your mind's bandwidth!\n\nMaximum Mana permanently increased by +15!\nMana fully recharged!`
+          });
+        } else {
+          nextState.mana = 0;
+          narrative = `❌ WILL CHECK FAILURE (Roll: ${roll} vs 15): Your mind is overwhelmed by the wild, unshielded signal stream! Your cognitive buffers are fully cleared, draining your Mana to 0.`;
+          setActivePopup({
+            title: "❌ NEURAL FEEDBACK FLOOD",
+            subtitle: "WILL CHECK FAILURE",
+            type: "check_failure",
+            text: `The Ley-Matrix signals override your deck's security boundaries (Roll: ${roll} vs 15). Your thoughts dissolve into white noise.\n\nCognitive Deck fully drained (Mana set to 0)!`
+          });
+        }
+      }
+      else if (cleanAction.includes("recite high-level binary litany")) {
+        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 25);
+        if (!nextState.reputations) nextState.reputations = { streetOutlaws: 50, corporateSyndicate: 50 };
+        nextState.reputations.streetOutlaws = Math.min(100, (nextState.reputations.streetOutlaws || 50) + 5);
+        nextState.completedPOIActions.push("altar_column:recited");
+        narrative = "⛪ BINARY HEXADECIMAL CODES SPOKEN: You join the hooded cyber-nuns, chanting high-level assembly registers. You feel your neural nodes quieten and gain their trust (+25 Mana, +5% Outcast Union reputation).";
+        setActivePopup({
+          title: "⛪ HEXADECIMAL PSALMS",
+          subtitle: "BINARY RESONANCE",
+          type: "loot",
+          text: "You bow your head and speak hexadecimal registers alongside the cyber-nuns. The harmonious low-frequency chanting relaxes your cognitive Deck, while earning respect from the local underground coven.\n\nRecovered +25 Mana!\nGain +5% Outcast Union Trust!"
+        });
+      }
+
       // Standard default exploration narrative
       else {
         const tickLogMsg = advanceTimeAndProgressJobs(nextState);
         narrative = `Refreshed tracking data channels at ${nextState.poi}. Atmospheric pollution levels high. Static wind currents. Net connection offline.${tickLogMsg}`;
       }
+    }
+
+    const isPrologueEnd = ["conduit09", "shatter_ridge_core", "data_vault"].includes(nextState.district);
+    if (nextState.stamina <= 0 && !isPrologueEnd) {
+      nextState.stamina = nextState.maxStamina || 100;
+      nextState.hp = Math.max(nextState.hp, 25);
+      nextState.district = "aurus";
+      nextState.poi = "Main Headquarters (The Hideout)";
+      setActiveRegionId("aurus");
+      setActivePOIView("hideout");
+      
+      narrative = (narrative ? narrative + "\n\n" : "") + `🚨 NEURAL EXHAUSTION COLLAPSE: Your stamina reached 0! You collapsed from extreme fatigue. Your auto-teleport recovery beacon triggered, returning your frame safely to the Aurus Safehouse bunk where life support stabilized your core and fully restored your Stamina!`;
+      logType = "system";
+      triggerToast("STAMINA DEPLETED: Teleported to Safehouse");
     }
 
     setGameState(nextState);
@@ -4394,6 +6523,23 @@ export default function App() {
     }
   };
 
+  // Get modified cost based on active POI faction alignments
+  const getModifiedCost = (baseCost: number, poiId: string) => {
+    if (!gameState) return baseCost;
+    let factionKey: "streetOutlaws" | "aresCorporate" | "titanLogistics" = "titanLogistics";
+    if (poiId === "marv_clinic") factionKey = "streetOutlaws";
+    else if (poiId === "nouveau_chrome") factionKey = "aresCorporate";
+    
+    const rep = gameState.reputations?.[factionKey] ?? 50;
+    let multiplier = 1.0;
+    if (rep >= 80) multiplier = 0.8; // 20% discount
+    else if (rep >= 61) multiplier = 0.9; // 10% discount
+    else if (rep <= 20) multiplier = 1.5; // 50% markup
+    else if (rep <= 40) multiplier = 1.2; // 20% markup
+    
+    return Math.round(baseCost * multiplier);
+  };
+
   // Buy item button helper
   const handleBuyItemDirectly = (item: { name: string; cost: number }) => {
     if (!gameState) return;
@@ -4422,23 +6568,27 @@ export default function App() {
 
   // Get dynamic merchant stock based on active POI
   const getShopItemsForPOI = (poiId: string) => {
+    let baseStock = SHOP_ITEMS;
     if (poiId === "marv_clinic") {
-      return [
+      baseStock = [
         { name: "Nano Med-Stim (Heal)", cost: 25, slot: "Consumable", desc: "Fully restores 60 HP instantly. Dr. Marv's discounted rate!" },
         { name: "Ether Mana-Cell (Mana)", cost: 30, slot: "Consumable", desc: "Fully restores 50 ETHER instantly." },
         { name: "Smart-Targeting Visor", cost: 70, slot: "Cyberware", desc: "Adds telemetry targeters (+15 damage to range/hacks)." },
         { name: "Synthetic Muscle Splice", cost: 100, slot: "Cyberware", desc: "Increases strength and reflex speeds (+10 Max HP)." }
       ];
-    }
-    if (poiId === "nouveau_chrome") {
-      return [
+    } else if (poiId === "nouveau_chrome") {
+      baseStock = [
         { name: "Apex Mantis electro-blade", cost: 110, slot: "Weapons", desc: "Surgical lightning weapon that cuts armor plates (+25 physical damage)." },
         { name: "Exo-Plated Mesh Armor", cost: 130, slot: "Armor", desc: "Nanotube composite armor with 25% physical absorption." },
         { name: "Unstable Plasma Core", cost: 200, slot: "Material", desc: "High-yield energy module required for highwalk plasma hacks." },
         { name: "Chrono-Shift Augment", cost: 250, slot: "Cyberware", desc: "High-end corporate reflex booster (+15 Max HP, +30 ETHER, +2 DEX)." }
       ];
     }
-    return SHOP_ITEMS;
+    
+    return baseStock.map(item => ({
+      ...item,
+      cost: getModifiedCost(item.cost, poiId)
+    }));
   };
 
   // Sell scrap helper
@@ -4462,48 +6612,48 @@ export default function App() {
       </div>
 
       {/* HEADER BAR */}
-      <div className="z-10 bg-slate-950/80 backdrop-blur-md border-b border-white/10 py-4 px-6 md:px-8 shadow-xl flex flex-wrap justify-between items-center gap-4">
+      <div className="z-10 bg-slate-950/80 backdrop-blur-md border-b border-white/10 py-2.5 md:py-3 px-4 md:px-6 shadow-xl flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]">
-            <Flame size={22} className="animate-pulse" />
+          <div className="p-2 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.15)]">
+            <Flame size={18} className="animate-pulse" />
           </div>
           <div>
-            <span className="text-[10px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1">
-              <Sparkles size={11} /> CORE OFFLINE SANDBOX ENGINE
+            <span className="text-[9px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1">
+              <Sparkles size={10} /> CORE OFFLINE SANDBOX ENGINE
             </span>
-            <h1 className="font-display font-extrabold tracking-wider text-xl text-white uppercase leading-none mt-0.5">
+            <h1 className="font-display font-extrabold tracking-wider text-lg text-white uppercase leading-none mt-0.5">
               NEON <span className="text-rose-500 tracking-tight font-light">&amp;</span> ETHER
             </h1>
           </div>
         </div>
 
         {/* Global Notifications and Save Operations */}
-        <div className="flex items-center gap-3 font-mono text-xs">
+        <div className="flex items-center gap-2.5 font-mono text-xs">
           {gameState && (
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSkipIntro}
-                className="bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 transition-all font-mono text-4xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.2)] animate-pulse"
+                className="bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.15)] animate-pulse"
               >
                 ⚡ Skip Intro (Base Crew)
               </button>
               <button
                 onClick={handleSaveGame}
-                className="bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60 transition-all font-mono text-4xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+                className="bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.08)]"
               >
-                <Save size={12} /> Save Matrix
+                <Save size={11} /> Save Matrix
               </button>
               <button
                 onClick={handleRestartFull}
-                className="bg-rose-950/50 border border-rose-500/30 text-rose-300 hover:bg-rose-900/60 transition-all font-mono text-4xs font-bold px-3 py-1.5 rounded-md uppercase tracking-wider cursor-pointer"
+                className="bg-rose-950/50 border border-rose-500/30 text-rose-300 hover:bg-rose-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider cursor-pointer"
               >
                 Reset Module
               </button>
             </div>
           )}
-          <span className="h-5 w-px bg-white/10 hidden sm:inline" />
-          <div className="bg-slate-900/60 border border-white/5 text-slate-300 px-3 py-1.5 rounded-md flex items-center gap-2 text-[11px]">
-            <Activity size={13} className="text-cyan-400 animate-pulse" />
+          <span className="h-4 w-px bg-white/10 hidden sm:inline" />
+          <div className="bg-slate-900/60 border border-white/5 text-slate-300 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-[10px]">
+            <Activity size={12} className="text-cyan-400 animate-pulse" />
             <span>GRID DECK:</span>
             <span className="text-cyan-400 font-bold block">STANDALONE</span>
           </div>
@@ -4525,7 +6675,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6 z-10 transition-all justify-center">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 md:p-5 flex flex-col gap-4 md:gap-5 z-10 transition-all justify-center">
 
         <AnimatePresence mode="wait">
           
@@ -4556,7 +6706,13 @@ export default function App() {
               {/* ACTION COMMAND DECKS */}
               <div className="flex flex-col gap-3 max-w-xs w-full mx-auto font-mono text-xs">
                 <button
-                  onClick={() => setCurrentScreen("character_select")}
+                  onClick={() => {
+                    setCharSelectStep(1);
+                    setSelectedPerks([]);
+                    setStatPointsPool(10);
+                    setAddedStats({ str: 0, dex: 0, int: 0, will: 0, eth: 0 });
+                    setCurrentScreen("character_select");
+                  }}
                   className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-extrabold uppercase py-3 rounded-md transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)]"
                 >
                   <Plus size={15} /> Deploy New Agent
@@ -4599,7 +6755,7 @@ export default function App() {
           )}
 
           {/* ==============================================
-              SCREEN 2: ARCHETYPE PORTRAIT SELECTOR
+              SCREEN 2: CHARACTER CREATION WIZARD (3 STEPS)
              ============================================== */}
           {currentScreen === "character_select" && (
             <motion.div
@@ -4607,29 +6763,71 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="max-w-6xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-6"
+              className="max-w-6xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-5"
             >
               {/* Back button to main menu */}
               <button
                 onClick={() => {
                   setCurrentScreen("menu");
                 }}
-                className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1 text-xs font-mono border border-white/5 px-2 py-1 rounded bg-slate-900/60 transition-all cursor-pointer z-10"
+                className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1 text-xs font-mono border border-white/5 px-2 py-1 rounded bg-slate-900/60 transition-all cursor-pointer z-10 animate-fade-in"
               >
                 <ArrowLeft size={13} /> Back to Terminal
               </button>
 
-              {/* Title Header */}
-              <div className="text-center pt-4 pb-2 border-b border-white/5">
-                <span className="font-mono text-xs uppercase tracking-[0.25em] text-cyan-400 font-bold block mb-1">
-                  [ COGNITIVE UPLINK REGISTRATION ]
-                </span>
-                <h2 className="font-display font-extrabold text-2xl text-white uppercase tracking-wider leading-none">
-                  OPERATIVE SPECIFICATION SHEET
-                </h2>
-                <p className="text-3xs text-slate-500 font-mono mt-1.5 uppercase">
-                  INITIALIZE BIOMETRICS, SYSTEM HARDWARE PROTOCOLS, AND SECURE MEMORY SYNAPSES
-                </p>
+              {/* Compact Title Header with Steps */}
+              <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-2 pb-4 border-b border-white/5 gap-3">
+                <div className="text-left">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400 font-bold block mb-0.5">
+                    [ COGNITIVE REGISTRATION ]
+                  </span>
+                  <h2 className="font-display font-extrabold text-lg text-white uppercase tracking-wider leading-none">
+                    OPERATIVE CONFIGURATION
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-mono mt-0.5 uppercase">
+                    INITIALIZE BIOMETRICS &amp; SYNAPSE INTEGRATION
+                  </p>
+                </div>
+                
+                {/* Visual Step Tracker */}
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <button 
+                    onClick={() => charSelectStep > 1 && setCharSelectStep(1)}
+                    disabled={charSelectStep === 1}
+                    className={`px-3 py-1.5 rounded border transition-all ${
+                      charSelectStep === 1 
+                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
+                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200 cursor-pointer"
+                    }`}
+                  >
+                    1. IDENTITY
+                  </button>
+                  <div className="w-4 h-[1px] bg-white/10" />
+                  <button 
+                    onClick={() => charSelectStep > 2 && setCharSelectStep(2)}
+                    disabled={charSelectStep <= 2}
+                    className={`px-3 py-1.5 rounded border transition-all ${
+                      charSelectStep === 2 
+                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
+                        : charSelectStep > 2 
+                          ? "bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200 cursor-pointer"
+                          : "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
+                    }`}
+                  >
+                    2. MATRIX
+                  </button>
+                  <div className="w-4 h-[1px] bg-white/10" />
+                  <button 
+                    disabled
+                    className={`px-3 py-1.5 rounded border transition-all ${
+                      charSelectStep === 3 
+                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
+                        : "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
+                    }`}
+                  >
+                    3. PERKS
+                  </button>
+                </div>
               </div>
 
               {/* Real-time calculated statistics for preview */}
@@ -4686,13 +6884,11 @@ export default function App() {
                 let previewHp = selectedArchetype.maxHp;
                 if (customBackground === "Ex-Corp Agent") previewHp -= 10;
                 if (customBackground === "Glitched Specimen") previewHp += 20;
-                if (selectedPerks.includes("Hardened Chassis")) previewHp += 20;
 
                 let previewCredits = selectedArchetype.credits;
                 if (customBackground === "Street Rat") previewCredits += 20;
                 if (customBackground === "Ex-Corp Agent") previewCredits += 50;
                 if (customBackground === "Glitched Specimen") previewCredits -= 30;
-                if (selectedPerks.includes("Lucky Jack")) previewCredits += 40;
 
                 const portraitChoices = [
                   { name: "Blade", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200" },
@@ -4717,34 +6913,53 @@ export default function App() {
                   { name: "Grid Drifter", bonus: "+1 Str, +1 Will", desc: "Hardened wanderer mapping outer deserts." }
                 ];
 
-                const perkOptions = [
-                  { id: "adrenaline_junkie", name: "Adrenaline Junkie", desc: "+15% Melee damage at low health (<40% HP)" },
-                  { id: "cyber_optimizer", name: "Cyber-Optimizer", desc: "+10 starting combat shielding permanently" },
-                  { id: "ether_conduit", name: "Ether Conduit", desc: "Regenerate +2 Ether MP at start of every combat turn" },
-                  { id: "hardened_chassis", name: "Hardened Chassis", desc: "+20 Max HP permanent core integrity boost" },
-                  { id: "lucky_jack", name: "Lucky Jack", desc: "+40 starting Credits bonus from hacked accounts" }
+                const ALL_12_PERKS = [
+                  { id: "Genius", name: "Genius", icon: "🧠", desc: "+2 Intelligence. Makes systems hacking and INT checks significantly easier." },
+                  { id: "Iron Will", name: "Iron Will", icon: "🛡️", desc: "+2 Willpower. Prevents flatlining, reviving you at 25% HP once per combat encounter." },
+                  { id: "Street Smart", name: "Street Smart", icon: "💸", desc: "+30 starting Credits. Unlocks illegal back-alley street negotiations." },
+                  { id: "Adrenaline Rush", name: "Adrenaline Rush", icon: "⚡", desc: "Gain +15% overall physical and elemental damage when HP is below 40%." },
+                  { id: "Cybernetic Optimizer", name: "Cybernetic Optimizer", icon: "🔋", desc: "Start every combat encounter with +15 active energy Shields." },
+                  { id: "Ether Conduit", name: "Ether Conduit", icon: "🔮", desc: "Siphon ambient ley lines to regenerate +2 MP at the start of every combat turn." },
+                  { id: "Hardened Chassis", name: "Hardened Chassis", icon: "🦾", desc: "+30 Max HP permanent health boost to organic carbon-plates." },
+                  { id: "Shadow Operative", name: "Shadow Operative", icon: "👤", desc: "+1 Dexterity. Enhances digital and manual evasion checks by +20%." },
+                  { id: "Heavy Hitter", name: "Heavy Hitter", icon: "⚔️", desc: "+1 Strength. Melee kinetic blows deal +10% additional physical damage." },
+                  { id: "Apex Reflexes", name: "Apex Reflexes", icon: "🏃", desc: "+2 Dexterity. Increases active combat critical hit chance by +10%." },
+                  { id: "Technomancer Catalyst", name: "Technomancer Catalyst", icon: "🌪️", desc: "+1 Ether. Focuses technomancy relays, dealing +15% spell-slash damage." },
+                  { id: "Surprise Tactics", name: "Surprise Tactics", icon: "🎯", desc: "Unleash rapid fire, starting the first combat turn of a battle with +1 AP." },
                 ];
 
                 const skillTrees: Record<string, { name: string; cost: string; desc: string; icon: string }[]> = {
                   "Cyber-Blade": [
                     { name: "Viper Strike (Tier 1)", cost: "10 MP", desc: "Melee blow dealing +150% physical damage with a chemical armor-dissolving corrosion debuff.", icon: "⚔️" },
                     { name: "Adrenaline Surge (Tier 2)", cost: "15 MP", desc: "Inject fast combat-stimulants, granting +2 AP and +15% Critical Hit Chance for 2 turns.", icon: "⚡" },
-                    { name: "Phantom Dash (Tier 3)", cost: "20 MP", desc: "Bypass defensive fields to blink behind a target, performing a guaranteed 300% backstab crit.", icon: "👤" }
+                    { name: "Phantom Dash (Tier 3)", cost: "20 MP", desc: "Bypass defensive fields to blink behind a target, performing a guaranteed 300% backstab crit.", icon: "👤" },
+                    { name: "Razor Tempest (Tier 4)", cost: "25 MP", desc: "Unleash a whirlwind of molecular edge sweeps, dealing 30 Physical damage to all targets and bleeding them.", icon: "🌪️" },
+                    { name: "Cyber-Celerity (Tier 5)", cost: "18 MP", desc: "Accelerate neural clock-rate, dodging the next 2 physical attacks completely.", icon: "🏃" },
+                    { name: "Executioner's Wake (Tier 6)", cost: "35 MP", desc: "Ultimate single-target execution, dealing massive 55 damage. If the target dies, immediately refunds 50% mana.", icon: "☠️" }
                   ],
                   "Techno-Mage": [
                     { name: "Ether Spark (Tier 1)", cost: "8 MP", desc: "Bends ambient ley structures to fire a direct energy bolt, dealing 18 Ether damage.", icon: "🔮" },
                     { name: "Net Shield (Tier 2)", cost: "12 MP", desc: "Materialize an active firewall barrier over your neural interface, granting +15 Shields.", icon: "🛡️" },
-                    { name: "Feedback Burn (Tier 3)", cost: "22 MP", desc: "Overload target cerebral deck terminals, causing a spell explosion for 35 damage and 1 turn Silence.", icon: "💥" }
+                    { name: "Feedback Burn (Tier 3)", cost: "22 MP", desc: "Overload target cerebral deck terminals, causing a spell explosion for 35 damage and 1 turn Silence.", icon: "💥" },
+                    { name: "Quantum Singularity (Tier 4)", cost: "28 MP", desc: "Force-collapse local gravity, pulling all hostiles together, dealing 25 void damage, and pinning them down (Stun).", icon: "🌌" },
+                    { name: "Bio-Electric Surge (Tier 5)", cost: "20 MP", desc: "Chain cyber-organic lightning through up to 3 hostiles, inflicting 30 shock damage and disabling robotic components.", icon: "⚡" },
+                    { name: "Absolute Zero Code (Tier 6)", cost: "40 MP", desc: "Freeze target CPU units entirely, dealing 50 frost-code damage and completely incapacitating them for 2 turns.", icon: "❄️" }
                   ],
                   "Outlaw Hacker": [
                     { name: "ICE Disruption (Tier 1)", cost: "10 MP", desc: "Inject corrupted software into enemy combat sub-routines, lowering accuracy by 30%.", icon: "💻" },
                     { name: "Targeting Link (Tier 2)", cost: "12 MP", desc: "Paint the target with an orbital micro-laser, boosting all ranged damage they take by +25%.", icon: "🎯" },
-                    { name: "Systems Overload (Tier 3)", cost: "25 MP", desc: "Trigger remote battery/munition discharges, inflicting 28 range damage and stun.", icon: "🔋" }
+                    { name: "Systems Overload (Tier 3)", cost: "25 MP", desc: "Trigger remote battery/munition discharges, inflicting 28 range damage and stun.", icon: "🔋" },
+                    { name: "Glitch Protocol (Tier 4)", cost: "18 MP", desc: "Siphon active shield energy from hostiles, turning their own protective grids into a massive defensive shield (+20 Shields).", icon: "🛰️" },
+                    { name: "Nano-Swarm Hack (Tier 5)", cost: "22 MP", desc: "Reprogram nanite aerosol injectors to eat away enemy components, dealing 12 corrosion damage per turn for 3 turns.", icon: "🐜" },
+                    { name: "Satellite Guillotine (Tier 6)", cost: "35 MP", desc: "Command a decommissioned spy satellite to fire a high-orbit kinetic rod on the grid, dealing 55 heavy impact damage.", icon: "☄️" }
                   ],
                   "Mindmancer": [
                     { name: "Mind Hack (Tier 1)", cost: "15 MP", desc: "Direct synaptic rewrite, hacking target motor functions and forcing them to attack allies.", icon: "👁️" },
                     { name: "Neural Overload (Tier 2)", cost: "20 MP", desc: "Psychic cortex shock inflicting 25 damage, completely ignoring physical armor layers.", icon: "🧠" },
-                    { name: "Synaptic Cascade (Tier 3)", cost: "30 MP", desc: "Meltdown blast on all nearby targets dealing 40 psychic damage, locking brains in vegetative sleep.", icon: "🌀" }
+                    { name: "Synaptic Cascade (Tier 3)", cost: "30 MP", desc: "Meltdown blast on all nearby targets dealing 40 psychic damage, locking brains in vegetative sleep.", icon: "🌀" },
+                    { name: "Ether Shroud (Tier 4)", cost: "18 MP", desc: "Banish yourself to the digital ether plane, becoming completely untargetable and immune to damage for 1 turn.", icon: "🌫️" },
+                    { name: "Hallucinatory Echo (Tier 5)", cost: "24 MP", desc: "Clone your neural signature, creating 2 holograms that absorb incoming single-target spells.", icon: "👥" },
+                    { name: "Cerebro-Collapse (Tier 6)", cost: "45 MP", desc: "Total psychic execution. Obliterates target neural paths for 60 psychic damage, transferring 50% of the damage dealt as active health to yourself.", icon: "🥀" }
                   ]
                 };
 
@@ -4758,18 +6973,6 @@ export default function App() {
                   }
                 };
 
-                const handleTogglePerk = (perkId: string) => {
-                  if (selectedPerks.includes(perkId)) {
-                    setSelectedPerks(prev => prev.filter(p => p !== perkId));
-                  } else {
-                    if (selectedPerks.length >= 2) {
-                      triggerToast("MAXIMUM OF 2 PERKS CAN BE CONFIGURED");
-                    } else {
-                      setSelectedPerks(prev => [...prev, perkId]);
-                    }
-                  }
-                };
-
                 const randomizeName = () => {
                   const names = ["Kaelen_X", "Valerie_Dex", "Cipher_09", "Vance_Street", "Zero_Net", "Specter_V", "Rogue_Prime", "Echo_Chrome", "Rift_Blade", "Viper_T"];
                   const selected = names[Math.floor(Math.random() * names.length)];
@@ -4777,330 +6980,496 @@ export default function App() {
                 };
 
                 return (
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-                    {/* COLUMN 1: IDENTITY & ORIGIN (col-span-4) */}
-                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col gap-5 font-mono text-left">
-                      <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-                        👤 IDENTITY COGNITION
-                      </span>
-                      
-                      {/* Name input */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-slate-400 uppercase font-bold block">OPERATIVE CODENAME</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={customName}
-                            onChange={(e) => setCustomName(e.target.value.slice(0, 18))}
-                            className="flex-1 bg-slate-900 border border-white/10 rounded px-3 py-2 text-sm text-white uppercase focus:border-cyan-400 outline-none font-semibold"
-                            placeholder="Enter Name..."
-                          />
+                  <div>
+                    {/* STEP 1: IDENTITY COGNITION */}
+                    {charSelectStep === 1 && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
+                        {/* COLUMN 1: PORTRAIT SELECTOR & BIO */}
+                        <div className="lg:col-span-5 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
+                          <div className="space-y-4">
+                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
+                              👤 COGNITIVE BIOMETRICS
+                            </span>
+                            
+                            {/* Name input */}
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block">OPERATIVE CODENAME</label>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={customName}
+                                  onChange={(e) => setCustomName(e.target.value.slice(0, 18))}
+                                  className="flex-1 bg-slate-900 border border-white/10 rounded px-3 py-2 text-sm text-white uppercase focus:border-cyan-400 outline-none font-semibold"
+                                  placeholder="Enter Name..."
+                                />
+                                <button
+                                  onClick={randomizeName}
+                                  title="Randomize Name"
+                                  className="bg-slate-900 border border-cyan-500/20 text-cyan-400 text-sm px-3.5 py-2 rounded hover:bg-cyan-950/40 cursor-pointer flex items-center justify-center transition-all"
+                                >
+                                  🎲
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Age selection */}
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between items-center text-[10px] text-slate-400 uppercase font-bold">
+                                <span>COGNITIVE CYCLE AGE</span>
+                                <span className="text-cyan-400 font-extrabold text-sm">{customAge} YEARS</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="18"
+                                max="70"
+                                value={customAge}
+                                onChange={(e) => setCustomAge(parseInt(e.target.value))}
+                                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                              />
+                            </div>
+
+                            {/* Portrait thumbnail selection list */}
+                            <div className="space-y-2 pt-1">
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block">UPLINK PORTRAIT CHROME</label>
+                              <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900/85 p-3 rounded-lg border border-white/10">
+                                <img
+                                  src={customAvatarUrl}
+                                  alt="Selected custom portrait"
+                                  referrerPolicy="no-referrer"
+                                  className="w-20 h-20 object-cover rounded-lg border-2 border-cyan-400 grayscale-0 shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0"
+                                />
+                                <div className="grid grid-cols-5 gap-1.5 flex-1 w-full">
+                                  {portraitChoices.map((p, idx) => (
+                                    <button
+                                      key={idx}
+                                      onClick={() => setCustomAvatarUrl(p.url)}
+                                      className={`w-10 h-10 rounded-lg overflow-hidden border transition-all cursor-pointer relative ${
+                                        customAvatarUrl === p.url ? "border-cyan-400 ring-2 ring-cyan-400/40 grayscale-0 opacity-100" : "border-white/5 grayscale hover:grayscale-0 opacity-70 hover:opacity-100"
+                                      }`}
+                                    >
+                                      <img src={p.url} alt="option" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[10px] text-slate-500 bg-slate-900/30 p-2.5 rounded border border-white/5 leading-relaxed">
+                            💡 <em>Advisory:</em> Chromatic integration is client-authoritative. Choosing your biometrics establishes initial synaptic offsets.
+                          </div>
+                        </div>
+
+                        {/* COLUMN 2: SPECIES SELECTION */}
+                        <div className="lg:col-span-7 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
+                          <div className="space-y-4">
+                            <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
+                              🧬 SELECT GENETIC SPECIES SPECIFICATION
+                            </span>
+                            
+                            <div className="grid grid-cols-1 gap-2 max-h-[360px] overflow-y-auto pr-1">
+                              {raceOptions.map((r) => (
+                                <button
+                                  key={r.name}
+                                  onClick={() => setCustomRace(r.name)}
+                                  className={`text-left p-3 rounded-xl border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
+                                    customRace === r.name
+                                      ? "bg-cyan-950/40 border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.1)]"
+                                      : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                                  }`}
+                                >
+                                  <div className="max-w-[70%]">
+                                    <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200 flex items-center gap-2">
+                                      <span className={customRace === r.name ? "text-cyan-400" : "text-slate-500"}>◈</span>
+                                      {r.name}
+                                    </p>
+                                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">{r.desc}</p>
+                                  </div>
+                                  <span className="text-[10px] font-black text-rose-400 bg-slate-950/90 px-2.5 py-1 rounded border border-white/10 shrink-0">
+                                    {r.bonus}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Step 1 Control Bar */}
+                          <div className="flex justify-end pt-2 border-t border-white/5">
+                            <button
+                              onClick={() => setCharSelectStep(2)}
+                              className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg px-6 py-2.5 text-xs tracking-wider transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-[0_0_10px_rgba(6,182,212,0.2)]"
+                            >
+                              Next: Class &amp; Stats <ArrowRight size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* STEP 2: PICKING ATTRIBUTES, CLASS & BACKGROUND */}
+                    {charSelectStep === 2 && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
+                        {/* LEFT COLUMN: CLASS & BACKGROUND */}
+                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
+                          <div className="space-y-4">
+                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5">
+                              🛠️ ARCHETYPE CLASS &amp; CHRONOLOGY
+                            </span>
+
+                            {/* Class Selection */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block">SELECT COGNITIVE ARCHETYPE</label>
+                              <div className="grid grid-cols-3 gap-1.5">
+                                {ARCHETYPES.map((arch) => (
+                                  <button
+                                    key={arch.name}
+                                    onClick={() => {
+                                      setSelectedArchetype(arch);
+                                      setPreviewSkillTreeClass(arch.name);
+                                    }}
+                                    className={`py-2 px-1 rounded-lg text-center border font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
+                                      selectedArchetype.name === arch.name
+                                        ? "bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                                    }`}
+                                  >
+                                    <span className="text-[10px] uppercase font-black truncate max-w-full block">{arch.name.replace("Cyber-", "").replace("Techno-", "").replace("Outlaw ", "")}</span>
+                                    <span className="text-[8px] text-rose-400 bg-slate-950 px-1 py-0.5 rounded border border-white/5 font-black uppercase tracking-wider">
+                                      {arch.name === "Cyber-Blade" ? "Blade" : arch.name === "Techno-Mage" ? "Spell" : "Hacks"}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Background selection */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] text-slate-400 uppercase font-bold block">OPERATIVE BACKGROUND</label>
+                              <div className="grid grid-cols-1 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
+                                {backgroundOptions.map((bg) => (
+                                  <button
+                                    key={bg.name}
+                                    onClick={() => setCustomBackground(bg.name)}
+                                    className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
+                                      customBackground === bg.name
+                                        ? "bg-cyan-950/40 border-cyan-400 text-white"
+                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
+                                    }`}
+                                  >
+                                    <div className="max-w-[70%]">
+                                      <p className="font-extrabold text-[11px] uppercase tracking-wide text-slate-200">{bg.name}</p>
+                                      <p className="text-[9px] text-slate-400 font-sans mt-0.5">{bg.desc}</p>
+                                    </div>
+                                    <span className="text-[9px] font-black text-amber-400 bg-slate-950/80 px-1.5 py-0.5 rounded border border-white/10 shrink-0">{bg.bonus}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setCharSelectStep(1)}
+                              className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 uppercase"
+                            >
+                              <ArrowLeft size={13} /> Back
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* MIDDLE COLUMN: STAT ALLOCATION */}
+                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                              <span className="text-xs uppercase font-black text-slate-300">🧬 ATTRIBUTE MATRICES</span>
+                              <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
+                                {statPointsPool} POINTS POOL
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {[
+                                { key: "str", name: "STR (STRENGTH)", desc: "Physical armor, physical damage scaling." },
+                                { key: "dex", name: "DEX (DEXTERITY)", desc: "Reflex speed, blade skills & dodge rate." },
+                                { key: "int", name: "INT (INTELLIGENCE)", desc: "Cyberware compatibility, deck bypass speed." },
+                                { key: "will", name: "WILL (WILLPOWER)", desc: "Cognitive ether defenses, spell shielding." },
+                                { key: "eth", name: "ETH (ETHER COGNITION)", desc: "Raw mental energy pools, spell potency." }
+                              ].map((s) => {
+                                const currentVal = s.key === "str" ? previewStr : s.key === "dex" ? previewDex : s.key === "int" ? previewInt : s.key === "will" ? previewWill : previewEth;
+                                const addedCount = addedStats[s.key as "str" | "dex" | "int" | "will" | "eth"];
+                                
+                                return (
+                                  <div key={s.key} className="flex justify-between items-center text-xs p-1.5 bg-slate-950/50 rounded-lg border border-white/5 leading-normal">
+                                    <div className="text-left max-w-[65%]">
+                                      <p className="font-extrabold text-[10px] text-slate-200">{s.name}</p>
+                                      <p className="text-[9px] text-slate-400 leading-tight font-sans mt-0.5">{s.desc}</p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        onClick={() => handleStatChange(s.key as any, -1)}
+                                        disabled={addedCount === 0}
+                                        className={`w-5 h-5 rounded-md text-center font-black text-xs transition-all border flex items-center justify-center cursor-pointer ${
+                                          addedCount > 0
+                                            ? "bg-slate-900 border-white/10 text-rose-400 hover:bg-slate-800"
+                                            : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
+                                        }`}
+                                      >
+                                        -
+                                      </button>
+                                      <span className="text-xs text-white font-extrabold w-4 text-center">
+                                        {currentVal}
+                                      </span>
+                                      <button
+                                        onClick={() => handleStatChange(s.key as any, 1)}
+                                        disabled={statPointsPool === 0}
+                                        className={`w-5 h-5 rounded-md text-center font-black text-xs transition-all border flex items-center justify-center cursor-pointer ${
+                                          statPointsPool > 0
+                                            ? "bg-cyan-950 border-cyan-500/40 text-cyan-400 hover:bg-cyan-900"
+                                            : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
+                                        }`}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-900/60 p-2.5 rounded border border-white/5">
+                            <div className="flex justify-between items-center text-[9px] text-slate-400 uppercase font-bold mb-1">
+                              <span>Derived Baseline</span>
+                              <span>Preview values</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
+                              <div className="bg-slate-950/50 p-1 rounded">
+                                <span className="text-slate-500 block">HP</span>
+                                <span className="text-white font-bold">{previewHp}</span>
+                              </div>
+                              <div className="bg-slate-950/50 p-1 rounded">
+                                <span className="text-slate-500 block">ETHER</span>
+                                <span className="text-cyan-400 font-bold">{selectedArchetype.maxMana}</span>
+                              </div>
+                              <div className="bg-slate-950/50 p-1 rounded">
+                                <span className="text-slate-500 block">CREDITS</span>
+                                <span className="text-amber-400 font-bold">{previewCredits}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: SKILL TREE PREVIEWS */}
+                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
+                          <div className="space-y-3 flex-1 flex flex-col">
+                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1">
+                              🔮 ACTIVE CLASS PREVIEW
+                            </span>
+
+                            <div className="grid grid-cols-3 gap-1">
+                              {["Cyber-Blade", "Techno-Mage", "Outlaw Hacker"].map((clName) => (
+                                <button
+                                  key={clName}
+                                  onClick={() => setPreviewSkillTreeClass(clName)}
+                                  className={`py-1 rounded text-center border font-extrabold transition-all cursor-pointer text-[9px] uppercase ${
+                                    previewSkillTreeClass === clName
+                                      ? "bg-cyan-950/50 border-cyan-500/50 text-cyan-400"
+                                      : "bg-slate-900/40 border-white/5 text-slate-500 hover:text-slate-300"
+                                  }`}
+                                >
+                                  {clName === "Cyber-Blade" ? "Blade" : clName === "Techno-Mage" ? "Mage" : "Hacker"}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[190px] pr-1 flex-1">
+                              {skillTrees[previewSkillTreeClass === "Mindmancer" ? "Cyber-Blade" : previewSkillTreeClass]?.slice(0, 4).map((sk, idx) => (
+                                <div key={idx} className="bg-slate-950/60 border border-white/5 p-1.5 rounded text-[10px] leading-normal animate-fade-in">
+                                  <div className="flex justify-between items-center font-bold text-slate-200">
+                                    <span className="flex items-center gap-1 uppercase truncate">
+                                      <span>{sk.icon}</span> {sk.name.split(" ")[0]}
+                                    </span>
+                                    <span className="text-cyan-400 text-[8px] bg-slate-900 border border-white/10 px-1 py-0.2 rounded font-bold">{sk.cost}</span>
+                                  </div>
+                                  <p className="text-[9px] text-slate-400 mt-0.5 leading-snug font-sans truncate">{sk.desc}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
                           <button
-                            onClick={randomizeName}
-                            title="Randomize Name"
-                            className="bg-slate-900 border border-cyan-500/20 text-cyan-400 text-sm px-3 py-2 rounded hover:bg-cyan-950/40 cursor-pointer flex items-center justify-center"
+                            onClick={() => {
+                              if (statPointsPool > 0) {
+                                triggerToast("💡 TIP: You have unspent attribute points, but you may proceed!");
+                              }
+                              setCharSelectStep(3);
+                            }}
+                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider transition-all cursor-pointer uppercase flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
                           >
-                            🎲
+                            Next: Choose Perks <ArrowRight size={13} />
                           </button>
                         </div>
                       </div>
+                    )}
 
-                      {/* Age selection */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-xs text-slate-400 uppercase font-bold">
-                          <span>COGNITIVE CYCLE AGE</span>
-                          <span className="text-cyan-400 font-extrabold text-sm">{customAge} YEARS</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="18"
-                          max="70"
-                          value={customAge}
-                          onChange={(e) => setCustomAge(parseInt(e.target.value))}
-                          className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-                        />
-                      </div>
-
-                      {/* Race dropdown list */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-slate-400 uppercase font-bold block">GENETIC SPECIES SPEC</label>
-                        <div className="grid grid-cols-1 gap-1.5 max-h-[165px] overflow-y-auto pr-1">
-                          {raceOptions.map((r) => (
-                            <button
-                              key={r.name}
-                              onClick={() => setCustomRace(r.name)}
-                              className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
-                                customRace === r.name
-                                  ? "bg-cyan-950/50 border-cyan-400 text-white"
-                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                              }`}
-                            >
-                              <div className="max-w-[70%]">
-                                <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{r.name}</p>
-                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">{r.desc}</p>
-                              </div>
-                              <span className="text-[10px] font-black text-rose-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/10 shrink-0">{r.bonus}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Portrait thumbnail selection list - NOW LARGER */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-slate-400 uppercase font-bold block">UPLINK PORTRAIT CHROME</label>
-                        <div className="flex justify-between items-center gap-3 bg-slate-900/85 p-3 rounded-lg border border-white/10">
-                          <img
-                            src={customAvatarUrl}
-                            alt="Selected custom portrait"
-                            referrerPolicy="no-referrer"
-                            className="w-20 h-20 object-cover rounded-lg border-2 border-cyan-400 grayscale-0 shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0"
-                          />
-                          <div className="grid grid-cols-5 gap-1.5 flex-1">
-                            {portraitChoices.map((p, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => setCustomAvatarUrl(p.url)}
-                                className={`w-11 h-11 rounded-lg overflow-hidden border transition-all cursor-pointer relative ${
-                                  customAvatarUrl === p.url ? "border-cyan-400 ring-2 ring-cyan-400/40 grayscale-0 opacity-100" : "border-white/5 grayscale hover:grayscale-0 opacity-70 hover:opacity-100"
-                                }`}
-                              >
-                                <img src={p.url} alt="option" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Background selection list */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-slate-400 uppercase font-bold block">OPERATIVE CHRONOLOGY BACKGROUND</label>
-                        <div className="grid grid-cols-1 gap-1.5 max-h-[165px] overflow-y-auto pr-1">
-                          {backgroundOptions.map((bg) => (
-                            <button
-                              key={bg.name}
-                              onClick={() => setCustomBackground(bg.name)}
-                              className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
-                                customBackground === bg.name
-                                  ? "bg-cyan-950/50 border-cyan-400 text-white"
-                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                              }`}
-                            >
-                              <div className="max-w-[70%]">
-                                <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{bg.name}</p>
-                                <p className="text-[10px] text-slate-400 font-sans mt-0.5">{bg.desc}</p>
-                              </div>
-                              <span className="text-[10px] font-black text-amber-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/10 shrink-0">{bg.bonus}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* COLUMN 2: ARCHETYPE, STAT ALLOCATION & PERKS (col-span-4) */}
-                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col gap-5 font-mono text-left">
-                      <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-                        🧬 CLASS &amp; COMBAT STATISTICS
-                      </span>
-
-                      {/* Class Selection buttons */}
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-slate-400 uppercase font-bold block">SELECT COGNITIVE ARCHETYPE CLASS</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {ARCHETYPES.map((arch) => (
-                            <button
-                              key={arch.name}
-                              onClick={() => {
-                                setSelectedArchetype(arch);
-                                setPreviewSkillTreeClass(arch.name);
-                              }}
-                              className={`py-3 px-1.5 rounded-lg text-center border font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
-                                selectedArchetype.name === arch.name
-                                  ? "bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                                  : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                              }`}
-                            >
-                              <span className="text-xs uppercase font-black truncate max-w-full block">{arch.name.replace("Cyber-", "").replace("Techno-", "").replace("Outlaw ", "")}</span>
-                              <span className="text-[9px] text-rose-400 bg-slate-950 px-1.5 py-0.5 rounded border border-white/5 font-black uppercase tracking-wider">
-                                {arch.name === "Cyber-Blade" ? "Blade" : arch.name === "Techno-Mage" ? "Spell" : "Hacks"}
+                    {/* STEP 3: COGNITIVE PERKS & DEPLOYMENT */}
+                    {charSelectStep === 3 && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
+                        {/* LEFT COLUMN: 12 PERKS SELECTION GRID (col-span-8) */}
+                        <div className="lg:col-span-8 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                              <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block flex items-center gap-1">
+                                🧠 COGNITIVE STARTING PERKS
                               </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Stat allocation +/- */}
-                      <div className="bg-slate-900/85 border border-white/10 p-3.5 rounded-lg flex flex-col gap-2.5 relative">
-                        <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                          <span className="text-xs uppercase font-black text-slate-300">ATTRIBUTE MATRICES</span>
-                          <span className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
-                            {statPointsPool} POINTS POOL
-                          </span>
-                        </div>
-
-                        <div className="space-y-2 mt-1">
-                          {[
-                            { key: "str", name: "STR (STRENGTH)", desc: "Physical armor, physical damage scaling." },
-                            { key: "dex", name: "DEX (DEXTERITY)", desc: "Reflex speed, blade skills & dodge rate." },
-                            { key: "int", name: "INT (INTELLIGENCE)", desc: "Cyberware compatibility, deck bypass speed." },
-                            { key: "will", name: "WILL (WILLPOWER)", desc: "Cognitive ether defenses, spell shielding." },
-                            { key: "eth", name: "ETH (ETHER COGNITION)", desc: "Raw mental energy pools, spell potency." }
-                          ].map((s) => {
-                            const currentVal = s.key === "str" ? previewStr : s.key === "dex" ? previewDex : s.key === "int" ? previewInt : s.key === "will" ? previewWill : previewEth;
-                            const addedCount = addedStats[s.key as "str" | "dex" | "int" | "will" | "eth"];
-                            
-                            return (
-                              <div key={s.key} className="flex justify-between items-center text-xs p-2 bg-slate-950/50 rounded-lg border border-white/5 leading-normal">
-                                <div className="text-left max-w-[65%]">
-                                  <p className="font-extrabold text-xs text-slate-200">{s.name}</p>
-                                  <p className="text-[10px] text-slate-400 leading-tight font-sans mt-0.5">{s.desc}</p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {/* Minus button */}
-                                  <button
-                                    onClick={() => handleStatChange(s.key as any, -1)}
-                                    disabled={addedCount === 0}
-                                    className={`w-6 h-6 rounded-md text-center font-black text-sm transition-all border flex items-center justify-center cursor-pointer ${
-                                      addedCount > 0
-                                        ? "bg-slate-900 border-white/10 text-rose-400 hover:bg-slate-800"
-                                        : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
-                                    }`}
-                                  >
-                                    -
-                                  </button>
-                                  <span className="text-sm text-white font-extrabold w-6 text-center">
-                                    {currentVal}
-                                  </span>
-                                  {/* Plus button */}
-                                  <button
-                                    onClick={() => handleStatChange(s.key as any, 1)}
-                                    disabled={statPointsPool === 0}
-                                    className={`w-6 h-6 rounded-md text-center font-black text-sm transition-all border flex items-center justify-center cursor-pointer ${
-                                      statPointsPool > 0
-                                        ? "bg-cyan-950 border-cyan-500/40 text-cyan-400 hover:bg-cyan-900"
-                                        : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
-                                    }`}
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Perks Selection List */}
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center text-xs text-slate-400 uppercase font-bold">
-                          <span>UPLINK SKILL PERKS SETUP</span>
-                          <span className="text-cyan-400 font-extrabold">{selectedPerks.length} / 2 CONFIGURED</span>
-                        </div>
-                        <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                          {perkOptions.map((perk) => {
-                            const isInstalled = selectedPerks.includes(perk.id);
-                            return (
-                              <button
-                                key={perk.id}
-                                onClick={() => handleTogglePerk(perk.id)}
-                                className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
-                                  isInstalled
-                                    ? "bg-cyan-950/50 border-cyan-400 text-white font-semibold"
-                                    : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                                }`}
-                              >
-                                <div className="max-w-[75%]">
-                                  <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200">{perk.name}</p>
-                                  <p className="text-[10px] text-slate-400 font-sans mt-0.5">{perk.desc}</p>
-                                </div>
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded border uppercase shrink-0 ${isInstalled ? "bg-cyan-500 text-slate-950 border-cyan-400" : "bg-slate-950 text-slate-600 border-white/5"}`}>
-                                  {isInstalled ? "Active" : "Unlock"}
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-400 font-semibold uppercase">POINTS REMAINING:</span>
+                                <span className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
+                                  {3 - selectedPerks.length} / 3
                                 </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* COLUMN 3: CLASS SKILL TREE PREVIEW & DEPLOYMENT (col-span-4) */}
-                    <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
-                      
-                      {/* Skill tree tabs - MINDMANCER TAB HIDDEN AS SPOILER PREVENTER */}
-                      <div className="flex flex-col gap-3 flex-1">
-                        <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-                          📶 ACTIVE SKILL TREE PREVIEWS
-                        </span>
-
-                        {/* Skill tree tabs selectors - ONLY show 3 core start classes */}
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {["Cyber-Blade", "Techno-Mage", "Outlaw Hacker"].map((clName) => (
-                            <button
-                              key={clName}
-                              onClick={() => setPreviewSkillTreeClass(clName)}
-                              className={`py-2 px-1 rounded-md text-center border font-extrabold transition-all cursor-pointer text-xs uppercase ${
-                                previewSkillTreeClass === clName
-                                  ? "bg-cyan-950/50 border-cyan-500/50 text-cyan-400"
-                                  : "bg-slate-900/40 border-white/5 text-slate-500 hover:text-slate-300 hover:bg-slate-900/60"
-                              }`}
-                            >
-                              {clName === "Cyber-Blade" ? "Blade" : clName === "Techno-Mage" ? "Mage" : "Hacker"}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Abilities corresponding to the previewSkillTreeClass tab */}
-                        <div className="bg-slate-900/60 border border-white/10 p-3 rounded-lg flex-1 flex flex-col gap-2.5">
-                          <div className="flex justify-between items-center text-xs border-b border-white/5 pb-1.5 text-slate-400 uppercase font-black leading-none">
-                            <span>Abilities &amp; Spells List</span>
-                            <span>Class Level Unlocks</span>
-                          </div>
-
-                          <div className="flex flex-col gap-2 overflow-y-auto max-h-[190px] pr-1 mt-0.5">
-                            {skillTrees[previewSkillTreeClass === "Mindmancer" ? "Cyber-Blade" : previewSkillTreeClass]?.map((sk, idx) => (
-                              <div key={idx} className="bg-slate-950/60 border border-white/5 p-2 rounded-md text-xs leading-normal">
-                                <div className="flex justify-between items-center font-extrabold text-xs text-slate-200">
-                                  <span className="flex items-center gap-1.5 uppercase tracking-wide">
-                                    <span>{sk.icon}</span> {sk.name}
-                                  </span>
-                                  <span className="text-cyan-400 text-[10px] bg-slate-900 border border-white/10 px-2 py-0.5 rounded-md font-bold shrink-0">{sk.cost}</span>
-                                </div>
-                                <p className="text-[11px] text-slate-400 mt-1 leading-normal text-left font-sans">{sk.desc}</p>
                               </div>
-                            ))}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
+                              {ALL_12_PERKS.map((perk) => {
+                                const isSelected = selectedPerks.includes(perk.id);
+                                return (
+                                  <button
+                                    key={perk.id}
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setSelectedPerks(prev => prev.filter(p => p !== perk.id));
+                                      } else {
+                                        if (selectedPerks.length < 3) {
+                                          setSelectedPerks(prev => [...prev, perk.id]);
+                                        } else {
+                                          triggerToast("⚠️ MAXIMUM SELECTED: You may only activate up to 3 starting perks!");
+                                        }
+                                      }
+                                    }}
+                                    className={`text-left p-2.5 rounded-xl border text-xs leading-normal transition-all flex items-start gap-2.5 cursor-pointer relative ${
+                                      isSelected
+                                        ? "bg-cyan-950/40 border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.08)] animate-pulse-subtle"
+                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900/80"
+                                    }`}
+                                  >
+                                    <div className="w-8 h-8 rounded-lg bg-slate-950/80 flex items-center justify-center border border-white/10 text-base flex-shrink-0">
+                                      {perk.icon}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-extrabold text-[11px] uppercase text-slate-200 tracking-wide flex items-center justify-between">
+                                        <span>{perk.name}</span>
+                                        {isSelected && (
+                                          <span className="text-[8px] uppercase bg-cyan-950 text-cyan-400 border border-cyan-400/30 px-1.5 py-0.2 rounded font-black">
+                                            Active
+                                          </span>
+                                        )}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 leading-tight font-sans mt-0.5">{perk.desc}</p>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between pt-2 border-t border-white/5">
+                            <button
+                              onClick={() => setCharSelectStep(2)}
+                              className="bg-slate-900 hover:bg-slate-800 text-slate-300 text-center font-display font-extrabold rounded-lg px-5 py-2.5 text-xs tracking-wider border border-white/10 cursor-pointer flex items-center gap-1.5 uppercase"
+                            >
+                              <ArrowLeft size={13} /> Back to Stats
+                            </button>
+                            <div className="text-[10px] text-slate-500 italic self-center hidden sm:block">
+                              Active starting perks grant immediate gameplay benefits in standard checks and tactical combat.
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: SUMMARY REGISTRY & FINAL DEPLOY (col-span-4) */}
+                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
+                          <div className="space-y-4">
+                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1">
+                              📋 SUMMARY REGISTRY
+                            </span>
+
+                            {/* Info lines */}
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                <span className="text-slate-500">OPERATIVE:</span>
+                                <span className="text-white font-extrabold uppercase truncate max-w-[150px]">{customName}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                <span className="text-slate-500">SPECIES:</span>
+                                <span className="text-rose-400 font-extrabold uppercase">{customRace}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                <span className="text-slate-500">CLASS:</span>
+                                <span className="text-cyan-400 font-extrabold uppercase">{selectedArchetype.name.replace("Cyber-", "").replace("Techno-", "")}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
+                                <span className="text-slate-500">BACKGROUND:</span>
+                                <span className="text-amber-400 font-extrabold uppercase">{customBackground}</span>
+                              </div>
+                            </div>
+
+                            {/* Selected perks tokens */}
+                            <div className="space-y-2">
+                              <label className="text-[10px] text-slate-500 uppercase font-black block">ACTIVE PERKS ({selectedPerks.length}/3)</label>
+                              {selectedPerks.length === 0 ? (
+                                <div className="text-center py-4 bg-slate-900/40 rounded border border-dashed border-white/5 text-slate-600 text-[10px] uppercase">
+                                  No perks active
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-1.5">
+                                  {selectedPerks.map(perkId => {
+                                    const p = ALL_12_PERKS.find(pk => pk.id === perkId);
+                                    return (
+                                      <div key={perkId} className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-500/10 p-1.5 rounded-lg text-xs">
+                                        <span className="text-sm">{p?.icon}</span>
+                                        <span className="text-cyan-300 font-bold uppercase truncate">{p?.name}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Calculated derived stats preview card */}
+                          <div className="space-y-3">
+                            <div className="bg-slate-900/60 p-3 rounded-lg border border-white/5 space-y-1.5">
+                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>DERIVED HP:</span>
+                                <span className="text-white font-extrabold">{previewHp + (selectedPerks.includes("Hardened Chassis") ? 30 : 0)} HP</span>
+                              </div>
+                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>DERIVED MP:</span>
+                                <span className="text-cyan-400 font-extrabold">{selectedArchetype.maxMana} MP</span>
+                              </div>
+                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>STARTING CREDITS:</span>
+                                <span className="text-amber-400 font-extrabold">
+                                  {previewCredits + (selectedPerks.includes("Street Smart") ? 30 : 0) + (selectedPerks.includes("Lucky Jack") ? 40 : 0)}¤
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
+                                <span>STARTING SHIELDS:</span>
+                                <span className="text-cyan-400 font-extrabold">{selectedPerks.includes("Cybernetic Optimizer") ? 15 : 0}</span>
+                              </div>
+                            </div>
+
+                            {/* Final Confirm and Deploy */}
+                            <button
+                              onClick={handleDeployAgent}
+                              className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-3 text-xs tracking-wider transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-[0.99] uppercase flex items-center justify-center gap-2"
+                            >
+                              <Play size={12} fill="currentColor" /> Deploy Operative
+                            </button>
                           </div>
                         </div>
                       </div>
-
-                      {/* Summary & Deploy button block */}
-                      <div className="bg-slate-900/85 border border-white/10 p-4 rounded-lg flex flex-col gap-3">
-                        <div className="flex justify-between items-center border-b border-white/5 pb-1.5 text-xs font-extrabold text-slate-400">
-                          <span>SUMMARY REGISTRY</span>
-                          <span className="text-cyan-400 text-3xs font-black tracking-widest">STATUS.CONFIRMED</span>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2.5 text-center text-xs leading-tight">
-                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
-                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">HEALTH</span>
-                            <span className="text-white font-extrabold text-xs">{previewHp} HP</span>
-                          </div>
-                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
-                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">ETHER</span>
-                            <span className="text-cyan-400 font-extrabold text-xs">{selectedArchetype.maxMana} MP</span>
-                          </div>
-                          <div className="bg-slate-950/50 border border-white/5 p-1.5 rounded-md">
-                            <span className="text-[9px] text-slate-500 block font-bold uppercase mb-0.5">CREDITS</span>
-                            <span className="text-amber-400 font-extrabold text-xs">{previewCredits}¤</span>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={handleDeployAgent}
-                          className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-[0.99] uppercase flex items-center justify-center gap-2"
-                        >
-                          <Play size={12} fill="currentColor" /> Deploy Operative
-                        </button>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               })()}
@@ -5194,13 +7563,13 @@ export default function App() {
                     
                     <div className="space-y-3 text-xs text-slate-300 font-sans leading-relaxed">
                       <p>
-                        In <strong className="text-white">Megacity-9</strong>, meat is cheap and data is the ultimate currency. Beneath the towering chrome peaks of the Biotech conglomerates, the radioactive fog of Sector 4 acts as your sanctuary and your hunting ground.
+                        Welcome to <strong className="text-white">Megacity-9</strong>—a high-tech, low-life septic tank where corporate skyscrapers pierce the stratosphere like black chrome needles, and the remaining 99% choke on the radioactive sulfur-fog of Sector 4. Here, your neural cyberware is just leased property, your blood has a barcoded value, and human lives are traded in underground slave ledger books.
                       </p>
                       <p>
-                        Your contact, a broken corporate defector, sold you a keycard and a dream: the <strong className="text-cyan-400 font-semibold">Sector 9 Data Vault</strong>. Inside lies the <em className="text-white not-italic font-semibold">Sol-Prime Ley Core</em>—an infinite, self-sustaining energy matrix. If you crack the vault and extract the core, you buy your ticket out of these rusted alleys forever.
+                        Your crew leader, <strong className="text-rose-400 font-semibold">Vice</strong>—a heavy-metal smuggler and former Ares Biotech defector—has orchestrated the ultimate suicide heist. You are breaching the <strong className="text-cyan-400 font-semibold">Ares Biotech Deep Data Vault</strong> to steal the <em className="text-white not-italic font-bold">Sol-Prime Ley Core</em>. This relic isn't just data: it's a glowing, hyper-dense technomantic battery capable of merging raw psychic ether-waves with cold carbon-grid processors. If you extract it, you'll power your safehouse, feed your squad, and sever the corporate tracking collar forever.
                       </p>
-                      <p className="border-l-2 border-cyan-400 pl-3 bg-cyan-950/20 py-2 rounded-r font-mono text-[11px] text-cyan-300">
-                        "Your gear is locked. Your neural buffers are clear. The vent shafts of Conduit-09 are open. There's no turning back."
+                      <p className="border-l-2 border-red-500 pl-3 bg-red-950/20 py-2 rounded-r font-mono text-[11px] text-red-300">
+                        "Vice's voice crackles over your sub-dermal audio relay: 'No second chances, kid. Ares tactical enforcers are already sweeping the upper vents. Boot your deck, clear your buffers, and grab that core.'"
                       </p>
                     </div>
                   </div>
@@ -5285,213 +7654,34 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col gap-6 w-full animate-fadeIn relative"
+              className="flex flex-col gap-4 w-full animate-fadeIn relative"
             >
               <WeatherOverlay weather={gameState.weather || "clear"} />
-              {/* TACTICAL HUD SWITCH - IMMERSIVE MINIMALIST CONTROL PANEL */}
-              {!gameState.combatState?.isActive && (
-                <div className="flex border border-white/10 rounded-xl overflow-hidden bg-slate-950/40 backdrop-blur-md p-1.5 font-mono text-xs w-full max-w-xl mx-auto shadow-lg z-10 relative">
-                  <button
-                    onClick={() => setGameTab("exploration")}
-                    className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
-                      gameTab === "exploration"
-                        ? "bg-gradient-to-r from-cyan-950/60 to-cyan-900/40 text-cyan-400 border border-cyan-500/20 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-                        : "text-slate-400 hover:text-white border border-transparent"
-                    }`}
-                  >
-                    <Compass size={13} className={gameTab === "exploration" ? "animate-spin-slow" : ""} />
-                    Missions &amp; Map
-                  </button>
-                  <button
-                    onClick={() => setGameTab("database")}
-                    className={`flex-1 py-2.5 px-4 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 uppercase font-extrabold tracking-wider ${
-                      gameTab === "database"
-                        ? "bg-gradient-to-r from-rose-950/60 to-rose-900/40 text-rose-400 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.15)]"
-                        : "text-slate-400 hover:text-white border border-transparent"
-                    }`}
-                  >
-                    <Database size={13} />
-                    Operative Database
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
               
-              {/* LEFT COLUMN (12/12): MAIN CORE CONSOLE FEED, DETAILED SCENERY OR INTERACTION DECKS */}
+              {/* LEFT COLUMN (9/12): MAIN CORE CONSOLE FEED, DETAILED SCENERY OR INTERACTION DECKS */}
               {gameTab === "exploration" && (
-                <div className="lg:col-span-12 flex flex-col gap-6">
-
-                {/* DOCK BAR STATUS GAUGES WITH HIGHEST VISUAL INTEGRITY */}
-                {!gameState.combatState?.isActive && (
-                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 relative">
-                    
-                    {/* District / Coordinate Node info with travel status indicator */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
-                      <div className="p-2 bg-gradient-to-br from-cyan-900/50 to-slate-900 border border-cyan-500/30 text-cyan-400 rounded-md">
-                        <MapPin size={16} />
-                      </div>
-                      <div className="overflow-hidden font-mono text-left">
-                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">COORDINATE</span>
-                        <p className="text-[11px] font-bold text-white uppercase truncate mt-0.5">
-                          {gameState.poi}
-                        </p>
-                        <span className="text-[9px] text-cyan-400 block uppercase truncate font-semibold">
-                          {REGIONS.find(r => r.id === gameState.district)?.name || "Slums"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* WEATHER CONDITIONS NODE */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex items-center gap-2.5">
-                      <div className="p-2 bg-gradient-to-br from-amber-950/50 to-slate-900 border border-amber-500/30 text-amber-400 rounded-md">
-                        <CloudLightning size={16} />
-                      </div>
-                      <div className="overflow-hidden font-mono text-left">
-                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">ATMOSPHERE</span>
-                        <p className="text-[11px] font-bold text-white uppercase truncate mt-0.5">
-                          {gameState.weather === "clear" && "Clear Skies ☀️"}
-                          {gameState.weather === "rain" && "Acid Rain 🌧️"}
-                          {gameState.weather === "snow" && "Neon Frost ❄️"}
-                          {gameState.weather === "storm" && "Electro Storm ⚡"}
-                          {gameState.weather === "heat" && "Thermal wave 🥵"}
-                          {gameState.weather === "smog" && "Toxic Smog 😷"}
-                          {(!gameState.weather || gameState.weather === "clear") && "Optimal skies ☀️"}
-                        </p>
-                        <span className="text-[7.5px] text-amber-500 block uppercase truncate font-semibold">
-                          {gameState.weather === "clear" && "Normal Stamina Rate"}
-                          {gameState.weather === "rain" && "+2 Stamina Drain / Wet"}
-                          {gameState.weather === "snow" && "+3 Stamina / -2 Ether"}
-                          {gameState.weather === "storm" && "+5 Stamina / Static Risk"}
-                          {gameState.weather === "heat" && "+5 Stamina / Damage Risk"}
-                          {gameState.weather === "smog" && "+4 Stamina / HP & MP Drain"}
-                          {(!gameState.weather || gameState.weather === "clear") && "No Active Debuffs"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* HP GAUGE RACK */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
-                        <span className="font-bold text-rose-400 flex items-center gap-1 uppercase">
-                          <Heart size={11} className="text-rose-500" /> Vital Core
-                        </span>
-                        <span className="font-bold text-[#f5ebd5]">{gameState.hp} / {derived.maxHp}</span>
-                      </div>
-                      
-                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
-                        <div
-                          className="bg-rose-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(239,68,68,0.7)]"
-                          style={{ width: `${Math.max(0, Math.min(100, (gameState.hp / derived.maxHp) * 100))}%` }}
-                        />
-                      </div>
-                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                        {gameState.hp < 35 ? "STATUS: CRITICAL EXHAUSTION" : "CORES: OPTIMAL PARAMETER"}
-                      </span>
-                    </div>
-
-                    {/* MP GAUGE RACK */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
-                        <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase">
-                          <Zap size={11} className="text-cyan-400" /> Ether Stream
-                        </span>
-                        <span className="font-bold text-[#f5ebd5]">{gameState.mana} / {derived.maxMana}</span>
-                      </div>
-                      
-                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
-                        <div
-                          className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.7)]"
-                          style={{ width: `${Math.max(0, Math.min(100, (gameState.mana / derived.maxMana) * 100))}%` }}
-                        />
-                      </div>
-                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                        COGNITIVE CHIP CALIBRATED
-                      </span>
-                    </div>
-
-                    {/* STAMINA/FATIGUE GAUGE RACK */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1">
-                        <span className="font-bold text-amber-500 flex items-center gap-1 uppercase">
-                          <Activity size={11} className="text-amber-500 animate-pulse" /> Stamina Core
-                        </span>
-                        <span className="font-bold text-[#f5ebd5]">{gameState.stamina ?? 100} / 100</span>
-                      </div>
-                      
-                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0.5 border border-white/5">
-                        <div
-                          className="bg-amber-500 h-full rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(245,158,11,0.7)]"
-                          style={{ width: `${Math.max(0, Math.min(100, (gameState.stamina ?? 100)))}%` }}
-                        />
-                      </div>
-                      <span className="text-[8px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                        {gameState.stamina === 0 ? "⚠️ EXHAUSTED: REST" : "ACTUATORS: OPERATIONAL"}
-                      </span>
-                    </div>
-
-                    {/* Credits & level widget details */}
-                    <div className="bg-slate-950/60 border border-white/10 p-2.5 rounded-lg flex justify-between items-center">
-                      <div className="text-left">
-                        <span className="text-[8px] font-mono text-slate-500 block uppercase font-bold tracking-wider">BALANCE</span>
-                        <p className="text-sm font-mono font-black text-amber-400 mt-0.5 leading-none">
-                          {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
-                        </p>
-                      </div>
-                      <div className="text-right font-mono">
-                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">SKILLS NODE</span>
-                        <div className="flex items-center justify-end gap-1.5 mt-0.5 text-xs font-bold leading-none">
-                          <span className="text-[#efe8d4]">LVL {gameState.level ?? 1}</span>
-                          <span className="text-slate-500 text-[10px]">({gameState.experience ?? 0}/100)</span>
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                )}
+                <>
+                <div className={`${gameState.combatState?.isActive ? "lg:col-span-12" : "lg:col-span-9"} flex flex-col gap-4`}>
 
                 {/* THE HIGHEST CRAFTED CENTRAL SCREEN MAP OR POI BLUEPRINT SCENE */}
                 {!gameState.combatState?.isActive && (
-                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl text-slate-100 flex flex-col gap-4 box-glow-cyan">
+                  <div className="glass-panel rounded-xl p-3 md:p-3.5 shadow-2xl text-slate-100 flex flex-col gap-3 box-glow-cyan">
                   
                   {/* Header Selector Switch for holographic routing */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
                     <div className="flex items-center gap-2">
-                      <Compass size={16} className="text-cyan-400" />
-                      <span className="font-display font-extrabold text-xs uppercase tracking-wider text-slate-100">
+                      <Compass size={14} className="text-cyan-400" />
+                      <span className="font-display font-extrabold text-[11px] uppercase tracking-wider text-slate-100">
                         {activePOIView ? `DETAILED LOCAL SCANNER: ${gameState.poi}` : "HOLOGRAPHIC TRANSIT REGION INTERCEPT"}
                       </span>
                     </div>
 
-                    {/* Regional Switch Panel on top of Holographic view */}
+                    {/* Regional Switch Panel on top of Holographic view (Humble human readable display of active sector status) */}
                     {!activePOIView && (
-                      <div className="flex flex-wrap gap-1 font-mono text-3xs">
-                        {REGIONS.map(r => {
-                          const isPrologueRegion = ["conduit09", "shatter_ridge_core", "data_vault"].includes(r.id);
-                          const currentIsPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
-                          const isDisabled = currentIsPrologue && !isPrologueRegion;
-                          return (
-                            <button
-                              key={r.id}
-                              onClick={() => {
-                                if (isDisabled) {
-                                  triggerToast("SYSTEM LOCKED: FINISH HEIST OBJECTIVE FIRST");
-                                  return;
-                                }
-                                handleSwitchRegion(r.id);
-                              }}
-                              className={`px-2.5 py-1 rounded border transition-all cursor-pointer ${
-                                activeRegionId === r.id
-                                  ? "bg-cyan-500/20 text-cyan-400 border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]"
-                                  : isDisabled
-                                    ? "bg-slate-950/20 text-slate-700 border-dashed border-white/5 cursor-not-allowed"
-                                    : "bg-slate-900/50 text-slate-400 border-white/5 hover:bg-slate-900/80 hover:text-white"
-                              }`}
-                            >
-                              {isDisabled ? `🔒 ${r.name.split(" ")[0]}` : r.name.split(" ")[0]}
-                            </button>
-                          );
-                        })}
+                      <div className="font-mono text-[9.5px] uppercase tracking-wider text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded border border-white/5 flex items-center gap-1.5 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        ACTIVE SECTOR: <span className="text-cyan-400 font-extrabold">{REGIONS.find(r => r.id === activeRegionId)?.name.toUpperCase() || "UNKNOWN"}</span>
                       </div>
                     )}
                   </div>
@@ -5505,7 +7695,7 @@ export default function App() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="relative bg-slate-950 border border-white/10 rounded-xl h-[280px] md:h-[320px] overflow-hidden shadow-inner flex flex-col items-center justify-center p-4 group"
+                        className="relative bg-slate-950 border border-white/10 rounded-xl h-[320px] md:h-[380px] overflow-hidden shadow-inner flex flex-col items-center justify-center p-3 group"
                         id="holographic-tactical-map"
                       >
                         {/* Selected Region Background Map Imagery with Cyberpunk tint */}
@@ -5514,42 +7704,124 @@ export default function App() {
                             src={REGIONS.find(r => r.id === activeRegionId)?.bgImage || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=1200"}
                             alt="Cyberpunk Sector Grid"
                             referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover opacity-20 filter saturate-150 contrast-125 select-none"
+                            className="w-full h-full object-cover opacity-65 filter saturate-150 contrast-125 select-none"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-transparent to-slate-950" />
+                          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/40 via-transparent to-slate-950/80" />
                           
                           {/* Radial glowing core map layout decoration */}
                           <div className="absolute inset-x-0 top-0 h-full opacity-10 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
-                        </div>
-
-                        {/* Scan status tag overlay */}
-                        <div className="absolute top-3 left-3 bg-slate-900/90 border border-white/10 px-2.5 py-1 rounded text-3xs font-mono text-slate-400 shadow flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                          <span>SECTOR SCAN: {REGIONS.find(r => r.id === activeRegionId)?.name.toUpperCase()} ACCESSIBLE</span>
                         </div>
 
                         {/* Interactive District Pins Map Grid */}
                         <div className="absolute inset-x-0 h-full w-full max-w-2xl mx-auto z-10">
                           {MAP_POIS.filter(poi => poi.district === activeRegionId).map((p) => {
                             const isCurrentlyHere = gameState.poi === p.name;
+                            
+                            // Determine type details for better icons and indicators
+                            const isClinic = p.id === "marv_clinic" || p.name.toLowerCase().includes("clinic");
+                            const isSafehouse = p.type === "safehouse" || p.id === "hideout" || p.id === "neon_shrine";
+                            const isShop = p.type === "shop" && !isClinic;
+
+                            let nodeIcon = null;
+                            let nodeColorClasses = "";
+                            let nodeBlinkerColor = "bg-slate-400";
+
+                            if (isCurrentlyHere) {
+                              nodeColorClasses = "bg-cyan-500 border-cyan-200 text-cyan-950 shadow-[0_0_15px_rgba(34,211,238,0.95)]";
+                              nodeBlinkerColor = "bg-cyan-400";
+                            } else if (isClinic) {
+                              nodeColorClasses = "bg-emerald-600 border-emerald-950 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.7)] group-hover/pin:bg-emerald-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-emerald-500";
+                            } else if (isSafehouse) {
+                              nodeColorClasses = "bg-cyan-600 border-cyan-950 text-cyan-100 shadow-[0_0_10px_rgba(6,182,212,0.7)] group-hover/pin:bg-cyan-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-cyan-500";
+                            } else if (isShop) {
+                              nodeColorClasses = "bg-amber-500 border-amber-950 text-amber-950 shadow-[0_0_10px_rgba(245,158,11,0.7)] group-hover/pin:bg-amber-400 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-amber-500";
+                            } else if (p.type === "combat") {
+                              nodeColorClasses = "bg-rose-600 border-rose-950 text-rose-100 shadow-[0_0_10px_rgba(244,63,94,0.7)] group-hover/pin:bg-rose-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-rose-500";
+                            } else if (p.type === "social") {
+                              nodeColorClasses = "bg-indigo-600 border-indigo-950 text-indigo-100 shadow-[0_0_10px_rgba(99,102,241,0.6)] group-hover/pin:bg-indigo-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-indigo-500";
+                            } else if (p.type === "hiring") {
+                              nodeColorClasses = "bg-teal-600 border-teal-950 text-teal-100 shadow-[0_0_10px_rgba(20,184,166,0.6)] group-hover/pin:bg-teal-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-teal-500";
+                            } else {
+                              // quest / default
+                              nodeColorClasses = "bg-slate-600 border-slate-950 text-slate-100 shadow-[0_0_8px_rgba(100,116,139,0.5)] group-hover/pin:bg-slate-500 group-hover/pin:scale-110";
+                              nodeBlinkerColor = "bg-slate-400";
+                            }
+
+                            // Select icon component dynamically
+                            if (isClinic) {
+                              nodeIcon = <Pill size={11} className="stroke-[2.5]" />;
+                            } else if (isSafehouse) {
+                              nodeIcon = <Shield size={11} className="stroke-[2.5]" />;
+                            } else if (isShop) {
+                              nodeIcon = <ShoppingCart size={11} className="stroke-[2.5]" />;
+                            } else if (p.type === "combat") {
+                              nodeIcon = <Sword size={11} className="stroke-[2.5]" />;
+                            } else if (p.type === "social") {
+                              nodeIcon = <Users size={11} className="stroke-[2.5]" />;
+                            } else if (p.type === "hiring") {
+                              nodeIcon = <Briefcase size={11} className="stroke-[2.5]" />;
+                            } else {
+                              nodeIcon = <MapPin size={11} className="stroke-[2.5]" />;
+                            }
+
                             return (
                               <button
                                 key={p.id}
                                 onClick={() => {
-                                  if (gameState.stamina <= 0) {
-                                    triggerToast("STAMINA EXHAUSTED: Transit locked. Rest at Aurus Safehouse to restore.");
-                                    setLogs(prev => [
-                                      ...prev,
-                                      {
-                                        id: crypto.randomUUID(),
-                                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                        text: `❌ NAVIGATION ERROR: Cannot walk to "${p.name}". Neural fatigue locks locomotive motor core. REST required.`,
-                                        type: "system",
-                                        district: gameState.district,
-                                        poi: gameState.poi
-                                      }
-                                    ]);
+                                  if (activeDialogue || gameState?.activeBranchingDialogue || squadDialogue) {
+                                    triggerToast("⚠️ ACTIVE DIALOGUE: Complete your conversation before traveling!");
                                     return;
+                                  }
+                                  if (gameState.stamina <= 0) {
+                                    const isPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+                                    if (!isPrologue) {
+                                      let collapseState = { ...gameState };
+                                      collapseState.stamina = collapseState.maxStamina || 100;
+                                      collapseState.hp = Math.max(collapseState.hp, 25);
+                                      collapseState.district = "aurus";
+                                      collapseState.poi = "Main Headquarters (The Hideout)";
+                                      setActiveRegionId("aurus");
+                                      setActivePOIView("hideout");
+                                      
+                                      setGameState(collapseState);
+                                      setLogs(prev => [
+                                        ...prev,
+                                        {
+                                          id: crypto.randomUUID(),
+                                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                          text: `🚨 NEURAL BLACKOUT ON NAVIGATION: You attempted to navigate to "${p.name}" with 0/100 Stamina. Your actuators failed, and you collapsed. Your emergency backup beacon auto-teleported you back to the Aurus Safehouse bunk, restoring your systems to 100%.`,
+                                          type: "system",
+                                          district: "aurus",
+                                          poi: "Main Headquarters (The Hideout)"
+                                        }
+                                      ]);
+                                      triggerToast("EXHAUSTED: Returned to Safehouse");
+                                      return;
+                                    } else {
+                                      // Prologue second wind
+                                      let prologueState = { ...gameState };
+                                      prologueState.stamina = 50;
+                                      setGameState(prologueState);
+                                      setLogs(prev => [
+                                        ...prev,
+                                        {
+                                          id: crypto.randomUUID(),
+                                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                          text: `🔋 SECOND WIND: Companion Vice overrides your cyberdeck constraints, injecting an emergency backup recharge: +50 Stamina.`,
+                                          type: "system",
+                                          district: gameState.district,
+                                          poi: gameState.poi
+                                        }
+                                      ]);
+                                      triggerToast("Prologue Second Wind: +50 Stamina");
+                                      return;
+                                    }
                                   }
 
                                   // Update game POI
@@ -5587,37 +7859,74 @@ export default function App() {
                               >
                                 {/* Blinker Node */}
                                 <div className="relative flex items-center justify-center">
-                                  <span className={`animate-ping absolute inline-flex h-6 w-6 rounded-full opacity-45 duration-1000 ${isCurrentlyHere ? "bg-cyan-400" : "bg-rose-500"}`} />
+                                  <span className={`animate-ping absolute inline-flex h-7 w-7 rounded-full opacity-45 duration-1000 ${nodeBlinkerColor}`} />
                                   <div
-                                    className={`relative inline-flex rounded-full h-3.5 w-3.5 border-2 shadow-lg transition-all transform group-hover/pin:scale-135 ${
-                                      isCurrentlyHere
-                                        ? "bg-cyan-400 border-white shadow-[0_0_12px_rgba(34,211,238,0.8)]"
-                                        : p.type === "combat"
-                                          ? "bg-rose-500 border-rose-950 shadow-[0_0_12px_rgba(244,63,94,0.6)]"
-                                          : p.type === "shop"
-                                            ? "bg-amber-400 border-amber-950"
-                                            : "bg-slate-300 border-slate-900"
-                                    }`}
-                                  />
+                                    className={`relative inline-flex items-center justify-center rounded-full h-6.5 w-6.5 border-2 shadow-lg transition-all transform group-hover/pin:scale-125 ${nodeColorClasses}`}
+                                  >
+                                    {nodeIcon}
+                                  </div>
                                   
                                   {/* Holographic Tooltip above pin on hover */}
-                                  <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-white/20 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/pin:opacity-100 transition-all pointer-events-none scale-90 group-hover/pin:scale-100 z-50 text-left font-mono">
+                                  <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-white/20 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/pin:opacity-100 transition-all pointer-events-none scale-90 group-hover/pin:scale-100 z-50 text-left font-mono">
                                     <p className="text-2xs font-extrabold text-white flex items-center gap-1">
                                       <span className={`w-1 h-1 rounded-full ${isCurrentlyHere ? "bg-cyan-400" : "bg-slate-400"}`} />
                                       {p.name.toUpperCase()}
                                     </p>
-                                    <p className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-wider">{p.type} node</p>
+                                    <p className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-wider">
+                                      {isClinic ? "clinic" : isSafehouse ? "safehouse" : isShop ? "shop" : p.type} node
+                                    </p>
                                     {isCurrentlyHere && <p className="text-[8.5px] text-cyan-400 mt-0.5">✓ CURRENT COORDINATE</p>}
                                   </div>
                                 </div>
                               </button>
                             );
                           })}
-                        </div>
 
-                        {/* Fallback notification */}
-                        <div className="absolute bottom-3 text-center text-4xs font-mono text-slate-500 uppercase tracking-widest pointer-events-none select-none z-10">
-                          HOLOGRAPHIC SCAN RATIO 1.15.SCALE SECURE
+                          {/* Transit / Edge travel connections */}
+                          {REGION_CONNECTIONS[activeRegionId]?.map((conn) => {
+                            const targetReg = REGIONS.find(r => r.id === conn.targetRegionId);
+                            if (!targetReg) return null;
+                            
+                            const currentIsPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+                            const targetIsPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(conn.targetRegionId);
+                            
+                            // If we are in the prologue, do not show non-prologue targets.
+                            // If we are in Chapter 1, do not show prologue targets (Conduit, Shatter-Ridge, Data).
+                            if (currentIsPrologue !== targetIsPrologue) return null;
+
+                            return (
+                              <button
+                                key={conn.targetRegionId}
+                                onClick={() => {
+                                  if (activeDialogue || gameState?.activeBranchingDialogue || squadDialogue) {
+                                    triggerToast("⚠️ ACTIVE DIALOGUE: Complete your conversation before traveling!");
+                                    return;
+                                  }
+                                  handleSwitchRegion(conn.targetRegionId);
+                                }}
+                                className="absolute transition-all transform -translate-x-1/2 -translate-y-1/2 cursor-pointer p-1 rounded-xl group/transit z-30"
+                                style={{ left: `${conn.x}%`, top: `${conn.y}%` }}
+                              >
+                                <div className="relative flex items-center justify-center">
+                                  {/* Pulsing ring */}
+                                  <span className="animate-ping absolute inline-flex h-8 w-8 rounded-full opacity-50 bg-amber-400 duration-1000" />
+                                  <div className="relative inline-flex items-center justify-center rounded-full h-5.5 w-5.5 border-2 border-amber-400 bg-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.6)] group-hover/transit:scale-125 transition-all text-amber-400">
+                                    <Compass size={11} className="animate-spin-slow text-amber-400" />
+                                  </div>
+                                  
+                                  {/* Label displayed on hover */}
+                                  <div className="absolute bottom-7 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-amber-500/30 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/transit:opacity-100 transition-all pointer-events-none scale-90 group-hover/transit:scale-100 z-50 text-left font-mono">
+                                    <p className="text-2xs font-extrabold text-amber-400 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                      {conn.label}
+                                    </p>
+                                    <p className="text-[8.5px] text-slate-400 mt-0.5 leading-tight">CLICK TO TRAVEL BETWEEN DISTRICTS</p>
+                                    <p className="text-[8px] text-amber-400/80 mt-0.5 font-sans uppercase tracking-wider">⚡ REQUIRES STAMINA</p>
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
                       </motion.div>
                     ) : (
@@ -5628,10 +7937,10 @@ export default function App() {
                         initial={{ opacity: 0, scale: 0.99 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.99 }}
-                        className="grid grid-cols-1 lg:grid-cols-12 gap-7 bg-slate-950/95 border border-cyan-500/30 rounded-2xl p-6 md:p-8 min-h-[420px] lg:min-h-[460px] shadow-[0_0_35px_rgba(6,182,212,0.05),inset_0_0_40px_rgba(34,211,238,0.05)]"
+                        className="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-950/95 border border-cyan-500/30 rounded-xl p-4 md:p-5 shadow-[0_0_25px_rgba(6,182,212,0.05),inset_0_0_20px_rgba(34,211,238,0.02)]"
                       >
                         {/* Left half: POI scenery illustration frame */}
-                        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[220px] lg:min-h-[360px]">
+                        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[160px] lg:min-h-[250px]">
                           {/* Main Close-up Illustrated Photo of local environment */}
                           <img
                             src={MAP_POIS.find(p => p.id === activePOIView)?.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400"}
@@ -5646,27 +7955,27 @@ export default function App() {
                           <div className="absolute inset-x-0 top-0 h-full opacity-10 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:10px_10px] z-10" />
 
                           {/* Top Tag info inside image */}
-                          <div className="p-3.5 z-10 flex justify-between items-center bg-slate-950/80 backdrop-blur-sm border-b border-white/5 uppercase font-mono text-[9px] text-slate-400">
+                          <div className="p-2 z-10 flex justify-between items-center bg-slate-950/80 backdrop-blur-sm border-b border-white/5 uppercase font-mono text-[9px] text-slate-400">
                             <span>GRID LOCALITY FILE</span>
                             <span className="text-cyan-400 font-bold">STATUS: VISITED</span>
                           </div>
 
                           {/* Lower scene metadata over image overlay */}
-                          <div className="p-4.5 z-10 font-mono">
+                          <div className="p-3 z-10 font-mono">
                             <span className="text-cyan-400 text-3xs tracking-wider uppercase font-extrabold flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                              NODE AREA SCAN COMPLETE
+                              NODE SCAN COMPLETE
                             </span>
-                            <p className="text-sm font-black font-display text-white mt-1 uppercase tracking-wide">
+                            <p className="text-sm font-black font-display text-white mt-0.5 uppercase tracking-wide leading-none">
                               {MAP_POIS.find(p => p.id === activePOIView)?.name.replace("Main Headquarters ", "")}
                             </p>
                           </div>
                         </div>
 
                         {/* Right half: Detailed text and local operational interaction terminal */}
-                        <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
-                          <div className="space-y-3">
-                            <h4 className="text-3xs font-mono uppercase tracking-[0.15em] text-cyan-400 font-black">
+                        <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
+                          <div className="space-y-2">
+                            <h4 className="text-3xs font-mono uppercase tracking-[0.15em] text-cyan-400 font-black leading-none">
                               LOCAL DESCRIPTOR CONSOLE
                             </h4>
                             <p className="text-slate-200 text-xs sm:text-sm font-sans leading-relaxed text-left font-medium">
@@ -5676,88 +7985,267 @@ export default function App() {
 
                           {/* Dynamic NPC Dialog or Scene Buttons depending on dialogue engagement */}
                           <div className="border-t border-white/5 pt-4">
-                            {squadDialogue ? (
+                            <AnimatePresence mode="wait">
+                              {squadDialogue ? (
+                                (() => {
+                                  const node = SQUAD_DIALOGUES[squadDialogue.sceneId]?.[squadDialogue.nodeId];
+                                  if (!node) return null;
+                                  return (
+                                    <motion.div
+                                      key={`squad-${squadDialogue.sceneId}-${squadDialogue.nodeId}`}
+                                      variants={slideInVariants}
+                                      initial="initial"
+                                      animate="animate"
+                                      exit="exit"
+                                      transition={{ duration: 0.25, ease: "easeOut" }}
+                                      className="bg-slate-950/95 border border-cyan-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow text-left"
+                                    >
+                                      <div className="flex justify-between items-center border-b border-cyan-500/20 pb-2">
+                                        <span className="text-cyan-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                          <Compass size={14} className="text-cyan-500" /> SQUAD TRANSMISSION CONDUIT
+                                        </span>
+                                        <span className="text-3xs text-cyan-500 font-bold bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/20 uppercase">
+                                          {squadDialogue.sceneId} interaction
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
+                                        <div className="relative flex-shrink-0">
+                                          <img
+                                            src={node.portrait}
+                                            alt={node.speakerName}
+                                            referrerPolicy="no-referrer"
+                                            className="w-16 h-16 object-cover rounded-xl border-2 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                                          />
+                                          <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950" />
+                                        </div>
+                                        <div className="flex-1 space-y-2">
+                                          <div>
+                                            <h4 className="text-sm font-extrabold text-cyan-300">{node.speakerName}</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{node.speakerRole}</p>
+                                          </div>
+                                          <p className="text-slate-200 text-xs sm:text-sm leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-white/5">
+                                            "{node.text}"
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 gap-2 mt-2">
+                                        {node.choices.map((choice, cIdx) => (
+                                          <button
+                                            key={cIdx}
+                                            onClick={() => {
+                                              if (choice.effect && gameState) {
+                                                let updated = choice.effect({ ...gameState });
+                                                setGameState(updated);
+                                              }
+                                              if (choice.nodeId !== undefined) {
+                                                if (choice.nodeId === null) {
+                                                  setSquadDialogue(null);
+                                                  if (gameState) {
+                                                    let next = { ...gameState };
+                                                    if (!next.completedPOIActions) next.completedPOIActions = [];
+                                                    if (squadDialogue.sceneId === "banter") {
+                                                      next.completedPOIActions.push("ventilation_shaft:talk_to_vice_tracker");
+                                                      next.completedPOIActions.push("blast_door:banter");
+                                                    } else if (squadDialogue.sceneId === "peptalk") {
+                                                      next.completedPOIActions.push("shatter_ridge_security_post:peptalk");
+                                                    } else if (squadDialogue.sceneId === "tactics") {
+                                                      next.completedPOIActions.push("shatter_ridge_reactor_well:tactics");
+                                                    } else if (squadDialogue.sceneId === "transit_conduit_to_ridge") {
+                                                      next.district = "shatter_ridge_core";
+                                                      next.poi = "Shatter-Ridge Security Checkpoint";
+                                                      setActiveRegionId("shatter_ridge_core");
+                                                      setActivePOIView("shatter_ridge_security_post");
+                                                      next.activeQuests = ["Prologue: Shatter-Ridge - Infiltrate deeper to disable the defensive cyber-barriers."];
+                                                      setActivePopup({
+                                                        title: "SHATTER-RIDGE CORE ACCESS",
+                                                        subtitle: "DISTRICT TRANSLATION",
+                                                        type: "transit",
+                                                        text: "You climb through the heavy gate and seal it behind you. You emerge inside the heavily guarded checkpoint of the Shatter-Ridge Core district. Scan the local defensive barrier console."
+                                                      });
+                                                    } else if (squadDialogue.sceneId === "transit_ridge_to_vault") {
+                                                      next.district = "data_vault";
+                                                      next.poi = "Sanctuary Hacking Terminal";
+                                                      setActiveRegionId("data_vault");
+                                                      setActivePOIView("terminal_hacking_puzzle");
+                                                      next.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
+                                                      setActivePopup({
+                                                        title: "DATA VAULT ENTRANCE",
+                                                        subtitle: "CORE SANCTUARY SECURED",
+                                                        type: "transit",
+                                                        text: "You ride the heavy industrial lift down into the deep sanctuary core. Secure your terminal wire-mesh gear to begin the decryption heist."
+                                                      });
+                                                    }
+                                                    setGameState(next);
+                                                  }
+                                                } else {
+                                                  setSquadDialogue({
+                                                    sceneId: squadDialogue.sceneId,
+                                                    nodeId: choice.nodeId
+                                                  });
+                                                }
+                                              }
+                                            }}
+                                            className="text-left w-full px-4 py-3 rounded-lg border border-cyan-500/20 bg-cyan-950/20 hover:bg-cyan-950/40 hover:border-cyan-400 text-cyan-100 font-mono text-xs transition-all flex items-center justify-between cursor-pointer group"
+                                          >
+                                            <span>&gt; {choice.text}</span>
+                                            <span className="text-[10px] text-cyan-500/60 group-hover:text-cyan-300 font-bold">SELECT</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </motion.div>
+                                  );
+                                })()
+                              ) : gameState.activeBranchingDialogue ? (
                               (() => {
-                                const node = SQUAD_DIALOGUES[squadDialogue.sceneId]?.[squadDialogue.nodeId];
+                                const activeBranch = gameState.activeBranchingDialogue;
+                                const npcId = activeBranch.npcId;
+                                const nodeId = activeBranch.nodeId;
+                                const node = BRANCHING_DIALOGUES[npcId]?.[nodeId];
                                 if (!node) return null;
+
+                                const textContent = typeof node.text === "function" ? node.text(gameState) : node.text;
+
                                 return (
-                                  <div className="bg-slate-950/95 border border-cyan-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow text-left">
+                                  <motion.div
+                                    key={`branch-${activeBranch.npcId}-${activeBranch.nodeId}`}
+                                    variants={slideInVariants}
+                                    initial="initial"
+                                    animate="animate"
+                                    exit="exit"
+                                    transition={{ duration: 0.25, ease: "easeOut" }}
+                                    className="bg-slate-950/95 border border-cyan-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow text-left"
+                                  >
                                     <div className="flex justify-between items-center border-b border-cyan-500/20 pb-2">
                                       <span className="text-cyan-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                        <Compass size={14} className="text-cyan-500" /> SQUAD TRANSMISSION CONDUIT
+                                        <Compass size={14} className="text-cyan-500" /> SECURED NEURAL LINK // {npcId.toUpperCase()}
                                       </span>
                                       <span className="text-3xs text-cyan-500 font-bold bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/20 uppercase">
-                                        {squadDialogue.sceneId} interaction
+                                        {nodeId} sequence
                                       </span>
                                     </div>
                                     
                                     <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
                                       <div className="relative flex-shrink-0">
                                         <img
-                                          src={node.portrait}
-                                          alt={node.speakerName}
+                                          src={node.image}
+                                          alt={node.title}
                                           referrerPolicy="no-referrer"
                                           className="w-16 h-16 object-cover rounded-xl border-2 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]"
                                         />
-                                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950" />
+                                        <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950 animate-pulse" />
                                       </div>
                                       <div className="flex-1 space-y-2">
                                         <div>
-                                          <h4 className="text-sm font-extrabold text-cyan-300">{node.speakerName}</h4>
-                                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{node.speakerRole}</p>
+                                          <h4 className="text-sm font-extrabold text-cyan-300">{node.title}</h4>
+                                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{node.role}</p>
                                         </div>
-                                        <p className="text-slate-200 text-xs sm:text-sm leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-white/5">
-                                          "{node.text}"
+                                        <p className="text-slate-200 text-xs sm:text-sm leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-white/5 whitespace-pre-wrap">
+                                          {textContent}
                                         </p>
                                       </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 gap-2 mt-2">
-                                      {node.choices.map((choice, cIdx) => (
-                                        <button
-                                          key={cIdx}
-                                          onClick={() => {
-                                            if (choice.effect && gameState) {
-                                              let updated = choice.effect({ ...gameState });
-                                              setGameState(updated);
-                                            }
-                                            if (choice.nodeId !== undefined) {
-                                              if (choice.nodeId === null) {
-                                                setSquadDialogue(null);
-                                                if (gameState) {
-                                                  let next = { ...gameState };
-                                                  if (!next.completedPOIActions) next.completedPOIActions = [];
-                                                  if (squadDialogue.sceneId === "banter") {
-                                                    next.completedPOIActions.push("ventilation_shaft:talk_to_vice_tracker");
-                                                    next.completedPOIActions.push("blast_door:banter");
-                                                  } else if (squadDialogue.sceneId === "peptalk") {
-                                                    next.completedPOIActions.push("shatter_ridge_security_post:peptalk");
-                                                  } else if (squadDialogue.sceneId === "tactics") {
-                                                    next.completedPOIActions.push("shatter_ridge_reactor_well:tactics");
-                                                  }
-                                                  setGameState(next);
-                                                }
-                                              } else {
-                                                setSquadDialogue({
-                                                  sceneId: squadDialogue.sceneId,
-                                                  nodeId: choice.nodeId
-                                                });
-                                              }
-                                            }
-                                          }}
-                                          className="text-left w-full px-4 py-3 rounded-lg border border-cyan-500/20 bg-cyan-950/20 hover:bg-cyan-950/40 hover:border-cyan-400 text-cyan-100 font-mono text-xs transition-all flex items-center justify-between cursor-pointer group"
-                                        >
-                                          <span>&gt; {choice.text}</span>
-                                          <span className="text-[10px] text-cyan-500/60 group-hover:text-cyan-300 font-bold">SELECT</span>
-                                        </button>
-                                      ))}
+                                    {/* Faction Ledger Display Inside Conversation */}
+                                    <div className="grid grid-cols-3 gap-2.5 bg-slate-900/40 p-3 rounded-lg border border-white/5 text-center">
+                                      <div>
+                                        <p className="text-[8px] text-slate-500 font-black tracking-widest uppercase">STREET OUTLAWS</p>
+                                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                          <span className="text-xs font-bold text-cyan-400">{(gameState.reputations?.streetOutlaws ?? 50)}%</span>
+                                        </div>
+                                      </div>
+                                      <div className="border-x border-white/5">
+                                        <p className="text-[8px] text-slate-500 font-black tracking-widest uppercase">TITAN LOGISTICS</p>
+                                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                          <span className="text-xs font-bold text-amber-400">{(gameState.reputations?.titanLogistics ?? 50)}%</span>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <p className="text-[8px] text-slate-500 font-black tracking-widest uppercase">ARES CORP</p>
+                                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                          <span className="text-xs font-bold text-rose-400">{(gameState.reputations?.aresCorporate ?? 50)}%</span>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
+
+                                    <div className="grid grid-cols-1 gap-2 mt-2">
+                                      {node.choices.map((choice, cIdx) => {
+                                        const isPrereqMet = choice.prereq ? choice.prereq(gameState) : true;
+                                        return (
+                                          <button
+                                            key={cIdx}
+                                            disabled={!isPrereqMet}
+                                            onClick={() => {
+                                              if (!gameState) return;
+                                              let updatedState = { ...gameState };
+                                              
+                                              // Apply dialogue choice effect
+                                              if (choice.onSelect) {
+                                                updatedState = choice.onSelect(updatedState);
+                                              }
+                                              
+                                              if (choice.nodeId === "exit") {
+                                                updatedState.activeBranchingDialogue = null;
+                                                // Create a log entry for dialogue exit
+                                                setLogs(prev => [
+                                                  ...prev,
+                                                  {
+                                                    id: crypto.randomUUID(),
+                                                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                                    text: `💬 DIALOGUE TERMINATED: Disconnected neural link with ${node.title}.`,
+                                                    type: "system",
+                                                    district: updatedState.district,
+                                                    poi: updatedState.poi
+                                                  }
+                                                ]);
+                                              } else {
+                                                updatedState.activeBranchingDialogue = {
+                                                  npcId: npcId,
+                                                  nodeId: choice.nodeId
+                                                };
+                                              }
+                                              
+                                              setGameState(updatedState);
+                                            }}
+                                            className={`text-left w-full px-4 py-3 rounded-lg border text-xs transition-all flex items-center justify-between font-mono group ${
+                                              isPrereqMet
+                                                ? "border-cyan-500/20 bg-cyan-950/20 hover:bg-cyan-950/40 hover:border-cyan-400 text-cyan-100 cursor-pointer"
+                                                : "border-slate-800 bg-slate-950/50 text-slate-500 cursor-not-allowed opacity-60"
+                                            }`}
+                                          >
+                                            <div className="flex flex-col text-left">
+                                              <span>&gt; {choice.text}</span>
+                                              {choice.prereqText && (
+                                                <span className={`text-[10px] mt-0.5 font-bold ${isPrereqMet ? "text-cyan-400/80" : "text-rose-400/80"}`}>
+                                                  {choice.prereqText} {isPrereqMet ? "✓" : "✗"}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <span className={`text-[10px] font-bold ${isPrereqMet ? "text-cyan-500/60 group-hover:text-cyan-300" : "text-slate-600"}`}>
+                                              {isPrereqMet ? "SELECT" : "LOCKED"}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </motion.div>
                                 );
                               })()
                             ) : activeDialogue ? (
                               activeDialogue === "relic_awakening" ? (
-                                <div className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink">
+                                <motion.div
+                                  key="relic_awakening"
+                                  variants={slideInVariants}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                  transition={{ duration: 0.25, ease: "easeOut" }}
+                                  className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink"
+                                >
                                   <div className="flex justify-between items-center border-b border-purple-500/20 pb-2">
                                     <span className="text-purple-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
                                       <Zap size={14} className="text-purple-500" /> NEURAL SYSTEM SHOCKWAVE
@@ -5862,9 +8350,17 @@ export default function App() {
                                       ⚡ [Brace for Impact] Fight Ares Enforcers
                                     </button>
                                   </div>
-                                </div>
+                                </motion.div>
                               ) : activeDialogue === "post_combat_tracker" ? (
-                                <div className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl">
+                                <motion.div
+                                  key="post_combat_tracker"
+                                  variants={slideInVariants}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                  transition={{ duration: 0.25, ease: "easeOut" }}
+                                  className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl"
+                                >
                                   <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
                                     <span className="text-red-500 font-extrabold text-[11px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
                                       <AlertTriangle size={14} /> Interrogation & Discovery Scene
@@ -5929,7 +8425,7 @@ export default function App() {
                                         next.completedQuests.push("Traitor Discovered (Ares Security Executed)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
-                                        setActivePOIView("hideout");
+                                        setActivePOIView(null);
                                         setActiveDialogue(null);
                                         
                                         setLogs(prev => [
@@ -5963,7 +8459,7 @@ export default function App() {
                                         next.completedQuests.push("Mind-Shattered Security (Officer Subjugated)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
-                                        setActivePOIView("hideout");
+                                        setActivePOIView(null);
                                         setActiveDialogue(null);
                                         
                                         setLogs(prev => [
@@ -5994,7 +8490,7 @@ export default function App() {
                                         next.completedQuests.push("Officer Pacified (Sedative Injected)");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
-                                        setActivePOIView("hideout");
+                                        setActivePOIView(null);
                                         setActiveDialogue(null);
                                         
                                         setLogs(prev => [
@@ -6015,9 +8511,17 @@ export default function App() {
                                       [Sedate] Inject Sedative & Flee
                                     </button>
                                   </div>
-                                </div>
+                                </motion.div>
                               ) : (
-                                <div className="bg-slate-900/60 border border-cyan-400/20 rounded-lg p-3 relative flex items-start gap-3">
+                                <motion.div
+                                  key={`active-dialogue-${activeDialogue}`}
+                                  variants={slideInVariants}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                  transition={{ duration: 0.25, ease: "easeOut" }}
+                                  className="bg-slate-900/60 border border-cyan-400/20 rounded-lg p-3 relative flex items-start gap-3"
+                                >
                                   {/* NPC small avatar */}
                                   <img
                                     src={
@@ -6033,61 +8537,70 @@ export default function App() {
                                                 ? "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&q=80&w=200"
                                                 : activeDialogue === "inspect_pens"
                                                   ? "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&q=80&w=200"
-                                                  : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
+                                                  : activeDialogue?.startsWith("mira_voss")
+                                                    ? "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?auto=format&fit=crop&q=80&w=200"
+                                                    : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200"
                                     }
                                     alt="NPC portrait"
                                     referrerPolicy="no-referrer"
                                     className="w-12 h-12 object-cover rounded-md border border-white/15 shadow flex-shrink-0"
                                   />
 
-                                <div className="space-y-1 font-mono text-[11px] flex-1 text-left">
-                                  <p className="text-cyan-400 font-bold uppercase leading-none">
-                                    {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : activeDialogue === "lost_girl" ? "Mia" : activeDialogue === "auction_lobby" ? "Syndicate Auctioneer" : activeDialogue === "inspect_pens" ? "Holding Cell Warden" : "Agent Vesper"}
-                                  </p>
-                                  <p className="text-[9px] text-slate-500 uppercase font-semibold">
-                                    {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : activeDialogue === "lost_girl" ? "Lost Corporate Subject" : activeDialogue === "auction_lobby" ? "Outcast Contract Trader" : activeDialogue === "inspect_pens" ? "Security Detainee Monitor" : "Nexus Recruiter"}
-                                  </p>
-                                  <span className="h-px bg-white/5 block my-1" />
-                                  <p className="text-slate-300 font-sans text-2xs leading-relaxed italic">
-                                    {activeDialogue === "jax"
-                                      ? gameState.inventory.includes("Technical Signal Core")
-                                        ? "Amazing effort! You delivered the Technical Signal Core. I'm injecting 150¤ into your grid ledger and clearing active corporate tracking nodes."
-                                        : gameState.activeQuests.some(q => q.includes("The Hunt for Vice"))
-                                          ? "The clock is ticking. You must traverse to the Titan Logistics Freight Hub in Docks Region, interface with their cargo manifest logs, and isolate Vice's coordinates!"
-                                          : gameState.activeQuests.some(q => q.includes("Rescue Vice"))
-                                            ? "We found Vice! He is cryogenic-frozen in Detention Bay B underneath the Ares Biotech Corporate Plaza in Downtown. Bring him home, recruit!"
-                                            : gameState.completedQuests.some(q => q.includes("Vice Rescued") || q.includes("Chapter 1 Completed"))
-                                              ? "Outstanding work breaking Vice out of that corporate cryogenic block! We are building a genuine resistance cell here. Prepare your safehouse upgrades and Dojo training - we strike the corporate sectors in Chapter 2!"
-                                              : gameState.completedQuests.some(q => q.includes("Outcast"))
-                                                ? "Hold on, rookie! My covert antennas just sniffed an encrypted corporate report. Your cell leader Vice didn't slip through the net clean. He was captured by Ares Tactical! They shipped him out of slums. Go to the Titan Logistics Freight Hub in Docks, hack their transport logs, and find out where they've put him!"
-                                                : "The tracking satellite signals are narrowing down. Traverse to Shatter Ridge Corridors in Downtown Region, seize that copper Technical Signal Core, and deliver it!"
-                                      : activeDialogue === "aria"
-                                        ? gameState.inventory.includes("Acid Beast Core")
-                                          ? "Outstanding operation. The sewer lines are functioning beautifully. Here is your salary, and I have authorized an 'Apex Mantis electro-blade' inside stash storage."
-                                          : gameState.completedQuests.some(q => q.includes("Corporate Hunt"))
-                                            ? "The corporate board records your diagnostic work with high honor, mercenary. Keep doing business with Apex."
-                                            : "A radioactive Mutant Sludge Behemoth is nesting in the Docks Sludge Conduits. Hunt it down, extract its chemical Acid Beast Core, and deliver it."
-                                        : activeDialogue === "morgana"
-                                          ? gameState.inventory.includes("Charged Ley-Matrix")
-                                            ? "The bio-frequencies are secure. I will inject high-magic Ether calibrations directly into your cognitive deck. Maximum mana capacity raised!"
-                                            : gameState.completedQuests.some(q => q.includes("Syndicate Catalyst"))
-                                              ? gameState.activeQuests.some(q => q.includes("Chem-Weaver's Request"))
-                                                ? `Bring me 3x Glowing Slime samples from the Docks Sludge Conduits. You currently have ${gameState.inventory.filter(i => i === "Glowing Slime").length}/3 samples.`
-                                                : gameState.completedQuests.some(q => q.includes("Chem-Weaver's Request"))
-                                                  ? "The bio-sludge catalyst is perfect. The technomantic ley-matrix hums with clean celestial current. Bless you, child."
-                                                  : "Your neural system is harmonized with the techno-magic flow, initiate. Walk in shadow."
-                                              : "Take my uncharged server matrix, traverse to the Cyber-shrine Gardens in Satoshi Square Region, and Meditate with the tech core to charge the Ley-Matrix."
-                                          : activeDialogue === "lost_girl"
-                                            ? gameState.companions.some(c => c.name === "Mia")
-                                              ? "Mia looks up at you with happy, sparkling eyes: 'Thank you for giving me a home and saving my life, commander! I'll do my absolute best to support you.'"
-                                              : "P-please... don't report me to Ares Biotech security... I escaped when the mainframe crashed. My neural cortex is overloading and I have no credentials, no credits, and nowhere to go... can you help me?"
-                                            : activeDialogue === "auction_lobby"
-                                              ? "The syndicate auction floor is roaring! Today we are selling the premium servitude contracts of captured outcasts and cyber-laborers. Place your bids immediately or leave the trading ring!"
-                                              : activeDialogue === "inspect_pens"
-                                                ? "You walk down the wet, rusty steel corridors of the holding blocks. Outcasts of all shapes look through the glowing security bars with fear and hope. You can purchase their cell key to release them to your base, or ignore them."
-                                                : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
-                                      }
-                                  </p>
+                                  <div className="space-y-1 font-mono text-[11px] flex-1 text-left">
+                                    <p className="text-cyan-400 font-bold uppercase leading-none">
+                                      {activeDialogue === "jax" ? "Agent Jax" : activeDialogue === "aria" ? "Chancellor Aria" : activeDialogue === "morgana" ? "Priestess Morgana" : activeDialogue === "lost_girl" ? "Mia" : activeDialogue === "auction_lobby" ? "Syndicate Auctioneer" : activeDialogue === "inspect_pens" ? "Holding Cell Warden" : activeDialogue?.startsWith("mira_voss") ? "Mira Voss" : "Agent Vesper"}
+                                    </p>
+                                    <p className="text-[9px] text-slate-500 uppercase font-semibold">
+                                      {activeDialogue === "jax" ? "Outcast Coordinator" : activeDialogue === "aria" ? "Corporative Representative" : activeDialogue === "morgana" ? "Coven Technomancer" : activeDialogue === "lost_girl" ? "Lost Corporate Subject" : activeDialogue === "auction_lobby" ? "Outcast Contract Trader" : activeDialogue === "inspect_pens" ? "Security Detainee Monitor" : activeDialogue?.startsWith("mira_voss") ? "Arena Contract Gladiator" : "Nexus Recruiter"}
+                                    </p>
+                                    <span className="h-px bg-white/5 block my-1" />
+                                    <p className="text-slate-300 font-sans text-2xs leading-relaxed italic">
+                                      <TypewriterText text={
+                                        activeDialogue === "mira_voss_intro"
+                                          ? "You think you can just wander into my training pit and stare, rookie? I don't trade words with soft-bellied scavengers. If you want something, buy my contract from the pit boss, or challenge me to an Action-AP Duel right here. Prove you're not just another walking corpse."
+                                          : activeDialogue === "mira_voss_career"
+                                            ? "Career? That's a fancy word for a slow death. I was sold to the Aurus syndicate three years ago after my merc squad got wiped at Shatter Ridge. I've broken twenty cyber-gladiators on this dirt, but my contract is locked down hard. The boss keeps raising the price because of the betting crowds."
+                                            : activeDialogue === "mira_voss_offer"
+                                              ? "You want me to guard some dusty basement safehouse? *Laughs harshly* That's a good joke. Pity doesn't buy loyalty. If you want my knuckles, pay the boss his 200¤ credits, or slam me into the ground in a duel. Show me you have the strength to command, otherwise go back to your desk."
+                                              : activeDialogue === "jax"
+                                                ? gameState.inventory.includes("Technical Signal Core")
+                                                  ? "Amazing effort! You delivered the Technical Signal Core. I'm injecting 150¤ into your grid ledger and clearing active corporate tracking nodes."
+                                                  : gameState.activeQuests.some(q => q.includes("The Hunt for Vice"))
+                                                    ? "The clock is ticking. You must traverse to the Titan Logistics Freight Hub in Docks Region, interface with their cargo manifest logs, and isolate Vice's coordinates!"
+                                                    : gameState.activeQuests.some(q => q.includes("Rescue Vice"))
+                                                      ? "We found Vice! He is cryogenic-frozen in Detention Bay B underneath the Ares Biotech Corporate Plaza in Downtown. Bring him home, recruit!"
+                                                      : gameState.completedQuests.some(q => q.includes("Vice Rescued") || q.includes("Chapter 1 Completed"))
+                                                        ? "Outstanding work breaking Vice out of that corporate cryogenic block! We are building a genuine resistance cell here. Prepare your safehouse upgrades and Dojo training - we strike the corporate sectors in Chapter 2!"
+                                                        : gameState.completedQuests.some(q => q.includes("Outcast"))
+                                                          ? "Hold on, rookie! My covert antennas just sniffed an encrypted corporate report. Your cell leader Vice didn't slip through the net clean. He was captured by Ares Tactical! They shipped him out of slums. Go to the Titan Logistics Freight Hub in Docks, hack their transport logs, and find out where they've put him!"
+                                                          : "The tracking satellite signals are narrowing down. Traverse to Shatter Ridge Corridors in Downtown Region, seize that copper Technical Signal Core, and deliver it!"
+                                                : activeDialogue === "aria"
+                                                  ? gameState.inventory.includes("Acid Beast Core")
+                                                    ? "Outstanding operation. The sewer lines are functioning beautifully. Here is your salary, and I have authorized an 'Apex Mantis electro-blade' inside stash storage."
+                                                    : gameState.completedQuests.some(q => q.includes("Corporate Hunt"))
+                                                      ? "The corporate board records your diagnostic work with high honor, mercenary. Keep doing business with Apex."
+                                                      : "A radioactive Mutant Sludge Behemoth is nesting in the Docks Sludge Conduits. Hunt it down, extract its chemical Acid Beast Core, and deliver it."
+                                                  : activeDialogue === "morgana"
+                                                    ? gameState.inventory.includes("Charged Ley-Matrix")
+                                                      ? "The bio-frequencies are secure. I will inject high-magic Ether calibrations directly into your cognitive deck. Maximum mana capacity raised!"
+                                                      : gameState.completedQuests.some(q => q.includes("Syndicate Catalyst"))
+                                                        ? gameState.activeQuests.some(q => q.includes("Chem-Weaver's Request"))
+                                                          ? `Bring me 3x Glowing Slime samples from the Docks Sludge Conduits. You currently have ${gameState.inventory.filter(i => i === "Glowing Slime").length}/3 samples.`
+                                                          : gameState.completedQuests.some(q => q.includes("Chem-Weaver's Request"))
+                                                            ? "The bio-sludge catalyst is perfect. The technomantic ley-matrix hums with clean celestial current. Bless you, child."
+                                                            : "Your neural system is harmonized with the techno-magic flow, initiate. Walk in shadow."
+                                                        : "Take my uncharged server matrix, traverse to the Cyber-shrine Gardens in Satoshi Square Region, and Meditate with the tech core to charge the Ley-Matrix."
+                                                    : activeDialogue === "lost_girl"
+                                                      ? gameState.companions.some(c => c.name === "Mia")
+                                                        ? "Mia looks up at you with happy, sparkling eyes: 'Thank you for giving me a home and saving my life, commander! I'll do my absolute best to support you.'"
+                                                        : "P-please... don't report me to Ares Biotech security... I escaped when the mainframe crashed. My neural cortex is overloading and I have no credentials, no credits, and nowhere to go... can you help me?"
+                                                      : activeDialogue === "auction_lobby"
+                                                        ? "The syndicate auction floor is roaring! Today we are selling the premium servitude contracts of captured outcasts and cyber-laborers. Place your bids immediately or leave the trading ring!"
+                                                        : activeDialogue === "inspect_pens"
+                                                          ? "You walk down the wet, rusty steel corridors of the holding blocks. Outcasts of all shapes look through the glowing security bars with fear and hope. You can purchase their cell key to release them to your base, or ignore them."
+                                                          : "Welcome to Nexus Agency. Elite field support Scythe (Ninja), Vex (Mage), and Brick (Orc) are waiting for hire. Choose below."
+                                      } />
+                                    </p>
 
                                   {/* Branching Response Action Buttons inside Dialogue Overlay */}
                                   <div className="flex flex-wrap gap-1.5 pt-2.5">
@@ -6656,6 +9169,341 @@ export default function App() {
                                             Kira Rescued to Safehouse Base
                                           </span>
                                         )}
+
+                                        {/* LIRA VALE RECRUITMENT block */}
+                                        {!gameState.baseNPCs?.some(n => n.id === "lira") ? (
+                                          (() => {
+                                            const isBribed = gameState.completedPOIActions?.includes("auction_market:bribed");
+                                            const price = isBribed ? 110 : 150;
+                                            return (
+                                              <>
+                                                {gameState.credits >= price ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      next.credits -= price;
+                                                      const lira = {
+                                                        id: "lira",
+                                                        name: "Lira Vale",
+                                                        role: "Chief Tech Officer / Hacker Network Operator",
+                                                        avatar: "🔧",
+                                                        image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Lira is a brilliant former Ares Biotech engineer who was discarded and sold to the pens. In her grease-stained jumpsuits and glowing utility goggles, she works on upgrading your safehouse generators and grid-relays. She is highly analytical.",
+                                                        dialogue: "You pulled me out of those damp cells. I've mapped out the entire Ares sub-station layout. Let me get to work on our safehouse matrices - we can boost our defenses significantly.",
+                                                        reaction: null,
+                                                        happiness: 85,
+                                                        affection: "Loyal",
+                                                        affectionValue: 65,
+                                                        willpower: 75,
+                                                        corruption: 5,
+                                                        hygiene: "Normal",
+                                                        discipline: 80,
+                                                        hunger: "Satiated",
+                                                        respect: 75,
+                                                        withdrawRisk: "None",
+                                                        anger: 0,
+                                                        defiance: 10,
+                                                        fear: 10,
+                                                        inventory: ["Nano-Solder Kit", "Ares ID Card (Expired)"],
+                                                        currentJob: "Tech Upgrades Engineer"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), lira];
+                                                      next.experience += 90;
+                                                      setGameState(next);
+                                                      triggerToast(`RESCUED LIRA VALE (+90 XP)`);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                  >
+                                                    🔓 Buy Lira Vale Key ({price}¤)
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                                    Need {price}¤ for Lira
+                                                  </span>
+                                                )}
+
+                                                <button
+                                                  onClick={() => {
+                                                    const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                    if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                      triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                      return;
+                                                    }
+                                                    const intelligence = gameState.attributes?.int || 10;
+                                                    const roll = Math.floor(Math.random() * 20) + 1 + intelligence;
+                                                    if (roll >= 16) {
+                                                      let next = { ...gameState };
+                                                      const lira = {
+                                                        id: "lira",
+                                                        name: "Lira Vale",
+                                                        role: "Chief Tech Officer / Hacker Network Operator",
+                                                        avatar: "🔧",
+                                                        image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Lira is a brilliant former Ares Biotech engineer who was discarded and sold to the pens. In her grease-stained jumpsuits and glowing utility goggles, she works on upgrading your safehouse generators and grid-relays. She is highly analytical.",
+                                                        dialogue: "You pulled me out of those damp cells. I've mapped out the entire Ares sub-station layout. Let me get to work on our safehouse matrices - we can boost our defenses significantly.",
+                                                        reaction: null,
+                                                        happiness: 85,
+                                                        affection: "Loyal",
+                                                        affectionValue: 65,
+                                                        willpower: 75,
+                                                        corruption: 5,
+                                                        hygiene: "Normal",
+                                                        discipline: 80,
+                                                        hunger: "Satiated",
+                                                        respect: 75,
+                                                        withdrawRisk: "None",
+                                                        anger: 0,
+                                                        defiance: 10,
+                                                        fear: 10,
+                                                        inventory: ["Nano-Solder Kit", "Ares ID Card (Expired)"],
+                                                        currentJob: "Tech Upgrades Engineer"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), lira];
+                                                      next.experience += 150;
+                                                      setGameState(next);
+                                                      triggerToast(`INT CHECK SUCCESS (Roll: ${roll} vs 16)! Lira Free!`);
+                                                    } else {
+                                                      let next = { ...gameState };
+                                                      next.combatState = {
+                                                        enemyName: "Syndicate Enforcer Sentries",
+                                                        enemyHp: 80,
+                                                        enemyMaxHp: 80,
+                                                        enemyShields: 30,
+                                                        enemyMaxShields: 30,
+                                                        isActive: true,
+                                                        turnLog: "INT CHECK FAILURE! Terminal lockout triggered! Alarms ring out, and Warden commands defense units to liquidate you!"
+                                                      };
+                                                      setGameState(next);
+                                                      setActiveDialogue(null);
+                                                      triggerToast(`🚨 LIRA HACK FAILURE (Roll: ${roll} vs 16)`);
+                                                    }
+                                                  }}
+                                                  className="bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                >
+                                                  🧠 [Intellect Check] Hack Lira's Lock (0¤, Alert Risk)
+                                                </button>
+                                              </>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 border border-dashed border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Lira Rescued to Base
+                                          </span>
+                                        )}
+
+                                        {/* NYRA RECRUITMENT block */}
+                                        {!gameState.baseNPCs?.some(n => n.id === "nyra") ? (
+                                          (() => {
+                                            const isBribed = gameState.completedPOIActions?.includes("auction_market:bribed");
+                                            const price = isBribed ? 120 : 160;
+                                            const mindmancerUnlocked = (gameState.skills?.mindmancer || 0) >= 1;
+                                            return (
+                                              <>
+                                                {gameState.credits >= price ? (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      next.credits -= price;
+                                                      const nyra = {
+                                                        id: "nyra",
+                                                        name: "Nyra",
+                                                        role: "High Priestess / Magical Alchemist",
+                                                        avatar: "🔮",
+                                                        image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Nyra is a mystical ether coven member whose eyes hum with high-intensity violet ley-currents. She can hear the whispers of the Sol-Prime Core and warns you about the psychic drain. She works at the safehouse alchemy arrays.",
+                                                        dialogue: "The Sol-Prime Ley Core... its current hums in your bloodstream, initiate. I can feel the violet nodes. Let me mix raw ether catalysts to fuel your spell banks.",
+                                                        reaction: null,
+                                                        happiness: 90,
+                                                        affection: "Devoted",
+                                                        affectionValue: 70,
+                                                        willpower: 50,
+                                                        corruption: 30,
+                                                        hygiene: "Normal",
+                                                        discipline: 70,
+                                                        hunger: "Satiated",
+                                                        respect: 80,
+                                                        withdrawRisk: "None",
+                                                        anger: 0,
+                                                        defiance: 5,
+                                                        fear: 20,
+                                                        inventory: ["Ley-Catalyst Vials", "Obsidian Choker"],
+                                                        currentJob: "Ether Synthesizer"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), nyra];
+                                                      next.experience += 90;
+                                                      setGameState(next);
+                                                      triggerToast(`RESCUED NYRA (+90 XP)`);
+                                                    }}
+                                                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                  >
+                                                    🔓 Buy Nyra Key ({price}¤)
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-[10px] text-slate-600 border border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                                    Need {price}¤ for Nyra
+                                                  </span>
+                                                )}
+
+                                                {mindmancerUnlocked && (
+                                                  <button
+                                                    onClick={() => {
+                                                      const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                      if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                        triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                        return;
+                                                      }
+                                                      let next = { ...gameState };
+                                                      const nyra = {
+                                                        id: "nyra",
+                                                        name: "Nyra",
+                                                        role: "High Priestess / Magical Alchemist",
+                                                        avatar: "🔮",
+                                                        image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Nyra is a mystical ether coven member whose eyes hum with high-intensity violet ley-currents. She can hear the whispers of the Sol-Prime Core and warns you about the psychic drain. She works at the safehouse alchemy arrays.",
+                                                        dialogue: "The Sol-Prime Ley Core... its current hums in your bloodstream, initiate. I can feel the violet nodes. Let me mix raw ether catalysts to fuel your spell banks.",
+                                                        reaction: null,
+                                                        happiness: 90,
+                                                        affection: "Devoted",
+                                                        affectionValue: 70,
+                                                        willpower: 50,
+                                                        corruption: 30,
+                                                        hygiene: "Normal",
+                                                        discipline: 70,
+                                                        hunger: "Satiated",
+                                                        respect: 80,
+                                                        withdrawRisk: "None",
+                                                        anger: 0,
+                                                        defiance: 5,
+                                                        fear: 20,
+                                                        inventory: ["Ley-Catalyst Vials", "Obsidian Choker"],
+                                                        currentJob: "Ether Synthesizer"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), nyra];
+                                                      next.experience += 150;
+                                                      setGameState(next);
+                                                      triggerToast(`MINDMANCER TRANS-FUSION: NYRA RECRUITED!`);
+                                                    }}
+                                                    className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer animate-pulse"
+                                                  >
+                                                    🔮 [Mindmance Check] Override Cell Locks (0¤)
+                                                  </button>
+                                                )}
+
+                                                <button
+                                                  onClick={() => {
+                                                    const maxCap = gameState.safehouseUpgrades?.crewBunksExpanded ? 8 : 3;
+                                                    if ((gameState.baseNPCs || []).length >= maxCap) {
+                                                      triggerToast(`RECRUITMENT FAILED: Safehouse quarters fully occupied (${(gameState.baseNPCs || []).length}/${maxCap})! Expand your quarters first.`);
+                                                      return;
+                                                    }
+                                                    const intelligence = gameState.attributes?.int || 10;
+                                                    const roll = Math.floor(Math.random() * 20) + 1 + intelligence;
+                                                    if (roll >= 15) {
+                                                      let next = { ...gameState };
+                                                      const nyra = {
+                                                        id: "nyra",
+                                                        name: "Nyra",
+                                                        role: "High Priestess / Magical Alchemist",
+                                                        avatar: "🔮",
+                                                        image: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=600",
+                                                        description: "Nyra is a mystical ether coven member whose eyes hum with high-intensity violet ley-currents. She can hear the whispers of the Sol-Prime Core and warns you about the psychic drain. She works at the safehouse alchemy arrays.",
+                                                        dialogue: "The Sol-Prime Ley Core... its current hums in your bloodstream, initiate. I can feel the violet nodes. Let me mix raw ether catalysts to fuel your spell banks.",
+                                                        reaction: null,
+                                                        happiness: 90,
+                                                        affection: "Devoted",
+                                                        affectionValue: 70,
+                                                        willpower: 50,
+                                                        corruption: 30,
+                                                        hygiene: "Normal",
+                                                        discipline: 70,
+                                                        hunger: "Satiated",
+                                                        respect: 80,
+                                                        withdrawRisk: "None",
+                                                        anger: 0,
+                                                        defiance: 5,
+                                                        fear: 20,
+                                                        inventory: ["Ley-Catalyst Vials", "Obsidian Choker"],
+                                                        currentJob: "Ether Synthesizer"
+                                                      };
+                                                      next.baseNPCs = [...(next.baseNPCs || []), nyra];
+                                                      next.experience += 120;
+                                                      setGameState(next);
+                                                      triggerToast(`INT CHECK SUCCESS (Roll: ${roll} vs 15)! Nyra Free!`);
+                                                    } else {
+                                                      let next = { ...gameState };
+                                                      next.combatState = {
+                                                        enemyName: "Syndicate Enforcer Sentries",
+                                                        enemyHp: 80,
+                                                        enemyMaxHp: 80,
+                                                        enemyShields: 30,
+                                                        enemyMaxShields: 30,
+                                                        isActive: true,
+                                                        turnLog: "INT CHECK FAILURE! Cell systems locked down! Combat alerts sound off, prepare for combat!"
+                                                      };
+                                                      setGameState(next);
+                                                      setActiveDialogue(null);
+                                                      triggerToast(`🚨 NYRA DECRYPTION FAILURE (Roll: ${roll} vs 15)`);
+                                                    }
+                                                  }}
+                                                  className="bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                                >
+                                                  🧠 [Intellect Check] Decode Mystic Lock (0¤)
+                                                </button>
+                                              </>
+                                            );
+                                          })()
+                                        ) : (
+                                          <span className="text-[10px] text-slate-500 border border-dashed border-white/5 p-1 rounded font-mono uppercase bg-slate-950/40">
+                                            Nyra Rescued to Base
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+
+                                    {activeDialogue?.startsWith("mira_voss") && (
+                                      <>
+                                        {activeDialogue === "mira_voss_intro" && (
+                                          <>
+                                            <button
+                                              onClick={() => setActiveDialogue("mira_voss_career")}
+                                              className="bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                            >
+                                              💬 Inquire about her arena career
+                                            </button>
+                                            <button
+                                              onClick={() => setActiveDialogue("mira_voss_offer")}
+                                              className="bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                            >
+                                              🤝 Offer her a place at your base
+                                            </button>
+                                          </>
+                                        )}
+
+                                        {(activeDialogue === "mira_voss_career" || activeDialogue === "mira_voss_offer") && (
+                                          <button
+                                            onClick={() => setActiveDialogue("mira_voss_intro")}
+                                            className="bg-cyan-950 hover:bg-cyan-900 border border-cyan-500/30 text-cyan-200 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                          >
+                                            ↩️ Back
+                                          </button>
+                                        )}
+
+                                        <button
+                                          onClick={() => setActiveDialogue(null)}
+                                          className="bg-slate-950 hover:bg-slate-900 border border-white/10 text-slate-400 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
+                                        >
+                                          🚪 Leave Pit
+                                        </button>
                                       </>
                                     )}
 
@@ -6844,158 +9692,369 @@ export default function App() {
                                     </button>
                                   </div>
                                 </div>
-                              </div>
+                              </motion.div>
                             )
                           ) : (
                               // Custom Mini-Game rendering for Sanctuary Hacking Terminal
                               activePOIView === "terminal_hacking_puzzle" ? (
-                                <div className="bg-slate-950/95 border border-cyan-400/30 rounded-xl p-4 font-mono text-xs space-y-3 shadow-lg">
-                                  <div className="flex justify-between items-center border-b border-cyan-500/20 pb-2">
-                                    <span className="text-cyan-400 font-bold flex items-center gap-1.5 uppercase text-3xs tracking-widest">
-                                      <Terminal size={14} className="text-cyan-400 animate-pulse" /> Cyberdeck Decryption Module v3.15
-                                    </span>
-                                    <span className="text-[9px] text-slate-500 uppercase">INT BUFFER RATIO: {gameState?.attributes?.int || 10}</span>
+                                <motion.div
+                                  key="terminal_hacking_puzzle"
+                                  variants={slideInVariants}
+                                  initial="initial"
+                                  animate="animate"
+                                  exit="exit"
+                                  transition={{ duration: 0.25, ease: "easeOut" }}
+                                  className="bg-slate-950/95 border border-cyan-500/40 rounded-xl p-5 font-mono text-xs space-y-4 shadow-[0_0_20px_rgba(6,182,212,0.15)] max-w-2xl mx-auto w-full relative overflow-hidden"
+                                >
+                                  {/* CRT monitor overlays on cyberdeck face */}
+                                  <div className="crt-screen-overlay pointer-events-none rounded-xl" />
+                                  <div className="crt-scanline animate-scanline pointer-events-none rounded-xl" />
+                                  <div className="crt-vignette pointer-events-none rounded-xl" />
+
+                                  {/* Tactical trace warning glitching overlay when 2 or fewer attempts remain */}
+                                  {hackingPuzzle && hackingPuzzle.status === "playing" && hackingPuzzle.attemptsLeft <= 2 && (
+                                    <div className="absolute inset-0 bg-red-950/20 animate-glitch pointer-events-none z-[9] border-2 border-red-500/40" />
+                                  )}
+
+                                  {/* Hardware system dump warning grid flash on breach failure */}
+                                  {hackingPuzzle && hackingPuzzle.status === "failure" && (
+                                    <div className="absolute inset-0 bg-red-900/30 animate-glitch pointer-events-none z-[10] border-4 border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)]" />
+                                  )}
+                                  {/* Header Console */}
+                                  <div className="flex justify-between items-center border-b border-cyan-500/30 pb-3">
+                                    <div className="flex items-center gap-2">
+                                      <Terminal className="text-cyan-400 animate-pulse" size={16} />
+                                      <div>
+                                        <h3 className="text-cyan-300 font-extrabold text-[10px] tracking-wider uppercase leading-none">📟 Cyberdeck Neural-Matrix Bypass v4.9</h3>
+                                        <p className="text-[7px] text-slate-500 uppercase mt-1">Status: Active Connection • Secure Grid Bypass Mode</p>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-[8px] bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+                                        Type: {hackingPuzzle ? hackingPuzzle.type.replace("_", " ") : "Ready"}
+                                      </span>
+                                    </div>
                                   </div>
-                                  
+
+                                  {/* If no active puzzle, render initialization screen */}
                                   {(!hackingPuzzle || hackingPuzzle.status === "idle") ? (
-                                    <div className="text-center py-4 space-y-3">
-                                      <p className="text-slate-400 text-3xs leading-relaxed max-w-md mx-auto">
-                                        The Ares Biotech cyber-vault terminal is protected by standard dual-stage hex encryption. Match the target registers to bypass the local alarms.
-                                      </p>
-                                      <button
-                                        onClick={() => {
-                                          setHackingPuzzle({
-                                            targets: [
-                                              { hex: "0x4F", matched: false },
-                                              { hex: "0xE9", matched: false },
-                                              { hex: "0xA2", matched: false },
-                                              { hex: "0x7C", matched: false }
-                                            ],
-                                            options: ["0x3B", "0x4F", "0x1A", "0xE9", "0x8D", "0xA2", "0xD4", "0x7C"].sort(() => Math.random() - 0.5),
-                                            selectedTargetIdx: null,
-                                            status: "playing"
-                                          });
-                                        }}
-                                        className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold px-4 py-2.5 rounded text-3xs uppercase transition-all cursor-pointer shadow-[0_0_12px_rgba(34,211,238,0.4)]"
-                                      >
-                                        Initialize Decryption Subroutines
-                                      </button>
+                                    <div className="text-center py-6 space-y-4">
+                                      <div className="inline-flex p-3 bg-cyan-950/40 border border-cyan-500/20 rounded-full text-cyan-400 animate-pulse">
+                                        <Cpu size={24} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <p className="text-cyan-400 font-bold uppercase text-[10px] tracking-widest">Awaiting Interface Port Connection</p>
+                                        <p className="text-slate-400 text-[10px] leading-relaxed max-w-md mx-auto">
+                                          A secure terminal link has been detected. Jack in to initiate sequence decrypt bypass. Failing may trigger neural feedback damage or deploy security forces.
+                                        </p>
+                                      </div>
+                                      
+                                      <div className="flex flex-col sm:flex-row gap-2 justify-center max-w-sm mx-auto pt-2">
+                                        <button
+                                          onClick={() => {
+                                            const intScore = gameState?.attributes?.int || 10;
+                                            const netSlicerLevel = gameState?.skills?.netSlicer || 1;
+                                            setHackingPuzzle(initHackingGame("sanctuary", intScore, netSlicerLevel));
+                                          }}
+                                          className="flex-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold px-4 py-2.5 rounded text-3xs uppercase tracking-widest transition-all cursor-pointer shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+                                        >
+                                          🔌 Jack In & Begin Decrypt
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setActivePOIView("default");
+                                            setHackingPuzzle(null);
+                                          }}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-400 hover:text-white px-4 py-2.5 rounded text-3xs uppercase tracking-wider cursor-pointer"
+                                        >
+                                          Abort Connection
+                                        </button>
+                                      </div>
                                     </div>
                                   ) : hackingPuzzle.status === "playing" ? (
-                                    <div className="space-y-4 py-1">
-                                      <p className="text-[10px] text-slate-400 text-center uppercase tracking-wider font-bold">
-                                        {hackingPuzzle.selectedTargetIdx === null 
-                                          ? "1. Select an encrypted register block below" 
-                                          : "2. Click the matching hex key from the decryption pool"}
-                                      </p>
-                                      
-                                      {/* Targets */}
-                                      <div className="grid grid-cols-4 gap-2">
-                                        {hackingPuzzle.targets.map((t, idx) => (
-                                          <button
-                                            key={idx}
-                                            onClick={() => {
-                                              if (t.matched) return;
-                                              setHackingPuzzle(prev => prev ? { ...prev, selectedTargetIdx: idx } : null);
-                                            }}
-                                            className={`p-3 rounded-lg border font-bold text-center transition-all cursor-pointer flex flex-col justify-between items-center min-h-[55px] ${
-                                              t.matched
-                                                ? "bg-emerald-950/40 border-emerald-500/50 text-emerald-400 shadow-[inset_0_0_8px_rgba(16,185,129,0.2)] cursor-default"
-                                                : hackingPuzzle.selectedTargetIdx === idx
-                                                  ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
-                                                  : "bg-slate-900 border-white/5 text-slate-300 hover:border-white/15"
-                                            }`}
-                                          >
-                                            <span className="text-4xs text-slate-500 uppercase tracking-widest leading-none block mb-1">REG {idx + 1}</span>
-                                            <span className="text-[11px] block">{t.matched ? "✓ OPENED" : t.hex}</span>
-                                          </button>
-                                        ))}
+                                    <div className="space-y-4">
+                                      {/* Game Controls Guide */}
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-900/60 border border-white/[0.03] p-3 rounded-lg text-[10px]">
+                                        <div className="space-y-1">
+                                          <p className="text-slate-400 uppercase font-bold tracking-wider">🔒 Target Sequence Buffer:</p>
+                                          <div className="flex gap-1.5 items-center pt-1">
+                                            {hackingPuzzle.targets.map((t, idx) => (
+                                              <span
+                                                key={idx}
+                                                className="bg-cyan-950 text-cyan-400 border border-cyan-500/40 px-2 py-1 rounded text-2xs font-extrabold tracking-wider"
+                                              >
+                                                {t}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="space-y-1 text-right">
+                                          <p className="text-slate-400 uppercase font-bold tracking-wider">📈 Memory Register Allocation:</p>
+                                          <div className="flex gap-1 justify-end pt-1">
+                                            {Array.from({ length: hackingPuzzle.maxBuffer }).map((_, idx) => {
+                                              const filled = hackingPuzzle.buffer[idx];
+                                              return (
+                                                <span
+                                                  key={idx}
+                                                  className={`w-7 h-7 flex items-center justify-center rounded border font-extrabold text-[10px] ${
+                                                    filled
+                                                      ? "bg-cyan-500 text-slate-950 border-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.4)] animate-pulse"
+                                                      : "bg-slate-950/80 border-white/5 text-slate-600"
+                                                  }`}
+                                                >
+                                                  {filled || "__"}
+                                                </span>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
                                       </div>
 
-                                      {/* Key Pool Options */}
-                                      <div className="grid grid-cols-4 gap-2 border-t border-white/5 pt-3">
-                                        {hackingPuzzle.options.map((opt, idx) => (
-                                          <button
-                                            key={idx}
-                                            disabled={hackingPuzzle.selectedTargetIdx === null}
-                                            onClick={() => {
-                                              if (hackingPuzzle.selectedTargetIdx === null) return;
-                                              const target = hackingPuzzle.targets[hackingPuzzle.selectedTargetIdx];
-                                              if (target.hex === opt) {
-                                                const newTargets = [...hackingPuzzle.targets];
-                                                newTargets[hackingPuzzle.selectedTargetIdx] = { ...target, matched: true };
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {/* Left Side: 6x6 Hex Matrix */}
+                                        <div className="md:col-span-2 space-y-2">
+                                          <div className="flex justify-between items-center text-[8px] uppercase tracking-wider text-slate-500">
+                                            <span>Hex Memory Matrix</span>
+                                            <span className="text-cyan-400 animate-pulse">
+                                              Active Selection: {hackingPuzzle.activeLineType === "row" ? `ROW ${hackingPuzzle.activeLineIdx + 1}` : `COLUMN ${hackingPuzzle.activeLineIdx + 1}`}
+                                            </span>
+                                          </div>
+
+                                          <div className="grid grid-cols-6 gap-1 bg-slate-950 p-2 rounded-lg border border-cyan-500/10">
+                                            {hackingPuzzle.grid.map((rowArr, rIdx) =>
+                                              rowArr.map((cell, cIdx) => {
+                                                const isSelectable =
+                                                  hackingPuzzle.activeLineType === "row"
+                                                    ? rIdx === hackingPuzzle.activeLineIdx
+                                                    : cIdx === hackingPuzzle.activeLineIdx;
+                                                const showHighlight = cell.isHighlighted; // NetSlicer Level 3 Perk
                                                 
-                                                const isFinished = newTargets.every(t => t.matched);
+                                                return (
+                                                  <button
+                                                    key={`${rIdx}-${cIdx}`}
+                                                    disabled={cell.isClicked || !isSelectable}
+                                                    onClick={() => {
+                                                      const newBuffer = [...hackingPuzzle.buffer, cell.hex];
+                                                      const newGrid = [...hackingPuzzle.grid];
+                                                      newGrid[rIdx][cIdx].isClicked = true;
+
+                                                      // Check sequence match (Breach Protocol checks last N entries)
+                                                      const isMatch = newBuffer.slice(-hackingPuzzle.targets.length).join(",") === hackingPuzzle.targets.join(",");
+
+                                                      if (isMatch) {
+                                                        triggerToast("BREACH PROTOCOL SUCCESS");
+                                                        setHackingPuzzle(prev => prev ? {
+                                                          ...prev,
+                                                          buffer: newBuffer,
+                                                          grid: newGrid,
+                                                          status: "success"
+                                                        } : null);
+                                                      } else if (newBuffer.length >= hackingPuzzle.maxBuffer) {
+                                                        // Buffer full: consume attempt, clear buffer, reset line
+                                                        const newAttempts = hackingPuzzle.attemptsLeft - 1;
+                                                        if (newAttempts <= 0) {
+                                                          triggerToast("CRITICAL COGNITIVE DISCHARGE");
+                                                          setHackingPuzzle(prev => prev ? {
+                                                            ...prev,
+                                                            buffer: newBuffer,
+                                                            grid: newGrid,
+                                                            attemptsLeft: 0,
+                                                            status: "failure"
+                                                          } : null);
+                                                        } else {
+                                                          triggerToast("BUFFER RESET - ATTEMPT LOST");
+                                                          setHackingPuzzle(prev => prev ? {
+                                                            ...prev,
+                                                            buffer: [],
+                                                            grid: newGrid,
+                                                            attemptsLeft: newAttempts,
+                                                            activeLineType: "row",
+                                                            activeLineIdx: 0
+                                                          } : null);
+                                                        }
+                                                      } else {
+                                                        // Normal selection progression: swap row/col
+                                                        const nextType = hackingPuzzle.activeLineType === "row" ? "col" : "row";
+                                                        const nextIdx = hackingPuzzle.activeLineType === "row" ? cIdx : rIdx;
+                                                        
+                                                        setHackingPuzzle(prev => prev ? {
+                                                          ...prev,
+                                                          buffer: newBuffer,
+                                                          grid: newGrid,
+                                                          activeLineType: nextType,
+                                                          activeLineIdx: nextIdx
+                                                        } : null);
+                                                      }
+                                                    }}
+                                                    className={`aspect-square flex flex-col justify-center items-center rounded text-[11px] font-mono font-bold transition-all relative ${
+                                                      cell.isClicked
+                                                        ? "bg-slate-900/40 border border-transparent text-slate-700 select-none cursor-not-allowed"
+                                                        : isSelectable
+                                                          ? showHighlight
+                                                            ? "bg-cyan-950 border border-cyan-400 text-cyan-200 hover:bg-cyan-900 cursor-pointer shadow-[0_0_8px_rgba(34,211,238,0.3)]"
+                                                            : "bg-cyan-950/40 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-900/60 cursor-pointer"
+                                                          : showHighlight
+                                                            ? "bg-emerald-950/20 border border-emerald-500/10 text-emerald-500 cursor-not-allowed"
+                                                            : "bg-slate-950 text-slate-800 border border-transparent cursor-not-allowed"
+                                                    }`}
+                                                  >
+                                                    <span>{cell.isClicked ? "--" : cell.hex}</span>
+                                                    {showHighlight && !cell.isClicked && (
+                                                      <span className="absolute bottom-0.5 right-0.5 text-[5px] text-emerald-400 animate-pulse font-extrabold">CLUE</span>
+                                                    )}
+                                                  </button>
+                                                );
+                                              })
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Right Side: Diagnostics & Perks */}
+                                        <div className="space-y-4">
+                                          {/* Hacking Diagnostic Module */}
+                                          <div className="bg-slate-900 border border-white/5 p-3 rounded-lg space-y-2">
+                                            <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wider border-b border-white/5 pb-1">📶 Diagnostics Board</p>
+                                            <div className="text-[10px] space-y-1.5 font-mono text-slate-400">
+                                              <p className="flex justify-between">
+                                                <span>Intrusion Attempts:</span>
+                                                <span className={`${hackingPuzzle.attemptsLeft <= 1 ? "text-red-400 animate-pulse font-bold" : "text-white"}`}>
+                                                  {hackingPuzzle.attemptsLeft} / {hackingPuzzle.maxAttempts}
+                                                </span>
+                                              </p>
+                                              <p className="flex justify-between">
+                                                <span>NetSlicer Skill:</span>
+                                                <span className="text-cyan-400">Lv. {hackingPuzzle.netSlicerLevel}</span>
+                                              </p>
+                                              <p className="flex justify-between">
+                                                <span>Software Clues:</span>
+                                                <span className={hackingPuzzle.netSlicerLevel >= 3 ? "text-emerald-400" : "text-slate-500"}>
+                                                  {hackingPuzzle.netSlicerLevel >= 3 ? "ACTIVE" : "INACTIVE (Lv 3 Req.)"}
+                                                </span>
+                                              </p>
+                                              <p className="flex justify-between">
+                                                <span>Connection Status:</span>
+                                                <span className="text-cyan-400 animate-pulse">OVERLAYING...</span>
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {/* Hacking Perks (NetSlicer Level Based Interactive Help!) */}
+                                          <div className="space-y-2">
+                                            <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">💾 Cyberdeck Peripherals</p>
+                                            
+                                            {/* Buffer Perk */}
+                                            <button
+                                              disabled={hackingPuzzle.netSlicerLevel < 1 || hackingPuzzle.usedPerkBuffer}
+                                              onClick={() => {
                                                 setHackingPuzzle(prev => {
                                                   if (!prev) return null;
                                                   return {
                                                     ...prev,
-                                                    targets: newTargets,
-                                                    selectedTargetIdx: null,
-                                                    status: isFinished ? "success" : "playing"
+                                                    maxBuffer: prev.maxBuffer + 2,
+                                                    usedPerkBuffer: true
                                                   };
                                                 });
-                                                triggerToast("REGISTER UNLOCKED");
-                                              } else {
-                                                triggerToast("KEY MISMATCH - CYBER-DECK RETRYING");
-                                                setHackingPuzzle(prev => prev ? { ...prev, selectedTargetIdx: null } : null);
-                                              }
+                                                triggerToast("BUFFER EXPANDED (+2 SLOTS)");
+                                              }}
+                                              className={`w-full p-2.5 rounded border text-[10px] text-left flex justify-between items-center font-bold ${
+                                                hackingPuzzle.netSlicerLevel < 1
+                                                  ? "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
+                                                  : hackingPuzzle.usedPerkBuffer
+                                                    ? "bg-slate-900 border-white/5 text-slate-500 cursor-not-allowed line-through"
+                                                    : "bg-cyan-950/40 border-cyan-500/20 text-cyan-300 hover:bg-cyan-950/80 cursor-pointer"
+                                              }`}
+                                            >
+                                              <span>💾 Buffer Injector</span>
+                                              <span className="text-[8px] text-cyan-400 uppercase font-black tracking-wider">
+                                                {hackingPuzzle.netSlicerLevel < 1 ? "Locked (NS Lv.1)" : hackingPuzzle.usedPerkBuffer ? "Exhausted" : "Use once"}
+                                              </span>
+                                            </button>
+
+                                            {/* Attempts Perk */}
+                                            <button
+                                              disabled={hackingPuzzle.netSlicerLevel < 2 || hackingPuzzle.usedPerkAttempts}
+                                              onClick={() => {
+                                                setHackingPuzzle(prev => {
+                                                  if (!prev) return null;
+                                                  return {
+                                                    ...prev,
+                                                    attemptsLeft: prev.attemptsLeft + 2,
+                                                    usedPerkAttempts: true
+                                                  };
+                                                });
+                                                triggerToast("CYCLES SYPHONED (+2 ATTEMPTS)");
+                                              }}
+                                              className={`w-full p-2.5 rounded border text-[10px] text-left flex justify-between items-center font-bold ${
+                                                hackingPuzzle.netSlicerLevel < 2
+                                                  ? "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
+                                                  : hackingPuzzle.usedPerkAttempts
+                                                    ? "bg-slate-900 border-white/5 text-slate-500 cursor-not-allowed line-through"
+                                                    : "bg-emerald-950/40 border-emerald-500/20 text-emerald-300 hover:bg-emerald-950/80 cursor-pointer"
+                                              }`}
+                                            >
+                                              <span>🔋 Siphon Connection Cycles</span>
+                                              <span className="text-[8px] text-emerald-400 uppercase font-black tracking-wider">
+                                                {hackingPuzzle.netSlicerLevel < 2 ? "Locked (NS Lv.2)" : hackingPuzzle.usedPerkAttempts ? "Exhausted" : "Use once"}
+                                              </span>
+                                            </button>
+                                          </div>
+
+                                          {/* Abort */}
+                                          <button
+                                            onClick={() => {
+                                              setActivePOIView("default");
+                                              setHackingPuzzle(null);
+                                              triggerToast("SEQUENCE ABORTED SAFELY");
                                             }}
-                                            className={`p-2.5 rounded border transition-all text-center text-[10px] ${
-                                              hackingPuzzle.selectedTargetIdx === null
-                                                ? "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
-                                                : "bg-slate-900/80 border-cyan-500/15 text-slate-300 hover:bg-slate-850 hover:border-cyan-400/50 cursor-pointer"
-                                            }`}
+                                            className="w-full bg-slate-900 hover:bg-red-950/30 hover:text-red-400 border border-white/5 p-2 rounded text-slate-400 text-3xs font-black uppercase text-center cursor-pointer transition-all uppercase tracking-wider"
                                           >
-                                            {opt}
+                                            🔌 Emergency Abort Link
                                           </button>
-                                        ))}
+                                        </div>
                                       </div>
                                     </div>
                                   ) : hackingPuzzle.status === "success" ? (
-                                    <div className="text-center py-4 space-y-3">
-                                      <p className="text-emerald-400 font-extrabold text-[10px] uppercase tracking-wider flex items-center justify-center gap-1.5 animate-pulse">
-                                        <CheckCircle size={14} /> SECURITY SCHEMAS DECRYPTED - FULL DOWNLOAD READY
-                                      </p>
-                                      <p className="text-slate-400 text-3xs leading-relaxed max-w-sm mx-auto">
-                                        The corporate database has been successfully copied. The locking pins on the Golden Relic Chamber have completely retracted.
-                                      </p>
+                                    <div className="text-center py-6 space-y-4">
+                                      <div className="inline-flex p-3 bg-emerald-950/40 border border-emerald-500/20 rounded-full text-emerald-400 animate-pulse">
+                                        <CheckCircle size={24} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <h4 className="text-emerald-400 font-extrabold uppercase text-[11px] tracking-widest flex items-center justify-center gap-1.5">
+                                          DECRYPTION SUCCESSFUL
+                                        </h4>
+                                        <p className="text-slate-400 text-[10px] leading-relaxed max-w-sm mx-auto">
+                                          The terminal's central encryption registers have been fully bypassed. Security authorization has been uploaded to your active Cyberdeck buffer.
+                                        </p>
+                                      </div>
                                       <button
-                                        onClick={() => {
-                                          let nextState = { ...gameState! };
-                                          nextState.poi = "Mysterious Relic Altar";
-                                          setActivePOIView("relic_altar");
-                                          nextState.inventory.push("Ares Data Crystal");
-                                          nextState.experience += 50;
-                                          setActivePopup({
-                                            title: "DATABASE COPIED",
-                                            subtitle: "HEX DECRYPTION SUCCESS",
-                                            type: "loot",
-                                            text: "You successfully bypassed the Ares mainframe and extracted the Ares Data Crystal! The secure lockpins holding the golden relic chamber have fully retracted. Access the altar immediately."
-                                          });
-                                          setGameState(nextState);
-                                          setHackingPuzzle(null);
-                                          
-                                          setLogs(prev => [
-                                            ...prev,
-                                            {
-                                              id: crypto.randomUUID(),
-                                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                              text: "💾 DECRYPTION SUCCESS: You safely extract the 'Ares Data Crystal' into your inventory stash. The heavy security door behind the terminal slides back silently, revealing a glowing chamber with a floating golden relic on a black altar...",
-                                              type: "narration",
-                                              district: nextState.district,
-                                              poi: nextState.poi
-                                            }
-                                          ]);
-                                          triggerToast("HACK COMPLETE: COPIED DATA");
-                                        }}
-                                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-4 py-2.5 rounded text-3xs uppercase transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                                        onClick={handleHackingSuccess}
+                                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold px-5 py-2.5 rounded text-3xs uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.4)]"
                                       >
-                                        Extract Database & Access Relic
+                                        Extract Database & Authorize
+                                      </button>
+                                    </div>
+                                  ) : hackingPuzzle.status === "failure" ? (
+                                    <div className="text-center py-6 space-y-4">
+                                      <div className="inline-flex p-3 bg-red-950/40 border border-red-500/20 rounded-full text-red-400 animate-bounce">
+                                        <XCircle size={24} />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <h4 className="text-red-400 font-extrabold uppercase text-[11px] tracking-widest flex items-center justify-center gap-1.5">
+                                          🚨 COGNITIVE SYSTEM FAILSAFE TRIGGERED
+                                        </h4>
+                                        <p className="text-slate-400 text-[10px] leading-relaxed max-w-sm mx-auto">
+                                          The terminal has initiated an emergency core dump. A neural feedback voltage loop has discharged directly back into your deck.
+                                        </p>
+                                      </div>
+                                      <button
+                                        onClick={handleHackingFailure}
+                                        className="bg-red-600 hover:bg-red-500 text-white font-extrabold px-5 py-2.5 rounded text-3xs uppercase tracking-wider transition-all cursor-pointer shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                                      >
+                                        Acknowledge System Feedback
                                       </button>
                                     </div>
                                   ) : null}
-                                </div>
+                              </motion.div>
                               ) : (
                                 // Regular Location Action option rows
                                 <div className="space-y-4">
@@ -7036,6 +10095,13 @@ export default function App() {
                                           }
                                         }
 
+                                        // 0. Non-linear MQ1 (The Hunt for Vice) options at freight_hub
+                                        if (activePOIView === "freight_hub" && activeQ.some(q => q.includes("Hunt for Vice"))) {
+                                          btns.push("🤝 Buy Decryption Cipher from Corrupt Clerk (-150¤)");
+                                          btns.push("💪 Intimidate Freight Supervisor (STR Check)");
+                                          btns.push("⚡ Pickpocket Patrol Officer (DEX Check)");
+                                        }
+
                                         // 2. Drone Schematic Side Quest at Shatter Ridge & Bar
                                         if (activePOIView === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
                                           if (!inv.includes("Experimental Drone Chip")) {
@@ -7059,6 +10125,22 @@ export default function App() {
                                           const slimesCount = inv.filter(i => i === "Glowing Slime").length;
                                           if (slimesCount >= 3) {
                                             btns.push("Deliver 3x Slimes to Priestess Morgana");
+                                          }
+                                        }
+
+                                        // 8. Vice's Retribution (Legendary Companion Quest)
+                                        const hasLedger = inv.includes("Encrypted Ares Ledger");
+                                        const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
+                                        if (isViceQuestActive) {
+                                          if (activePOIView === "shatter_ridge") {
+                                            if (!hasLedger) {
+                                              btns.push("💻 Hack Ares Secure Server Farm (INT Check)");
+                                            } else {
+                                              btns.push("🔒 Encrypted Ares Ledger already secured");
+                                            }
+                                          }
+                                          if (activePOIView === "hideout" && hasLedger) {
+                                            btns.push("🤝 Deliver Encrypted Ledger directly to Vice");
                                           }
                                         }
                                       }
@@ -7107,22 +10189,30 @@ export default function App() {
                                 </div>
                               )
                             )}
-                          </div>
+                          </AnimatePresence>
+                        </div>
 
                           <span className="h-px bg-white/5 block" />
 
                           {/* Escape back to standard district map travel */}
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-slate-500 font-mono text-[9px] hidden sm:inline">COORD NODES ALIGNED</span>
-                            <button
-                              onClick={() => {
-                                setActivePOIView(null);
-                                setActiveDialogue(null);
-                              }}
-                              className="bg-rose-950/40 border border-rose-500/30 text-rose-300 hover:bg-rose-950 font-mono text-[10px] font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 animate-pulse cursor-pointer shadow-[0_0_12px_rgba(239,68,68,0.1)] hover:shadow-[0_0_15px_rgba(239,68,68,0.2)] ml-auto"
-                            >
-                              <ArrowLeft size={12} /> Return to Holographic Map
-                            </button>
+                            {(activeDialogue || gameState?.activeBranchingDialogue || squadDialogue) ? (
+                              <div className="bg-slate-900/80 border border-slate-800 text-slate-500 font-mono text-[9px] font-bold px-3.5 py-2 rounded-lg flex items-center gap-2 select-none ml-auto">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                <span>FINISH CONVERSATION TO DISCONNECT SCANNER</span>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setActivePOIView(null);
+                                  setActiveDialogue(null);
+                                }}
+                                className="bg-rose-950/40 border border-rose-500/30 text-rose-300 hover:bg-rose-950 font-mono text-[10px] font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 animate-pulse cursor-pointer shadow-[0_0_12px_rgba(239,68,68,0.1)] hover:shadow-[0_0_15px_rgba(239,68,68,0.2)] ml-auto"
+                              >
+                                <ArrowLeft size={12} /> Return to Holographic Map
+                              </button>
+                            )}
                           </div>
                         </div>
                       </motion.div>
@@ -7139,335 +10229,1216 @@ export default function App() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      className="glass-panel-heavy border-red-500/40 rounded-2xl p-4 md:p-6 shadow-2xl flex flex-col gap-5 box-glow-pink overflow-hidden"
+                      className="glass-panel-heavy border-red-500/40 rounded-2xl p-3 md:p-4 shadow-2xl flex flex-col gap-3 md:gap-4 box-glow-pink overflow-hidden"
                     >
                       {/* Header */}
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-rose-500/20 pb-3 gap-2">
-                        <div>
-                          <span className="font-display font-black text-base text-rose-400 flex items-center gap-2 uppercase tracking-wider animate-pulse">
-                            <Sword size={18} className="text-rose-500" /> TACTICAL COMBAT SEQUENCE
-                          </span>
-                          <p className="text-4xs font-mono text-slate-500 uppercase tracking-widest mt-0.5">GRID MATRIX ALPHA-9: SQUAD-BASED CONFLICT</p>
+                      <div className="flex justify-between items-center border-b border-rose-500/20 pb-1.5 gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <Sword size={15} className="text-rose-500 animate-pulse" />
+                          <h2 className="font-display font-black text-xs md:text-sm text-rose-400 uppercase tracking-wider leading-none">
+                            Combat Grid
+                          </h2>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] bg-rose-950 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded-md font-mono uppercase tracking-wider font-extrabold">
-                            CONFLICT BOUND
+                          <span className="text-[8px] bg-rose-950 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider font-extrabold leading-none">
+                            Active Conflict
                           </span>
                         </div>
                       </div>
 
                       {/* Initiative Queue Timeline */}
-                      <div className="bg-slate-950/60 border border-white/5 p-2 rounded-xl flex flex-col gap-1">
-                        <span className="text-4xs font-mono text-slate-500 uppercase tracking-widest font-black text-left">Initiative Timeline Queue:</span>
-                        <div className="flex items-center gap-1.5 overflow-x-auto py-1 scrollbar-thin">
+                      <div className="bg-slate-950/80 border border-rose-500/10 p-2 rounded-xl flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                          </span>
+                          <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-black">TURN ORDER:</span>
+                        </div>
+                        <div className="flex items-center gap-2 overflow-x-auto py-1 py-0.5 scrollbar-none flex-1">
                           {gridCombat.turnOrder.map((id, index) => {
                             const unit = gridCombat.combatants.find(c => c.id === id);
                             if (!unit || unit.isDead) return null;
                             const isActive = index === gridCombat.currentTurnIdx;
+                            const roleLabel = unit.id === "player" 
+                              ? "YOU" 
+                              : unit.isCompanion 
+                                ? "SQUAD" 
+                                : "ARES";
+                            
                             return (
-                              <div
-                                key={id}
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-3xs font-mono transition-all duration-300 flex-shrink-0 ${
-                                  isActive
-                                    ? "bg-cyan-950/80 border-cyan-400 text-cyan-300 ring-2 ring-cyan-500/20 animate-pulse scale-105"
-                                    : unit.team === "player"
-                                      ? "bg-slate-900/60 border-slate-700 text-slate-300"
-                                      : "bg-red-950/30 border-red-900/50 text-red-300"
-                                }`}
-                              >
-                                <span>{unit.avatar}</span>
-                                <span className="font-bold truncate max-w-[80px]">{unit.name.split(" ")[0]}</span>
-                                <span className="text-slate-500 text-4xs">({unit.initiative} INI)</span>
-                              </div>
+                              <React.Fragment key={id}>
+                                {index > 0 && <span className="text-slate-700 font-mono text-xs select-none">→</span>}
+                                <div
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono transition-all duration-300 flex-shrink-0 ${
+                                    isActive
+                                      ? "bg-cyan-950/90 border-cyan-400 text-cyan-200 ring-2 ring-cyan-500/30 animate-pulse scale-105 font-black shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+                                      : unit.team === "player"
+                                        ? "bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700"
+                                        : "bg-red-950/40 border-red-950/80 text-rose-300 hover:border-red-900/40"
+                                  }`}
+                                >
+                                  <span className="text-xs select-none">{unit.avatar}</span>
+                                  <div className="flex flex-col leading-none">
+                                    <span className="font-bold truncate max-w-[65px] uppercase tracking-wide">{unit.name.split(" ")[0]}</span>
+                                    <span className={`text-[6px] font-extrabold ${isActive ? "text-cyan-400 animate-pulse" : "text-slate-500"}`}>[{roleLabel}]</span>
+                                  </div>
+                                </div>
+                              </React.Fragment>
                             );
                           })}
                         </div>
                       </div>
 
-                      {/* Tactical Grid Map & Stats Bar */}
-                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                        {/* 8x6 Cyber Grid Container */}
-                        <div className="lg:col-span-3 flex flex-col gap-2">
-                          <div className="flex justify-between items-center text-3xs font-mono text-slate-400 px-1">
-                            <span className="flex items-center gap-1"><Compass size={10} className="text-cyan-400" /> TAP CELLS TO MOVE [RANGE 2] / ATTACK WITH MELEE OR GUNS</span>
-                            <span>INTERIOR CORRIDOR ARRAY [8x6]</span>
+                      {/* Responsive Split Container for Grid on Left, Controls on Right */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start w-full">
+                        
+                        {/* LEFT COLUMN: Map & Log */}
+                        <div className="lg:col-span-8 flex flex-col gap-3 w-full">
+                          
+                          {/* Tactical Grid Map & Action Status Bar */}
+                          <div className="w-full flex flex-col gap-2">
+                        <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] font-mono text-slate-400 px-1 border-b border-white/5 pb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-cyan-400 uppercase font-black tracking-wider flex items-center gap-1 animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                              Acting: {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.name.split(" ")[0].toUpperCase()}
+                            </span>
+                            <span className="text-slate-700">|</span>
+                            <span className="text-slate-500 font-bold">AP:</span>
+                            <div className="flex gap-1 items-center">
+                              {Array.from({ length: gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.maxAp || 2 }).map((_, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`w-1.5 h-1.5 rounded-full border border-white/10 ${
+                                    idx < (gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.ap || 0)
+                                      ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]"
+                                      : "bg-slate-800"
+                                  }`}
+                                />
+                              ))}
+                            </div>
                           </div>
+                          <span className="text-[9px] text-slate-500 uppercase tracking-wider">TAP CELLS TO MOVE/ATTACK • ARRAY [8x6]</span>
+                        </div>
 
-                          {/* Render the Grid */}
-                          <div className="grid grid-cols-8 gap-1.5 p-3 bg-slate-950/95 border border-slate-800/80 rounded-xl relative overflow-hidden box-glow-cyan select-none min-h-[220px] sm:min-h-[280px]">
-                            {/* Grid Cell Loop */}
-                            {Array.from({ length: 6 }).map((_, rIdx) =>
-                              Array.from({ length: 8 }).map((__, cIdx) => {
-                                const COMBAT_OBSTACLES = [[2, 1], [2, 4], [5, 2], [5, 3], [3, 0], [4, 5]];
-                                const isObstacle = COMBAT_OBSTACLES.some(([ox, oy]) => ox === cIdx && oy === rIdx);
-                                const unit = gridCombat.combatants.find(c => c.x === cIdx && c.y === rIdx && !c.isDead);
-                                
-                                const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
-                                const isPlayerTurn = activeActor?.team === "player";
-                                
-                                // Movement Reachability Calculation
-                                let reachable = false;
-                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && !isObstacle && !unit && gridCombat.selectedAction === "move") {
-                                  const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
-                                  reachable = d > 0 && d <= 2;
+                        {/* Render the Grid */}
+                        <div 
+                          className="grid grid-cols-8 gap-1 p-1 sm:p-1.5 border border-slate-800/80 rounded-xl relative overflow-hidden box-glow-cyan select-none aspect-[4/3] w-full"
+                          style={{
+                            backgroundImage: "url('https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800')",
+                            backgroundSize: "cover",
+                            backgroundPosition: "center"
+                          }}
+                        >
+                          {/* Dark immersive overlay layer to secure high-contrast readability */}
+                          <div className="absolute inset-0 bg-slate-950/80 pointer-events-none z-0" />
+
+                          {/* Grid Cell Loop */}
+                          {Array.from({ length: 6 }).map((_, rIdx) =>
+                            Array.from({ length: 8 }).map((__, cIdx) => {
+                              const COMBAT_OBSTACLES = [[2, 1], [2, 4], [5, 2], [5, 3], [3, 0], [4, 5]];
+                              const cellObj = gridCombat.interactiveObjects?.find(o => o.x === cIdx && o.y === rIdx);
+                              const isObstacle = COMBAT_OBSTACLES.some(([ox, oy]) => {
+                                if (ox === cIdx && oy === rIdx) {
+                                  const matchingObj = gridCombat.interactiveObjects?.find(o => o.x === ox && o.y === oy);
+                                  if (matchingObj) {
+                                    return !matchingObj.isDestroyed;
+                                  }
+                                  return true;
                                 }
+                                return false;
+                              });
+                              const unit = gridCombat.combatants.find(c => c.x === cIdx && c.y === rIdx && !c.isDead);
+                              
+                              const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                              const isPlayerTurn = activeActor?.team === "player";
+                              
+                              // Movement Reachability Calculation
+                              let reachable = false;
+                              if (isPlayerTurn && activeActor && activeActor.ap > 0 && !isObstacle && !unit && gridCombat.selectedAction === "move") {
+                                const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                reachable = d > 0 && d <= 2;
+                              }
 
-                                // Targeting Calculation
-                                let targetable = false;
-                                if (isPlayerTurn && activeActor && activeActor.ap > 0 && unit && unit.team === "enemy") {
-                                  if (gridCombat.selectedAction === "meleeAtk") {
-                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
-                                    targetable = d === 1;
-                                  } else if (gridCombat.selectedAction === "rangedAtk") {
-                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
-                                    const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
-                                    targetable = d > 0 && d <= maxRange;
-                                  } else if (gridCombat.selectedAction === "attack") {
-                                    const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
-                                    targetable = d <= activeActor.range;
+                              let hoverReachable = false;
+                              if (isPlayerTurn && activeActor && activeActor.ap > 0 && !isObstacle && !unit && hoveredAction === "move") {
+                                const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                hoverReachable = d > 0 && d <= 2;
+                              }
+
+                              // Targeting Calculation
+                              let targetable = false;
+                              if (isPlayerTurn && activeActor && activeActor.ap > 0) {
+                                if (selectedSkill) {
+                                  if (selectedSkill.scope === "enemy" || selectedSkill.scope === "all_enemies") {
+                                    if (unit && unit.team === "enemy") {
+                                      targetable = true;
+                                    }
+                                  } else if (selectedSkill.scope === "self") {
+                                    if (unit && unit.id === "player") {
+                                      targetable = true;
+                                    }
+                                  }
+                                } else {
+                                  // Attack targets
+                                  if (unit && unit.team === "enemy") {
+                                    if (gridCombat.selectedAction === "meleeAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      targetable = d === 1;
+                                    } else if (gridCombat.selectedAction === "rangedAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
+                                      targetable = d > 0 && d <= maxRange;
+                                    } else if (gridCombat.selectedAction === "attack") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      targetable = d <= activeActor.range;
+                                    }
+                                  } else if (cellObj && !cellObj.isDestroyed) {
+                                    // Destructible environmental objects can be targeted and shot!
+                                    if (gridCombat.selectedAction === "meleeAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      targetable = d === 1;
+                                    } else if (gridCombat.selectedAction === "rangedAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
+                                      targetable = d > 0 && d <= maxRange;
+                                    } else if (gridCombat.selectedAction === "attack") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      targetable = d <= activeActor.range;
+                                    }
                                   }
                                 }
+                              }
 
-                                return (
-                                  <div
-                                    key={`${cIdx}-${rIdx}`}
-                                    onClick={() => {
-                                      if (!isPlayerTurn || !activeActor) return;
+                              let hoverTargetable = false;
+                              if (isPlayerTurn && activeActor && activeActor.ap > 0) {
+                                if (selectedSkill) {
+                                  if (selectedSkill.scope === "enemy" || selectedSkill.scope === "all_enemies") {
+                                    if (unit && unit.team === "enemy") {
+                                      hoverTargetable = true;
+                                    }
+                                  } else if (selectedSkill.scope === "self") {
+                                    if (unit && unit.id === "player") {
+                                      hoverTargetable = true;
+                                    }
+                                  }
+                                } else {
+                                  if (unit && unit.team === "enemy") {
+                                    if (hoveredAction === "meleeAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      hoverTargetable = d === 1;
+                                    } else if (hoveredAction === "rangedAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
+                                      hoverTargetable = d > 0 && d <= maxRange;
+                                    } else if (hoveredAction === "spell" || hoveredAction === "mind" || hoveredAction === "neural") {
+                                      hoverTargetable = true;
+                                    }
+                                  } else if (cellObj && !cellObj.isDestroyed) {
+                                    if (hoveredAction === "meleeAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      hoverTargetable = d === 1;
+                                    } else if (hoveredAction === "rangedAtk") {
+                                      const d = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
+                                      const maxRange = gameState?.equipment?.rangedWeapon === "Heavy Plasma Cannon" ? 4 : 3;
+                                      hoverTargetable = d > 0 && d <= maxRange;
+                                    }
+                                  }
+                                }
+                              }
+
+                              return (
+                                <div
+                                  key={`${cIdx}-${rIdx}`}
+                                  onMouseEnter={() => {
+                                    if (unit) {
+                                      setHoveredEntity({
+                                        name: unit.name,
+                                        avatar: unit.avatar || "👤",
+                                        type: "unit",
+                                        hp: `${unit.hp}/${unit.maxHp}`,
+                                        shields: unit.shields,
+                                        team: unit.team,
+                                        statuses: unit.statuses || [],
+                                        desc: unit.id === "player" ? "Your deployed operative. Controls active movement, strikes, and tactical skill selection." : `Active combat unit (${unit.team === "player" ? "Ally" : "Hostile"}).`
+                                      });
+                                    } else if (cellObj && !cellObj.isDestroyed) {
+                                      setHoveredEntity({
+                                        name: cellObj.name,
+                                        avatar: cellObj.avatar,
+                                        type: "object",
+                                        hp: `${cellObj.hp}/${cellObj.maxHp}`,
+                                        isHacked: cellObj.isHacked,
+                                        desc: cellObj.description
+                                      });
+                                    } else if (isObstacle) {
+                                      setHoveredEntity({
+                                        name: "Tactical Barrier",
+                                        avatar: "⚡",
+                                        type: "obstacle",
+                                        desc: "Impassable concrete structure providing high cover line-of-sight protection."
+                                      });
+                                    } else {
+                                      setHoveredEntity(null);
+                                    }
+                                  }}
+                                  onMouseLeave={() => setHoveredEntity(null)}
+                                  onClick={() => {
+                                    if (!isPlayerTurn || !activeActor) return;
+                                    
+                                    // 0. Execute Environmental Object Click Interaction (if no skill active)
+                                    if (!selectedSkill && cellObj && !cellObj.isDestroyed && !cellObj.isHacked) {
+                                      const dist = Math.abs(cIdx - activeActor.x) + Math.abs(rIdx - activeActor.y);
                                       
-                                      // Execute move
-                                      if (reachable && gridCombat.selectedAction === "move") {
-                                        const updated = gridCombat.combatants.map(c => {
-                                          if (c.id === activeActor.id) {
-                                            return { ...c, x: cIdx, y: rIdx, ap: c.ap - 1 };
-                                          }
-                                          return c;
-                                        });
-
-                                        setGridCombat(prev => prev ? {
-                                          ...prev,
-                                          combatants: updated,
-                                          turnLog: `⚡ ${activeActor.name} moved to sector coordinates [${cIdx}, ${rIdx}].`
-                                        } : null);
-
-                                        // Sync player coordinates or state if it's the main player
-                                        if (activeActor.id === "player" && gameState) {
-                                          let ns = { ...gameState };
-                                          setGameState(ns);
-                                        }
-                                        triggerToast("SECTOR MOVEMENT COMPLETE");
-                                      }
-                                      
-                                      // Execute attack
-                                      if (targetable && unit && (gridCombat.selectedAction === "attack" || gridCombat.selectedAction === "meleeAtk" || gridCombat.selectedAction === "rangedAtk")) {
-                                        let finalDamage = activeActor.damage;
-                                        let weaponUsedName = "unarmed strike";
-
-                                        if (gridCombat.selectedAction === "meleeAtk") {
-                                          const derived = getDerivedStats();
-                                          weaponUsedName = gameState?.equipment?.meleeWeapon || "standard cyber-fists";
-                                          finalDamage = 15 + Math.floor((gameState?.attributes?.str || 10) * 1.2) + derived.meleeAtk;
-                                        } else if (gridCombat.selectedAction === "rangedAtk") {
-                                          const derived = getDerivedStats();
-                                          weaponUsedName = gameState?.equipment?.rangedWeapon || "integrated sidearm";
-                                          finalDamage = 12 + Math.floor((gameState?.attributes?.dex || 10) * 1.2) + derived.rangeAtk;
-                                        }
-
-                                        const rollDmg = finalDamage + Math.floor(Math.random() * 7) - 3;
-                                        const updated = gridCombat.combatants.map(c => {
-                                          if (c.id === unit.id) {
-                                            let finalHp = c.hp;
-                                            let finalShields = c.shields;
-                                            if (finalShields > 0) {
-                                              finalShields -= rollDmg;
-                                              if (finalShields < 0) {
-                                                finalHp += finalShields;
-                                                finalShields = 0;
-                                              }
-                                            } else {
-                                              finalHp -= rollDmg;
-                                            }
-                                            const isDead = finalHp <= 0;
-                                            return { ...c, hp: Math.max(0, finalHp), shields: finalShields, isDead };
-                                          }
-                                          if (c.id === activeActor.id) {
-                                            return { ...c, ap: c.ap - 1 };
-                                          }
-                                          return c;
-                                        });
-
-                                        const hitEnemy = updated.find(c => c.id === unit.id);
-                                        const enemyRemainingLog = hitEnemy?.isDead 
-                                          ? `💥 ${hitEnemy.name} COMPROMISED: Systems overloaded and shattered!`
-                                          : `🎯 Hit! ${hitEnemy?.name} sustained ${rollDmg} damage. Vitals: (${hitEnemy?.hp}/${hitEnemy?.maxHp} HP, ${hitEnemy?.shields} SHIELD).`;
-
-                                        setGridCombat(prev => prev ? {
-                                          ...prev,
-                                          combatants: updated,
-                                          turnLog: `⚔️ ATTACK REPORT: ${activeActor.name} engaged ${unit.name} using ${weaponUsedName}! ${enemyRemainingLog}`
-                                        } : null);
-
-                                        // Sync health back to primary gameState if the primary enemy or player was damaged
-                                        if (gameState) {
-                                          let ns = { ...gameState };
-                                          if (unit.id === "enemy-1") {
-                                            ns.combatState!.enemyHp = Math.max(0, hitEnemy?.hp || 0);
-                                            ns.combatState!.enemyShields = hitEnemy?.shields || 0;
-                                          }
-                                          setGameState(ns);
-                                        }
-                                        triggerToast("STRIKE REGISTERED");
-                                      }
-                                    }}
-                                    className={`relative rounded border aspect-square flex items-center justify-center transition-all ${
-                                      isObstacle 
-                                        ? "bg-stripes-warning border-slate-900 bg-slate-900/40 text-slate-600"
-                                        : reachable
-                                          ? "border-cyan-400 bg-cyan-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(34,211,238,0.3)] hover:bg-cyan-900/40"
-                                          : targetable
-                                            ? "border-rose-500 bg-rose-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(239,68,68,0.3)] hover:bg-rose-900/40"
-                                            : "border-white/[0.03] bg-slate-900/30 hover:bg-slate-900/50"
-                                    }`}
-                                  >
-                                    {/* Obstacle Icon */}
-                                    {isObstacle && <span className="text-[10px] opacity-30 select-none">⚡</span>}
-
-                                    {/* Coordinates Hover Label */}
-                                    <span className="absolute bottom-0.5 right-0.5 text-[7px] text-slate-800 font-mono select-none">
-                                      {cIdx},{rIdx}
-                                    </span>
-
-                                    {/* Reachable Dot */}
-                                    {reachable && <div className="absolute w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />}
-
-                                    {/* Render Unit Token */}
-                                    {unit && (
-                                      <div
-                                        className={`w-4/5 h-4/5 rounded-full border-2 flex flex-col items-center justify-center relative shadow-lg ${unit.color} ${
-                                          unit.id === activeActor?.id ? "ring-2 ring-cyan-400 animate-pulse scale-105" : ""
-                                        }`}
-                                      >
-                                        <span className="text-xs select-none">{unit.avatar}</span>
+                                      if (cellObj.type === "terminal") {
+                                        const isHacker = gameState?.archetype === "Outlaw Hacker";
+                                        const canHack = isHacker || (dist <= 1);
                                         
-                                        {/* Simple Mini Health / Shield indicator */}
-                                        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-full max-w-[28px] h-1 bg-slate-950 rounded overflow-hidden flex">
-                                          {unit.shields > 0 && (
-                                            <div 
-                                              className="bg-cyan-400 h-full" 
-                                              style={{ width: `${(unit.shields / unit.maxShields) * 100}%` }} 
-                                            />
-                                          )}
-                                          <div 
-                                            className="bg-red-500 h-full flex-1" 
-                                            style={{ width: `${(unit.hp / unit.maxHp) * 100}%` }} 
-                                          />
+                                        if (!canHack) {
+                                          triggerToast("TOO FAR TO HACK (1 CELL REQ)");
+                                          return;
+                                        }
+                                        
+                                        if ((gameState?.mana || 0) < 10) {
+                                          triggerToast("INSUFFICIENT ETHER (10 MP REQ)");
+                                          return;
+                                        }
+                                        
+                                        // Perform hack!
+                                        setGameState(prev => {
+                                          if (!prev) return null;
+                                          return { ...prev, mana: Math.max(0, prev.mana - 10) };
+                                        });
+                                        
+                                        setGridCombat(prev => {
+                                          if (!prev) return null;
+                                          const updatedObjs = prev.interactiveObjects?.map(o => {
+                                            if (o.id === cellObj.id) {
+                                              return {
+                                                ...o,
+                                                isHacked: true,
+                                                color: "border-slate-800 text-slate-600 bg-slate-950/10",
+                                                description: "Tech Mainframe [HACKED]"
+                                              };
+                                            }
+                                            return o;
+                                          }) || [];
+                                          
+                                          const updatedCombs = prev.combatants.map(c => {
+                                            if (c.team === "enemy" && !c.isDead) {
+                                              const nextHp = Math.max(0, c.hp - 20);
+                                              const isDead = nextHp <= 0;
+                                              return {
+                                                ...c,
+                                                hp: nextHp,
+                                                silencedTurns: 2,
+                                                statuses: [...(c.statuses || []).filter(s => s !== "Silenced"), "Silenced"],
+                                                isDead
+                                              };
+                                            }
+                                            if (c.id === activeActor.id) {
+                                              return { ...c, ap: Math.max(0, c.ap - 1) };
+                                            }
+                                            return c;
+                                          });
+                                          
+                                          return {
+                                            ...prev,
+                                            interactiveObjects: updatedObjs,
+                                            combatants: updatedCombs,
+                                            turnLog: `💻 TECH MAINFRAME HACKED: ${activeActor.name} overloaded the central terminal! Direct neural feedback shocked all active hostiles for 20 damage and silenced them for 2 turns! (-10 Mana, -1 AP)`
+                                          };
+                                        });
+                                        
+                                        triggerToast("GRID TERMINAL HACKED!");
+                                        return;
+                                      }
+                                      
+                                      if (cellObj.type === "shield_cover") {
+                                        if (dist > 1) {
+                                          triggerToast("TOO FAR TO ACTIVATE (1 CELL REQ)");
+                                          return;
+                                        }
+                                        
+                                        if (activeActor.ap < 1) {
+                                          triggerToast("INSUFFICIENT ACTION POINTS");
+                                          return;
+                                        }
+                                        
+                                        // Activate Energy Cover!
+                                        setGridCombat(prev => {
+                                          if (!prev) return null;
+                                          const updatedObjs = prev.interactiveObjects?.map(o => {
+                                            if (o.id === cellObj.id) {
+                                              return {
+                                                ...o,
+                                                isHacked: true,
+                                                color: "border-slate-800 text-slate-600 bg-slate-950/10",
+                                                description: "Energy Cover [ACTIVATED]"
+                                              };
+                                            }
+                                            return o;
+                                          }) || [];
+                                          
+                                          const updatedCombs = prev.combatants.map(c => {
+                                            if (c.id === activeActor.id) {
+                                              return { ...c, ap: Math.max(0, c.ap - 1) };
+                                            }
+                                            return c;
+                                          });
+                                          
+                                          // Find player units adjacent to the shield cover
+                                          updatedCombs.forEach(unit => {
+                                            const uDist = Math.abs(unit.x - cellObj.x) + Math.abs(unit.y - cellObj.y);
+                                            if (unit.team === "player" && uDist <= 1 && !unit.isDead) {
+                                              unit.shields = Math.min(unit.maxShields || 50, unit.shields + 20);
+                                            }
+                                          });
+                                          
+                                          return {
+                                            ...prev,
+                                            interactiveObjects: updatedObjs,
+                                            combatants: updatedCombs,
+                                            turnLog: `🛰️ ENERGY COVER ACTIVATED: ${activeActor.name} deployed the electromagnetic cover! All adjacent allies gained +20 Shields! (-1 AP)`
+                                          };
+                                        });
+                                        
+                                        triggerToast("ENERGY DEFENSES ENERGIZED!");
+                                        return;
+                                      }
+                                    }
+
+                                    // 1. Execute Selected Class Skill
+                                    if (selectedSkill) {
+                                      if (targetable) {
+                                        const cost = selectedSkill.cost;
+                                        if (selectedSkill.costType === "MP" && (gameState?.mana || 0) < cost) {
+                                          triggerToast("INSUFFICIENT ETHER (MP)");
+                                          return;
+                                        }
+                                        if (selectedSkill.costType === "SP" && (gameState?.stamina || 0) < cost) {
+                                          triggerToast("INSUFFICIENT STAMINA (SP)");
+                                          return;
+                                        }
+
+                                        // Deduct mana or stamina cost from gameState
+                                        setGameState(prev => {
+                                          if (!prev) return null;
+                                          const nextMana = selectedSkill.costType === "MP" ? Math.max(0, prev.mana - cost) : prev.mana;
+                                          const nextStam = selectedSkill.costType === "SP" ? Math.max(0, prev.stamina - cost) : prev.stamina;
+                                          return { ...prev, mana: nextMana, stamina: nextStam };
+                                        });
+
+                                        // Apply skill results in gridCombat
+                                        setGridCombat(prev => {
+                                          if (!prev) return null;
+                                          let updatedCombs = prev.combatants.map(c => ({ ...c }));
+                                          const pActor = updatedCombs.find(c => c.id === activeActor.id)!;
+                                          pActor.ap = Math.max(0, pActor.ap - 1);
+
+                                          let log = "";
+                                          const skillName = selectedSkill.name;
+
+                                          if (selectedSkill.scope === "enemy") {
+                                            const enemyUnit = updatedCombs.find(c => c.x === cIdx && c.y === rIdx && !c.isDead)!;
+                                            let dmg = 25;
+
+                                            if (skillName.includes("Viper Strike")) {
+                                              dmg = 35 + Math.floor((gameState?.attributes?.str || 10) * 1.5);
+                                              enemyUnit.corrodedTurns = 3;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Corroded"), "Corroded"];
+                                              log = `🗡️ VIPER STRIKE: Slashed ${enemyUnit.name} for ${dmg} physical damage and coated them in corrosion sludge (3 turns).`;
+                                            } else if (skillName.includes("Phantom Dash")) {
+                                              dmg = 45;
+                                              pActor.x = Math.max(0, Math.min(7, enemyUnit.x + (enemyUnit.x > pActor.x ? -1 : 1)));
+                                              pActor.y = enemyUnit.y;
+                                              log = `👤 PHANTOM DASH: Teleported behind ${enemyUnit.name}, executing an ether backstab for ${dmg} barrier-bypassing physical damage!`;
+                                            } else if (skillName.includes("Executioner's Wake")) {
+                                              dmg = 55;
+                                              log = `☠️ EXECUTIONER'S WAKE: Dealt massive ${dmg} impact damage.`;
+                                              if (enemyUnit.hp - dmg <= 0) {
+                                                log += " Target compromised! Mana cost partially refunded.";
+                                                setGameState(g => g ? { ...g, mana: Math.min(g.maxMana, g.mana + Math.floor(cost / 2)) } : null);
+                                              }
+                                            } else if (skillName.includes("Ether Spark")) {
+                                              dmg = 22 + Math.floor((gameState?.attributes?.eth || 10) * 1.3);
+                                              log = `🔮 ETHER SPARK: Generated lay-resonance bolt striking ${enemyUnit.name} for ${dmg} magic damage.`;
+                                            } else if (skillName.includes("Feedback Burn")) {
+                                              dmg = 35;
+                                              enemyUnit.silencedTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Silenced"), "Silenced"];
+                                              log = `💥 FEEDBACK BURN: Overloaded neural chips of ${enemyUnit.name}, dealing ${dmg} burst damage and jamming connections (Silenced for 2 turns).`;
+                                            } else if (skillName.includes("Bio-Electric Surge")) {
+                                              dmg = 30;
+                                              enemyUnit.glitchTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Glitched"), "Glitched"];
+                                              log = `⚡ BIO-ELECTRIC SURGE: Released electric surge on ${enemyUnit.name} for ${dmg} shock damage, disabling active robots (Glitched for 2 turns).`;
+                                            } else if (skillName.includes("Absolute Zero Code")) {
+                                              dmg = 50;
+                                              enemyUnit.stunnedTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Stunned"), "Stunned"];
+                                              log = `❄️ ABSOLUTE ZERO CODE: Injected cryogenic freeze algorithm into ${enemyUnit.name}, causing ${dmg} damage and paralyzing them (Stunned for 2 turns).`;
+                                            } else if (skillName.includes("ICE Disruption")) {
+                                              dmg = 15;
+                                              enemyUnit.glitchTurns = 3;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Glitched"), "Glitched"];
+                                              log = `💻 ICE DISRUPTION: Corrupted host subroutines, dealing ${dmg} damage and lowering combat efficiency (Glitched for 3 turns).`;
+                                            } else if (skillName.includes("Targeting Link")) {
+                                              dmg = 20;
+                                              enemyUnit.corrodedTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Corroded"), "Corroded"];
+                                              log = `🎯 TARGETING LINK: Linked coordinate locks on ${enemyUnit.name}, dealing ${dmg} laser damage and exposing weaknesses (Corroded for 2 turns).`;
+                                            } else if (skillName.includes("Systems Overload")) {
+                                              dmg = 28;
+                                              enemyUnit.stunnedTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Stunned"), "Stunned"];
+                                              log = `🔋 SYSTEMS OVERLOAD: Triggered localized terminal shocks dealing ${dmg} overload damage and causing Stun for 2 turns.`;
+                                            } else if (skillName.includes("Glitch Protocol")) {
+                                              dmg = 15;
+                                              pActor.shields = Math.min(pActor.maxShields || 50, pActor.shields + 20);
+                                              log = `🛰️ GLITCH PROTOCOL: Extracted defensive grid code from ${enemyUnit.name} to reinforce yourself, dealing ${dmg} damage and adding +20 Shields!`;
+                                            } else if (skillName.includes("Nano-Swarm Hack")) {
+                                              dmg = 15;
+                                              enemyUnit.corrodedTurns = 3;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Corroded"), "Corroded"];
+                                              log = `🐜 NANO-SWARM HACK: Dispatched aerosol micro-nanites eating target hull. Dealt ${dmg} damage, inflicting acid corrosion (3 turns).`;
+                                            } else if (skillName.includes("Satellite Guillotine")) {
+                                              dmg = 60;
+                                              log = `☄️ SATELLITE GUILLOTINE: Fired a high-orbit kinetic impact rod directly on ${enemyUnit.name} dealing ${dmg} heavy damage!`;
+                                            } else if (skillName.includes("Mind Hack")) {
+                                              dmg = 20;
+                                              enemyUnit.panicTurns = 2;
+                                              enemyUnit.statuses = [...(enemyUnit.statuses || []).filter(s => s !== "Panic"), "Panic"];
+                                              log = `👁️ MIND HACK: Hijacked cognitive motor control of ${enemyUnit.name}, dealing ${dmg} damage and triggering severe System Panic!`;
+                                            } else if (skillName.includes("Neural Overload")) {
+                                              dmg = 25;
+                                              log = `🧠 NEURAL OVERLOAD: Fired direct synapse shock wave dealing ${dmg} damage, completely bypassing shields!`;
+                                            } else if (skillName.includes("Cerebro-Collapse")) {
+                                              dmg = 60;
+                                              const heal = 30;
+                                              pActor.hp = Math.min(pActor.maxHp, pActor.hp + heal);
+                                              log = `🥀 CEREBRO-COLLAPSE: Obliterated target cortex for ${dmg} psychic damage and drained synapses, healing yourself for +${heal} HP!`;
+                                            }
+
+                                            // Apply HP damage
+                                            if (skillName.includes("Neural Overload") || skillName.includes("Phantom Dash")) {
+                                              enemyUnit.hp = Math.max(0, enemyUnit.hp - dmg);
+                                            } else {
+                                              if (enemyUnit.shields > 0) {
+                                                enemyUnit.shields -= dmg;
+                                                if (enemyUnit.shields < 0) {
+                                                  enemyUnit.hp += enemyUnit.shields;
+                                                  enemyUnit.shields = 0;
+                                                }
+                                              } else {
+                                                enemyUnit.hp -= dmg;
+                                              }
+                                              enemyUnit.hp = Math.max(0, enemyUnit.hp);
+                                            }
+                                            enemyUnit.isDead = enemyUnit.hp <= 0;
+
+                                            // Sync enemy HP to gameState
+                                            if (enemyUnit.id === "enemy-1" && gameState) {
+                                              setGameState(g => {
+                                                if (!g) return null;
+                                                return {
+                                                  ...g,
+                                                  combatState: {
+                                                    ...g.combatState!,
+                                                    enemyHp: enemyUnit.hp,
+                                                    enemyShields: enemyUnit.shields
+                                                  }
+                                                };
+                                              });
+                                            }
+                                          } else if (selectedSkill.scope === "all_enemies") {
+                                            let dmg = 30;
+                                            if (skillName.includes("Razor Tempest")) {
+                                              dmg = 30;
+                                              updatedCombs.forEach(e => {
+                                                if (e.team === "enemy" && !e.isDead) {
+                                                  e.hp = Math.max(0, e.hp - dmg);
+                                                  e.bleedTurns = 3;
+                                                  e.statuses = [...(e.statuses || []).filter(s => s !== "Bleeding"), "Bleeding"];
+                                                  e.isDead = e.hp <= 0;
+                                                }
+                                              });
+                                              log = `🌪️ RAZOR TEMPEST: Whirled molecular edge sweeps dealing ${dmg} physical damage to ALL active enemies and applying Bleeding!`;
+                                            } else if (skillName.includes("Quantum Singularity")) {
+                                              dmg = 25;
+                                              updatedCombs.forEach(e => {
+                                                if (e.team === "enemy" && !e.isDead) {
+                                                  e.hp = Math.max(0, e.hp - dmg);
+                                                  e.stunnedTurns = 2;
+                                                  e.statuses = [...(e.statuses || []).filter(s => s !== "Stunned"), "Stunned"];
+                                                  e.isDead = e.hp <= 0;
+                                                }
+                                              });
+                                              log = `🌌 QUANTUM SINGULARITY: Collapsed lay-gravity dealing ${dmg} void damage to ALL active enemies and pinning them (Stunned for 2 turns)!`;
+                                            } else if (skillName.includes("Synaptic Cascade")) {
+                                              dmg = 40;
+                                              updatedCombs.forEach(e => {
+                                                if (e.team === "enemy" && !e.isDead) {
+                                                  e.hp = Math.max(0, e.hp - dmg);
+                                                  e.stunnedTurns = 1;
+                                                  e.statuses = [...(e.statuses || []).filter(s => s !== "Stunned"), "Stunned"];
+                                                  e.isDead = e.hp <= 0;
+                                                }
+                                              });
+                                              log = `🌀 SYNAPTIC CASCADE: Neural synapse meltdown dealing ${dmg} psychic damage to ALL active enemies, locking them in Sleep Stun!`;
+                                            } else {
+                                              updatedCombs.forEach(e => {
+                                                if (e.team === "enemy" && !e.isDead) {
+                                                  e.hp = Math.max(0, e.hp - dmg);
+                                                  e.isDead = e.hp <= 0;
+                                                }
+                                              });
+                                              log = `🔮 AREA BLAST: Cast ${skillName} dealing ${dmg} magic damage to ALL hostiles on grid!`;
+                                            }
+
+                                            const primaryEnemy = updatedCombs.find(c => c.id === "enemy-1");
+                                            if (primaryEnemy && gameState) {
+                                              setGameState(g => {
+                                                if (!g) return null;
+                                                return {
+                                                  ...g,
+                                                  combatState: {
+                                                    ...g.combatState!,
+                                                    enemyHp: primaryEnemy.hp,
+                                                    enemyShields: primaryEnemy.shields
+                                                  }
+                                                };
+                                              });
+                                            }
+                                          } else if (selectedSkill.scope === "self") {
+                                            if (skillName.includes("Adrenaline Surge")) {
+                                              pActor.ap = Math.min(pActor.maxAp + 2, pActor.ap + 2);
+                                              pActor.overclockTurns = 2;
+                                              pActor.statuses = [...(pActor.statuses || []).filter(s => s !== "Overclocked"), "Overclocked"];
+                                              log = `⚡ ADRENALINE SURGE: Injected active adrenaline booster. Restored +2 AP and entered Overclock state!`;
+                                            } else if (skillName.includes("Cyber-Celerity")) {
+                                              pActor.overclockTurns = 3;
+                                              pActor.statuses = [...(pActor.statuses || []).filter(s => s !== "Overclocked"), "Overclocked"];
+                                              log = `🏃 CYBER-CELERITY: Clock rate multiplied. Grants high physical evasion (Overclocked for 3 turns)!`;
+                                            } else if (skillName.includes("Net Shield")) {
+                                              pActor.shields = Math.min(pActor.maxShields || 50, pActor.shields + 25);
+                                              log = `🛡️ NET SHIELD: Configured defensive micro-firewalls, granting +25 active shields!`;
+                                            } else if (skillName.includes("Ether Shroud")) {
+                                              pActor.overclockTurns = 2;
+                                              pActor.statuses = [...(pActor.statuses || []).filter(s => s !== "Overclocked"), "Overclocked"];
+                                              log = `🌫️ ETHER SHROUD: Cloaked neural signature, gaining invincibility and +50% combat evasion for 2 turns!`;
+                                            } else if (skillName.includes("Hallucinatory Echo")) {
+                                              pActor.shields = Math.min(pActor.maxShields || 50, pActor.shields + 25);
+                                              log = `👥 HALLUCINATORY ECHO: Projected 2 neural signature hologram clones, adding +25 Shields!`;
+                                            }
+                                          }
+
+                                          if (gameState) {
+                                            setGameState(g => g ? { ...g, hp: pActor.hp } : null);
+                                          }
+
+                                          setSelectedSkill(null);
+                                          return {
+                                            ...prev,
+                                            combatants: updatedCombs,
+                                            turnLog: `🔮 HIGH-TIER SKILL CAST: ${log}`
+                                          };
+                                        });
+
+                                        triggerToast("HIGH-TIER SKILL CAST");
+                                        return;
+                                      }
+                                    }
+
+                                    // 2. Execute Attack on Destructible Environmental Object
+                                    if (targetable && cellObj && !cellObj.isDestroyed && (gridCombat.selectedAction === "attack" || gridCombat.selectedAction === "meleeAtk" || gridCombat.selectedAction === "rangedAtk")) {
+                                      let finalDamage = activeActor.damage;
+                                      let weaponUsedName = "strike";
+
+                                      if (gridCombat.selectedAction === "meleeAtk") {
+                                        weaponUsedName = gameState?.equipment?.meleeWeapon || "tactical strike";
+                                        finalDamage = 15 + Math.floor((gameState?.attributes?.str || 10) * 1.2);
+                                      } else if (gridCombat.selectedAction === "rangedAtk") {
+                                        weaponUsedName = gameState?.equipment?.rangedWeapon || "weapon shot";
+                                        finalDamage = 12 + Math.floor((gameState?.attributes?.dex || 10) * 1.2);
+                                      }
+
+                                      const rollDmg = finalDamage + Math.floor(Math.random() * 5) - 2;
+
+                                      setGridCombat(prev => {
+                                        if (!prev) return null;
+                                        let updatedObjs = prev.interactiveObjects?.map(o => ({ ...o })) || [];
+                                        let updatedCombs = prev.combatants.map(c => ({ ...c }));
+                                        const pActor = updatedCombs.find(c => c.id === activeActor.id)!;
+                                        pActor.ap = Math.max(0, pActor.ap - 1);
+
+                                        const targetObj = updatedObjs.find(o => o.id === cellObj.id)!;
+                                        targetObj.hp = Math.max(0, targetObj.hp - rollDmg);
+                                        let destructionLog = "";
+
+                                        if (targetObj.hp <= 0) {
+                                          targetObj.isDestroyed = true;
+                                          if (targetObj.type === "battery") {
+                                            updatedCombs.forEach(unit => {
+                                              const dist = Math.abs(unit.x - targetObj.x) + Math.abs(unit.y - targetObj.y);
+                                              if (dist <= 1 && !unit.isDead) {
+                                                unit.hp = Math.max(0, unit.hp - 30);
+                                                destructionLog += ` 💥 Plasma Sludge explosion sweeps sector: ${unit.name} sustained 30 fire damage!`;
+                                                unit.isDead = unit.hp <= 0;
+                                              }
+                                            });
+
+                                            const hitPlayer = updatedCombs.find(c => c.id === "player")!;
+                                            if (gameState) {
+                                              setGameState(g => g ? { ...g, hp: hitPlayer.hp } : null);
+                                            }
+                                          }
+                                        }
+
+                                        const objRemainingLog = targetObj.isDestroyed
+                                          ? `💥 ${targetObj.name} BLOWN UP: System vaporized!${destructionLog}`
+                                          : `🎯 Hit! ${targetObj.name} sustained ${rollDmg} damage. Integrity: (${targetObj.hp}/${targetObj.maxHp} HP).`;
+
+                                        return {
+                                          ...prev,
+                                          interactiveObjects: updatedObjs,
+                                          combatants: updatedCombs,
+                                          turnLog: `⚔️ ENVIRONMENT ATTACK REPORT: ${activeActor.name} targeted ${targetObj.name} with ${weaponUsedName}! ${objRemainingLog}`
+                                        };
+                                      });
+
+                                      triggerToast("OBJECT DAMAGED");
+                                      return;
+                                    }
+                                    
+                                    // 3. Execute move
+                                    if (reachable && gridCombat.selectedAction === "move") {
+                                      const updated = gridCombat.combatants.map(c => {
+                                        if (c.id === activeActor.id) {
+                                          return { ...c, x: cIdx, y: rIdx, ap: c.ap - 1 };
+                                        }
+                                        return c;
+                                      });
+
+                                      setGridCombat(prev => prev ? {
+                                        ...prev,
+                                        combatants: updated,
+                                        turnLog: `⚡ ${activeActor.name} moved to sector coordinates [${cIdx}, ${rIdx}].`
+                                      } : null);
+
+                                      if (activeActor.id === "player" && gameState) {
+                                        let ns = { ...gameState };
+                                        setGameState(ns);
+                                      }
+                                      triggerToast("SECTOR MOVEMENT COMPLETE");
+                                    }
+                                    
+                                    // Execute attack
+                                    if (targetable && unit && (gridCombat.selectedAction === "attack" || gridCombat.selectedAction === "meleeAtk" || gridCombat.selectedAction === "rangedAtk")) {
+                                      let finalDamage = activeActor.damage;
+                                      let weaponUsedName = "unarmed strike";
+
+                                      if (gridCombat.selectedAction === "meleeAtk") {
+                                        const derived = getDerivedStats();
+                                        weaponUsedName = gameState?.equipment?.meleeWeapon || "standard cyber-fists";
+                                        finalDamage = 15 + Math.floor((gameState?.attributes?.str || 10) * 1.2) + derived.meleeAtk;
+                                      } else if (gridCombat.selectedAction === "rangedAtk") {
+                                        const derived = getDerivedStats();
+                                        weaponUsedName = gameState?.equipment?.rangedWeapon || "integrated sidearm";
+                                        finalDamage = 12 + Math.floor((gameState?.attributes?.dex || 10) * 1.2) + derived.rangeAtk;
+                                      }
+
+                                      const isOverclocked = activeActor.overclockTurns !== undefined && activeActor.overclockTurns > 0;
+                                      const baseRollDmg = finalDamage + Math.floor(Math.random() * 7) - 3;
+                                      const rollDmg = isOverclocked ? Math.floor(baseRollDmg * 1.8) : baseRollDmg;
+                                      
+                                      const updated = gridCombat.combatants.map(c => {
+                                        if (c.id === unit.id) {
+                                          let finalHp = c.hp;
+                                          let finalShields = c.shields;
+                                          if (finalShields > 0) {
+                                            finalShields -= rollDmg;
+                                            if (finalShields < 0) {
+                                              finalHp += finalShields;
+                                              finalShields = 0;
+                                            }
+                                          } else {
+                                            finalHp -= rollDmg;
+                                          }
+                                          const isDead = finalHp <= 0;
+                                          return { ...c, hp: Math.max(0, finalHp), shields: finalShields, isDead };
+                                        }
+                                        if (c.id === activeActor.id) {
+                                          return { ...c, ap: c.ap - 1 };
+                                        }
+                                        return c;
+                                      });
+
+                                      const hitEnemy = updated.find(c => c.id === unit.id);
+                                      const overclockMsg = isOverclocked ? " ⚡ DOUBLE STRIKE OVERCLOCK DETECTED!" : "";
+                                      const enemyRemainingLog = hitEnemy?.isDead 
+                                        ? `💥 ${hitEnemy.name} COMPROMISED: Systems overloaded and shattered!${overclockMsg}`
+                                        : `🎯 Hit! ${hitEnemy?.name} sustained ${rollDmg} damage.${overclockMsg} Vitals: (${hitEnemy?.hp}/${hitEnemy?.maxHp} HP, ${hitEnemy?.shields} SHIELD).`;
+
+                                      setGridCombat(prev => prev ? {
+                                        ...prev,
+                                        combatants: updated,
+                                        turnLog: `⚔️ ATTACK REPORT: ${activeActor.name} engaged ${unit.name} using ${weaponUsedName}! ${enemyRemainingLog}`
+                                      } : null);
+
+                                      // Sync health back to primary gameState if the primary enemy or player was damaged
+                                      if (gameState) {
+                                        let ns = { ...gameState };
+                                        if (unit.id === "enemy-1") {
+                                          ns.combatState!.enemyHp = Math.max(0, hitEnemy?.hp || 0);
+                                          ns.combatState!.enemyShields = hitEnemy?.shields || 0;
+                                        }
+                                        setGameState(ns);
+                                      }
+                                      triggerToast("STRIKE REGISTERED");
+                                    }
+                                  }}
+                                  className={`relative z-10 rounded border aspect-square flex items-center justify-center transition-all ${
+                                    isObstacle 
+                                      ? "bg-stripes-warning border-slate-900 bg-slate-900/40 text-slate-600"
+                                      : reachable
+                                        ? "border-cyan-400 bg-cyan-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(34,211,238,0.3)] hover:bg-cyan-900/40"
+                                        : targetable
+                                          ? "border-rose-500 bg-rose-950/40 cursor-pointer animate-pulse shadow-[inset_0_0_6px_rgba(239,68,68,0.3)] hover:bg-rose-900/40"
+                                          : hoverReachable
+                                            ? "border-cyan-500/80 bg-cyan-950/20 ring-2 ring-cyan-500/50 animate-pulse shadow-[0_0_12px_rgba(6,182,212,0.4)] cursor-pointer"
+                                            : hoverTargetable
+                                              ? "border-rose-500/80 bg-rose-950/20 ring-2 ring-rose-500/50 animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.4)] cursor-pointer"
+                                              : "border-white/[0.03] bg-slate-900/30 hover:bg-slate-900/50"
+                                  }`}
+                                >
+                                  {/* Render 2.5D Interactive Object */}
+                                  {cellObj && !cellObj.isDestroyed && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-1 z-20 pointer-events-none animate-fadeIn">
+                                      <div className={`w-11/12 h-11/12 rounded-lg border-2 flex flex-col items-center justify-center text-xs relative ${cellObj.color} shadow-lg shadow-black/80 backdrop-blur-xs`}>
+                                        <span className="text-sm select-none animate-bounce-slow mt-1">{cellObj.avatar}</span>
+                                        <span className="text-[6px] font-mono font-black scale-90 mt-0.5 tracking-tighter uppercase leading-none text-white select-none">{cellObj.name.split(" ")[0]}</span>
+                                        {/* Object HP bar */}
+                                        <div className="w-4/5 bg-slate-900 h-[2.5px] rounded-full overflow-hidden absolute bottom-1.5 border border-white/5">
+                                          <div className="bg-emerald-400 h-full shadow-[0_0_4px_rgba(52,211,153,0.6)]" style={{ width: `${Math.max(0, Math.min(100, (cellObj.hp / cellObj.maxHp) * 100))}%` }} />
                                         </div>
                                       </div>
-                                    )}
-                                  </div>
-                                );
-                              })
+                                    </div>
+                                  )}
+
+                                  {/* Fallback Obstacle Icon if no interactive object */}
+                                  {isObstacle && !cellObj && <span className="text-[10px] opacity-30 select-none">⚡</span>}
+
+                                  {/* Coordinates Hover Label */}
+                                  <span className="absolute bottom-0.5 right-0.5 text-[7px] text-slate-800 font-mono select-none">
+                                    {cIdx},{rIdx}
+                                  </span>
+
+                                  {/* Reachable Dot */}
+                                  {(reachable || hoverReachable) && <div className="absolute w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping" />}
+
+                                  {/* Render 2.5D Standing Unit Token */}
+                                  {unit && (
+                                    <div
+                                      className={`absolute inset-x-0 bottom-0 h-[125%] flex flex-col items-center justify-end pointer-events-none ${
+                                        unit.id === activeActor?.id ? "z-30 scale-105 -translate-y-1" : "z-20"
+                                      } transition-all duration-300`}
+                                    >
+                                      {/* Holographic Tactical Base Plate (Glows under character's feet) */}
+                                      <div
+                                        className={`w-[85%] h-[20px] rounded-[50%] absolute bottom-0 border-2 bg-slate-950/80 shadow-lg ${
+                                          unit.team === "player"
+                                            ? "border-cyan-500/60 shadow-[0_0_10px_rgba(6,182,212,0.4)]"
+                                            : "border-red-500/60 shadow-[0_0_10px_rgba(239,68,68,0.4)]"
+                                        } ${unit.id === activeActor?.id ? "animate-pulse border-cyan-400 shadow-[0_0_14px_rgba(34,211,238,0.7)]" : ""}`}
+                                      />
+
+                                      {/* Standing Character Visual Miniature Card */}
+                                      <div
+                                        className={`w-[78%] h-[85%] absolute bottom-2 rounded-t-xl overflow-hidden border-2 flex flex-col justify-end shadow-2xl transition-all duration-300 ${
+                                          unit.team === "player"
+                                            ? "border-cyan-500/80 bg-gradient-to-t from-cyan-950/90 via-cyan-950/40 to-slate-950/30"
+                                            : "border-red-500/80 bg-gradient-to-t from-red-950/90 via-red-950/40 to-slate-950/30"
+                                        } ${unit.id === activeActor?.id ? "border-cyan-400 ring-2 ring-cyan-400/30" : ""}`}
+                                      >
+                                        {/* Unit Sprite Image */}
+                                        {unit.image ? (
+                                          <img
+                                            src={unit.image}
+                                            alt={unit.name}
+                                            className={`w-full h-full object-cover object-top filter contrast-[1.05] brightness-[1.02] ${
+                                              (unit.glitchTurns !== undefined && unit.glitchTurns > 0) || (unit.statuses?.includes("Glitched")) ? "animate-glitch opacity-85" : ""
+                                            }`}
+                                            referrerPolicy="no-referrer"
+                                          />
+                                        ) : (
+                                          <div className={`w-full h-full flex items-center justify-center bg-slate-900 ${
+                                            (unit.glitchTurns !== undefined && unit.glitchTurns > 0) || (unit.statuses?.includes("Glitched")) ? "animate-glitch" : ""
+                                          }`}>
+                                            <span className="text-xl">{unit.avatar}</span>
+                                          </div>
+                                        )}
+
+                                        {/* Holographic Active Laser Scanner Line */}
+                                        {unit.id === activeActor?.id && (
+                                          <div
+                                            className={`absolute inset-x-0 h-0.5 pointer-events-none z-10 opacity-75 shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-scanline ${
+                                              unit.team === "player" ? "bg-cyan-400" : "bg-rose-500"
+                                            }`}
+                                          />
+                                        )}
+
+                                        {/* Futuristic Scanline Overlay */}
+                                        <div className="absolute inset-0 bg-scanlines pointer-events-none opacity-[0.15] mix-blend-overlay" />
+
+                                        {/* Cybernetic Neon Glow Effect */}
+                                        <div
+                                          className={`absolute inset-0 bg-gradient-to-t opacity-30 pointer-events-none ${
+                                            unit.team === "player"
+                                              ? "from-cyan-500/40 to-transparent"
+                                              : "from-red-500/40 to-transparent"
+                                          }`}
+                                        />
+
+                                        {/* Mini Badge overlaying the avatar emoji */}
+                                        <div className="absolute top-1 left-1 w-3.5 h-3.5 rounded-full bg-slate-950/90 border border-white/10 flex items-center justify-center text-[8px] shadow z-10 select-none">
+                                          {unit.avatar}
+                                        </div>
+
+                                        {/* Short human-readable tactical label */}
+                                        <div className="absolute top-1 right-1 px-1 bg-slate-950/80 rounded border border-white/5 text-[6px] font-mono font-bold leading-none scale-90 origin-top-right text-slate-300 tracking-tighter select-none z-10">
+                                          {unit.id === "player" ? "YOU" : unit.name.split(" ")[0].toUpperCase()}
+                                        </div>
+
+                                        {/* Full Width Integrated Health and Shield Overlay with HP values underneath */}
+                                        <div className="absolute bottom-0 left-0 right-0 bg-slate-950/90 border-t border-white/10 p-0.5 flex flex-col gap-0.5 z-20">
+                                          {unit.shields > 0 && (
+                                            <div className="w-full bg-slate-900 h-[3px] rounded-full overflow-hidden">
+                                              <div
+                                                className="bg-cyan-400 h-full shadow-[0_0_4px_rgba(34,211,238,0.8)]"
+                                                style={{ width: `${Math.max(0, Math.min(100, (unit.shields / unit.maxShields) * 100))}%` }}
+                                              />
+                                            </div>
+                                          )}
+                                          <div className="w-full bg-slate-900 h-[3px] rounded-full overflow-hidden">
+                                            <div
+                                              className="bg-red-500 h-full"
+                                              style={{ width: `${Math.max(0, Math.min(100, (unit.hp / unit.maxHp) * 100))}%` }}
+                                            />
+                                          </div>
+                                          <div className="flex justify-between items-center text-[6px] font-mono font-black px-0.5 text-rose-300 scale-90 leading-none">
+                                            <span>HP</span>
+                                            <span>{unit.hp}/{unit.maxHp}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Tiny floating status indicator icons */}
+                                      <div className="absolute top-0 right-1 flex flex-col gap-0.5 pointer-events-none select-none z-40 scale-90">
+                                        {unit.overclockTurns !== undefined && unit.overclockTurns > 0 && (
+                                          <span className="text-[7px] text-amber-400 font-extrabold bg-slate-950/95 leading-none p-0.5 rounded border border-amber-500/40 shadow-md animate-pulse">⚡</span>
+                                        )}
+                                        {unit.glitchTurns !== undefined && unit.glitchTurns > 0 && (
+                                          <span className="text-[7px] text-red-400 font-extrabold bg-slate-950/95 leading-none p-0.5 rounded border border-red-500/40 shadow-md animate-pulse">🔌</span>
+                                        )}
+                                        {unit.corrodedTurns !== undefined && unit.corrodedTurns > 0 && (
+                                          <span className="text-[7px] text-emerald-400 font-extrabold bg-slate-950/95 leading-none p-0.5 rounded border border-emerald-500/40 shadow-md animate-pulse">💥</span>
+                                        )}
+                                        {unit.panicTurns !== undefined && unit.panicTurns > 0 && (
+                                          <span className="text-[7px] text-fuchsia-400 font-extrabold bg-slate-950/95 leading-none p-0.5 rounded border border-fuchsia-500/40 shadow-md animate-pulse">🧠</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Hovered Entity Detailed Scanner Panel */}
+                      {hoveredEntity ? (
+                        <div className="bg-slate-950/95 border border-cyan-500/30 p-2.5 rounded-xl text-xs flex items-center gap-3 shadow-[0_0_10px_rgba(6,182,212,0.15)] animate-fadeIn shrink-0">
+                          <span className="text-xl shrink-0 p-1 bg-slate-900 border border-white/10 rounded-md select-none">{hoveredEntity.avatar}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-center">
+                              <span className="font-mono font-black text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
+                                {hoveredEntity.name}
+                                {hoveredEntity.type === "object" && (
+                                  <span className={`text-[8px] px-1 py-0.5 rounded leading-none ${hoveredEntity.isHacked ? "bg-slate-900 text-slate-500 border border-white/5" : "bg-cyan-950/50 text-cyan-400 border border-cyan-500/30 font-black"}`}>
+                                    {hoveredEntity.isHacked ? "HACKED" : "INTERACTIVE"}
+                                  </span>
+                                )}
+                              </span>
+                              {hoveredEntity.hp && (
+                                <span className="font-mono font-bold text-[10px] text-rose-300 shrink-0">
+                                  INTEGRITY: {hoveredEntity.hp} HP
+                                  {hoveredEntity.shields > 0 && ` | SHIELD: +${hoveredEntity.shields}`}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-sans mt-0.5 leading-relaxed">{hoveredEntity.desc}</p>
+                            {hoveredEntity.statuses && hoveredEntity.statuses.length > 0 && (
+                              <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                <span className="text-[8px] font-mono font-black text-slate-500">STATUSES:</span>
+                                {hoveredEntity.statuses.map((st: string) => (
+                                  <span key={st} className="text-[8px] font-mono font-black bg-amber-950/50 text-amber-400 border border-amber-500/30 px-1 py-0.5 rounded leading-none uppercase animate-pulse">{st}</span>
+                                ))}
+                              </div>
                             )}
                           </div>
                         </div>
-
-                        {/* Sidebar: Combatants Details list */}
-                        <div className="bg-slate-900/40 border border-white/5 rounded-xl p-3 flex flex-col gap-3 font-mono text-3xs">
-                          <span className="text-slate-400 font-extrabold uppercase text-[10px] tracking-wider border-b border-white/10 pb-1.5 block">Tactical Roster:</span>
-                          <div className="flex-1 space-y-2 max-h-[190px] lg:max-h-[250px] overflow-y-auto pr-1">
-                            {gridCombat.combatants.map(c => {
-                              if (c.isDead) return null;
-                              return (
-                                <div key={c.id} className="bg-slate-950/40 border border-white/[0.03] p-1.5 rounded flex justify-between items-center">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs">{c.avatar}</span>
-                                    <div>
-                                      <p className="font-bold text-slate-300 leading-none">{c.name.split(" ")[0]}</p>
-                                      <p className="text-[7px] text-slate-500 leading-none mt-0.5">X:{c.x}, Y:{c.y} • AP:{c.ap}</p>
-                                    </div>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-red-400 leading-none">{c.hp}/{c.maxHp} HP</p>
-                                    {c.shields > 0 && <p className="text-cyan-400 text-[7px] leading-none mt-0.5">{c.shields} SHLD</p>}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Quick active combatant turn indicator */}
-                          <div className="bg-slate-950 border border-cyan-500/20 p-2 rounded-lg text-left">
-                            <span className="text-[8px] text-cyan-400 block uppercase font-bold leading-none mb-1">Acting Now:</span>
-                            <span className="text-[10px] text-white font-extrabold block uppercase tracking-wide truncate">
-                              {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.name}
-                            </span>
-                            <div className="flex items-center gap-1.5 mt-1.5">
-                              <span className="text-[8px] text-slate-500 font-black">AP:</span>
-                              <div className="flex gap-1">
-                                {Array.from({ length: gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.maxAp || 2 }).map((_, idx) => (
-                                  <div
-                                    key={idx}
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      idx < (gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.ap || 0)
-                                        ? "bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,0.8)]"
-                                        : "bg-slate-800"
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          </div>
+                      ) : (
+                        <div className="bg-slate-950/40 border border-white/[0.02] p-2 rounded-xl text-center text-[10px] text-slate-500 font-mono tracking-wide shrink-0">
+                          🔍 HOVER OVER ANY UNIT, BATTERY, COVER, OR MAINBOARD TO SCAN FIELDS
                         </div>
-                      </div>
+                      )}
 
                       {/* Combat Status Feed Log */}
-                      <div className="bg-slate-950/95 border border-rose-500/30 p-4 rounded-xl text-amber-200 font-mono text-xs sm:text-sm md:text-base text-center font-bold tracking-wide shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-                        <span className="text-rose-500 font-black mr-2">SYS LOG:</span>
+                      <div className="bg-slate-950/95 border border-rose-500/30 p-2 rounded-xl text-amber-200 font-mono text-2xs md:text-xs text-center font-semibold tracking-wide shadow-[0_0_8px_rgba(239,68,68,0.08)] leading-normal animate-pulse">
+                        <span className="text-rose-500 font-black mr-1.5">SYS LOG:</span>
                         {gridCombat.turnLog}
                       </div>
 
+                    </div>
+
+                    {/* RIGHT COLUMN: Controls Panel */}
+                    <div className="lg:col-span-4 flex flex-col gap-3 w-full bg-slate-950/60 border border-white/5 p-3 rounded-xl shadow-xl">
+                      <div className="border-b border-white/10 pb-1.5 flex justify-between items-center">
+                        <span className="text-3xs font-mono font-black text-slate-400 uppercase tracking-widest">TACTICAL INTERFACE</span>
+                        <span className="text-[8px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono font-black animate-pulse">READY</span>
+                      </div>
+
                       {/* Controls Area */}
-                      <div className="border-t border-white/5 pt-3 flex flex-col md:flex-row gap-3 items-center justify-between">
+                      <div className="w-full flex flex-col gap-2">
+                        {selectedSkill && (
+                          <div className="bg-purple-950/50 border border-purple-500/40 p-2 rounded-lg flex justify-between items-center text-3xs font-mono animate-pulse shrink-0">
+                            <div className="flex items-center gap-1.5 text-purple-300">
+                              <span>{selectedSkill.icon}</span>
+                              <span className="font-extrabold uppercase">{selectedSkill.name.split(" (")[0]}</span>
+                              <span className="text-[8px] text-purple-400">({selectedSkill.cost} {selectedSkill.costType})</span>
+                            </div>
+                            <button
+                              onClick={() => setSelectedSkill(null)}
+                              className="text-red-400 hover:text-red-300 border border-red-500/30 px-1.5 py-0.5 rounded bg-slate-950 cursor-pointer scale-90"
+                            >
+                              CANCEL
+                            </button>
+                          </div>
+                        )}
                         {/* Player / Companion Turn Controls */}
                         {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.team === "player" ? (
-                          <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                            <button
-                              onClick={() => {
-                                setGridCombat(prev => prev ? { ...prev, selectedAction: "move" } : null);
-                              }}
-                              className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
-                                gridCombat.selectedAction === "move"
-                                  ? "bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.3)]"
-                                  : "bg-slate-900 border-white/5 text-cyan-400 hover:bg-slate-800"
-                              }`}
-                            >
-                              🚀 Move Position [AP: 1]
-                            </button>
-                            
+                          <div className="flex flex-col gap-3 w-full animate-fadeIn">
+                            {/* Tab Switching Headers */}
+                            <div className="flex border-b border-white/10 pb-2 gap-1 overflow-x-auto scrollbar-none">
+                              <button
+                                onClick={() => setCombatActionTab("attacks")}
+                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                  combatActionTab === "attacks"
+                                    ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                                    : "text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                ⚔️ Attacks
+                              </button>
+                              <button
+                                onClick={() => setCombatActionTab("skills")}
+                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                  combatActionTab === "skills"
+                                    ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
+                                    : "text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                🔮 Skills
+                              </button>
+                              <button
+                                onClick={() => setCombatActionTab("support")}
+                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                  combatActionTab === "support"
+                                    ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+                                    : "text-slate-400 hover:text-white"
+                                }`}
+                              >
+                                🏃 Support
+                              </button>
+                            </div>
+
+                            {/* Tab Contents + Persistent End Turn Button */}
+                            <div className="flex flex-col gap-3 bg-slate-950/40 p-2.5 rounded-xl border border-white/5">
+                              {/* Current Active Tab Content Action Buttons */}
+                              <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 w-full">
+                                {combatActionTab === "support" && (
+                                  <button
+                                    onClick={() => {
+                                      setGridCombat(prev => prev ? { ...prev, selectedAction: "move" } : null);
+                                    }}
+                                    onMouseEnter={() => setHoveredAction("move")}
+                                    onMouseLeave={() => setHoveredAction(null)}
+                                    className={`flex-1 sm:flex-initial font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                      gridCombat.selectedAction === "move"
+                                        ? "bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.3)]"
+                                        : "bg-slate-900 border-white/5 text-cyan-400 hover:bg-slate-800"
+                                    }`}
+                                  >
+                                    🚀 Move [1 AP]
+                                  </button>
+                                )}
+                                {combatActionTab === "skills" && (
+                                  <div className="col-span-2 flex flex-col gap-2 w-full">
+                                    <div className="flex justify-between items-center text-[10px] font-mono border-b border-white/5 pb-1 text-slate-400">
+                                      <span className="uppercase tracking-wider font-extrabold text-purple-400">⚡ CLASS: {gameState?.archetype || "CYBER-BLADE"}</span>
+                                      <span className="bg-slate-900 border border-white/5 px-2 py-0.5 rounded text-slate-300 font-extrabold">LEVEL: {gameState?.level || 1}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                                      {(() => {
+                                        const playerArchetype = gameState?.archetype || "Cyber-Blade";
+                                        const archetypeSkillNames = {
+                                          "Cyber-Blade": [
+                                            "Viper Strike (Tier 1)",
+                                            "Adrenaline Surge (Tier 2)",
+                                            "Phantom Dash (Tier 3)",
+                                            "Razor Tempest (Tier 4)",
+                                            "Cyber-Celerity (Tier 5)",
+                                            "Executioner's Wake (Tier 6)"
+                                          ],
+                                          "Techno-Mage": [
+                                            "Ether Spark (Tier 1)",
+                                            "Net Shield (Tier 2)",
+                                            "Feedback Burn (Tier 3)",
+                                            "Quantum Singularity (Tier 4)",
+                                            "Bio-Electric Surge (Tier 5)",
+                                            "Absolute Zero Code (Tier 6)"
+                                          ],
+                                          "Outlaw Hacker": [
+                                            "ICE Disruption (Tier 1)",
+                                            "Targeting Link (Tier 2)",
+                                            "Systems Overload (Tier 3)",
+                                            "Glitch Protocol (Tier 4)",
+                                            "Nano-Swarm Hack (Tier 5)",
+                                            "Satellite Guillotine (Tier 6)"
+                                          ],
+                                          "Mindmancer": [
+                                            "Mind Hack (Tier 1)",
+                                            "Neural Overload (Tier 2)",
+                                            "Synaptic Cascade (Tier 3)",
+                                            "Ether Shroud (Tier 4)",
+                                            "Hallucinatory Echo (Tier 5)",
+                                            "Cerebro-Collapse (Tier 6)"
+                                          ]
+                                        }[playerArchetype] || [];
+
+                                        return archetypeSkillNames.map((skillName, idx) => {
+                                          const skillReqLevel = idx + 1;
+                                          const isUnlocked = (gameState?.level || 1) >= skillReqLevel;
+                                          const skillDetail = COMBAT_SKILL_DETAILS[skillName];
+                                          const isSelected = selectedSkill?.name === skillName;
+
+                                          if (!skillDetail) return null;
+
+                                          return (
+                                            <button
+                                              key={skillName}
+                                              disabled={!isUnlocked}
+                                              onClick={() => {
+                                                const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                                if (!activeActor || activeActor.ap < 1) {
+                                                  triggerToast("NO ACTION POINTS LEFT! (AP REQ)");
+                                                  return;
+                                                }
+
+                                                if (skillDetail.costType === "MP" && (gameState?.mana || 0) < skillDetail.cost) {
+                                                  triggerToast("INSUFFICIENT ETHER! (MP REQ)");
+                                                  return;
+                                                }
+
+                                                if (skillDetail.costType === "SP" && (gameState?.stamina || 0) < skillDetail.cost) {
+                                                  triggerToast("INSUFFICIENT STAMINA! (SP REQ)");
+                                                  return;
+                                                }
+
+                                                // Select skill and initiate grid targeting action mode
+                                                setSelectedSkill(skillDetail);
+                                                setGridCombat(prev => prev ? { ...prev, selectedAction: "spell" } : null);
+                                                triggerToast("SKILL ARMED: CLICK TARGET CELLS ON THE MAP GRID!");
+                                              }}
+                                              className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all font-mono leading-normal select-none relative overflow-hidden group ${
+                                                isUnlocked
+                                                  ? isSelected
+                                                    ? "bg-purple-950 text-purple-200 border-purple-400 ring-2 ring-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)] animate-pulse"
+                                                    : "bg-slate-900/60 border-white/5 text-slate-300 hover:border-purple-500/50 hover:bg-slate-800 hover:text-white cursor-pointer"
+                                                  : "bg-slate-950/80 border-white/[0.02] text-slate-600 opacity-60 cursor-not-allowed"
+                                              }`}
+                                            >
+                                              {/* Skill title & icon */}
+                                              <div className="flex justify-between items-start gap-1 w-full">
+                                                <span className={`text-2xs font-extrabold uppercase tracking-wide flex items-center gap-1 ${isUnlocked ? (isSelected ? "text-purple-300" : "text-slate-200 group-hover:text-purple-400") : "text-slate-500"}`}>
+                                                  <span>{skillDetail.icon}</span> {skillDetail.name.split(" (")[0]}
+                                                </span>
+                                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded leading-none shrink-0 border ${
+                                                  isUnlocked
+                                                    ? "bg-slate-950 border-white/5 text-purple-400"
+                                                    : "bg-slate-950/20 border-white/[0.02] text-slate-600"
+                                                }`}>
+                                                  {isUnlocked ? `${skillDetail.cost} ${skillDetail.costType}` : `LVL ${skillReqLevel}`}
+                                                </span>
+                                              </div>
+
+                                              {/* Skill description */}
+                                              <p className={`text-[9px] mt-1.5 font-sans leading-relaxed ${isUnlocked ? "text-slate-400 group-hover:text-slate-300" : "text-slate-600"}`}>
+                                                {isUnlocked ? skillDetail.desc : `Unlock this high-tier action block by raising your character level to ${skillReqLevel}.`}
+                                              </p>
+
+                                              {!isUnlocked && (
+                                                <div className="absolute right-1 bottom-1 text-[8px] text-rose-500/80 font-black tracking-widest bg-rose-950/30 border border-rose-900/40 px-1 py-0.5 rounded uppercase leading-none">
+                                                  LOCKED
+                                                </div>
+                                              )}
+                                            </button>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  </div>
+                                )}
+                                {combatActionTab === "attacks" && (
+                                  <>
+                             
                              <button
                                onClick={() => {
                                  setGridCombat(prev => prev ? { ...prev, selectedAction: "meleeAtk" } : null);
                                }}
-                               className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                               onMouseEnter={() => setHoveredAction("meleeAtk")}
+                               onMouseLeave={() => setHoveredAction(null)}
+                               className={`flex-1 sm:flex-initial font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
                                  gridCombat.selectedAction === "meleeAtk"
                                    ? "bg-red-500 text-white border-red-400 font-extrabold shadow-[0_0_10px_rgba(239,68,68,0.3)]"
                                    : "bg-slate-900 border-white/5 text-red-400 hover:bg-slate-800"
                                }`}
                              >
-                               🗡️ Melee Strike [AP: 1]
+                               🗡️ Strike [1 AP]
                              </button>
 
                              <button
                                onClick={() => {
                                  setGridCombat(prev => prev ? { ...prev, selectedAction: "rangedAtk" } : null);
                                }}
-                               className={`flex-1 md:flex-initial font-mono font-black text-3xs px-4 py-3 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                               onMouseEnter={() => setHoveredAction("rangedAtk")}
+                               onMouseLeave={() => setHoveredAction(null)}
+                               className={`flex-1 sm:flex-initial font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
                                  gridCombat.selectedAction === "rangedAtk"
                                    ? "bg-orange-500 text-white border-orange-400 font-extrabold shadow-[0_0_10px_rgba(249,115,22,0.3)]"
                                    : "bg-slate-900 border-white/5 text-orange-400 hover:bg-slate-800"
                                }`}
                              >
-                               🔫 Ranged Shoot [AP: 1]
+                               🔫 Shoot [1 AP]
                              </button>
+
+                                  </>
+                                )}
+                                {combatActionTab === "DISABLED_LEGACY_TAB_STALE" && (
+                                  <>
 
                             {/* Ether Spell discharge */}
                             <button
@@ -7475,18 +11446,18 @@ export default function App() {
                                 if (!gameState) return;
                                 const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
                                 if (!activeActor || activeActor.ap < 1) {
-                                  triggerToast("NO AP FOR SPELL DISCHARGE");
+                                  triggerToast("NO AP FOR SPELL");
                                   return;
                                 }
                                 if (gameState.mana < 15) {
-                                  triggerToast("INSUFFICIENT ETHER COGNITIVE STABLE");
+                                  triggerToast("INSUFFICIENT ETHER");
                                   return;
                                 }
 
                                 // Apply massive spell damage directly to the primary enemy
                                 const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
                                 if (!enemy || enemy.isDead) {
-                                  triggerToast("NO HOSTILE TARGET ACQUIRED");
+                                  triggerToast("NO TARGET");
                                   return;
                                 }
 
@@ -7521,62 +11492,174 @@ export default function App() {
 
                                 triggerToast("SPELL DISCHARGED");
                               }}
-                              className="flex-1 md:flex-initial bg-purple-950/40 hover:bg-purple-900 border border-purple-500/30 text-purple-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                              onMouseEnter={() => setHoveredAction("spell")}
+                              onMouseLeave={() => setHoveredAction(null)}
+                              className="flex-1 sm:flex-initial bg-purple-950/40 hover:bg-purple-900 border border-purple-500/30 text-purple-300 font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
                             >
-                              🔮 Spell Plasma [-15 Mana]
+                              🔮 Spell Plasma [-15 MP]
                             </button>
 
-                            {/* Mindmancer Spells (Strictly locked if not reached) */}
-                            {!!(gameState?.skills?.mindmancer && gameState.skills.mindmancer > 0 && !["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district)) && (
-                              <button
-                                onClick={() => {
-                                  if (!gameState) return;
-                                  const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
-                                  if (!activeActor || activeActor.ap < 1) {
-                                    triggerToast("NO AP");
-                                    return;
-                                  }
-                                  if (gameState.mana < 20) {
-                                    triggerToast("INSUFFICIENT ETHER");
-                                    return;
-                                  }
 
-                                  const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
-                                  if (!enemy || enemy.isDead) return;
-
-                                  let ns = { ...gameState };
-                                  ns.mana = Math.max(0, ns.mana - 20);
-
-                                  const updated = gridCombat.combatants.map(c => {
-                                    if (c.id === "enemy-1") {
-                                      const finalHp = Math.max(0, c.hp - 50);
-                                      const isDead = finalHp <= 0;
-                                      return { ...c, hp: finalHp, isDead };
-                                    }
-                                    if (c.id === activeActor.id) {
-                                      return { ...c, ap: c.ap - 1 };
-                                    }
-                                    return c;
-                                  });
-
-                                  ns.combatState!.enemyHp = updated.find(c => c.id === "enemy-1")?.hp || 0;
-                                  setGameState(ns);
-
-                                  setGridCombat(prev => prev ? {
-                                    ...prev,
-                                    combatants: updated,
-                                    turnLog: `🔮 MIND PSYCHIC HYPNOSIS: Bending ${enemy.name}'s synaptic currents. Forced system discharge dealing 50 damage! (-20 Mana)`
-                                  } : null);
-                                  triggerToast("MIND HACK COMPLETE");
-                                }}
-                                className="flex-1 md:flex-initial bg-fuchsia-950/40 hover:bg-fuchsia-900 border border-fuchsia-500/40 text-fuchsia-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider animate-pulse shadow-[0_0_8px_rgba(217,70,239,0.25)]"
-                              >
-                                🧠 Mind Hack [-20 Mana]
-                              </button>
-                            )}
-
-                            {/* Stimpack Consumable */}
-                            <button
+                             {/* Mindmancer Spells (Strictly locked if not reached) */}
+                             {!!(gameState?.skills?.mindmancer && gameState.skills.mindmancer > 0 && !["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district)) && (
+                               <button
+                                 onClick={() => {
+                                   if (!gameState) return;
+                                   const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                   if (!activeActor || activeActor.ap < 1) {
+                                     triggerToast("NO AP");
+                                     return;
+                                   }
+                                   if (gameState.mana < 20) {
+                                     triggerToast("INSUFFICIENT ETHER");
+                                     return;
+                                   }
+ 
+                                   const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
+                                   if (!enemy || enemy.isDead) return;
+ 
+                                   let ns = { ...gameState };
+                                   ns.mana = Math.max(0, ns.mana - 20);
+ 
+                                   const updated = gridCombat.combatants.map(c => {
+                                     if (c.id === "enemy-1") {
+                                       const finalHp = Math.max(0, c.hp - 50);
+                                       const isDead = finalHp <= 0;
+                                       return { 
+                                         ...c, 
+                                         hp: finalHp, 
+                                         panicTurns: 2,
+                                         statuses: [...(c.statuses || []).filter(s => s !== "Panic"), "Panic"],
+                                         isDead 
+                                       };
+                                     }
+                                     if (c.id === activeActor.id) {
+                                       return { ...c, ap: c.ap - 1 };
+                                     }
+                                     return c;
+                                   });
+ 
+                                   ns.combatState!.enemyHp = updated.find(c => c.id === "enemy-1")?.hp || 0;
+                                   setGameState(ns);
+ 
+                                   setGridCombat(prev => prev ? {
+                                     ...prev,
+                                     combatants: updated,
+                                     turnLog: `🔮 MIND PSYCHIC HYPNOSIS: Bending ${enemy.name}'s synaptic currents. Forced system discharge dealing 50 damage and inflicting System Panic! (-20 Mana)`
+                                   } : null);
+                                   triggerToast("MIND HACK COMPLETE");
+                                 }}
+                                 onMouseEnter={() => setHoveredAction("mind")}
+                                 onMouseLeave={() => setHoveredAction(null)}
+                                 className="flex-1 sm:flex-initial bg-fuchsia-950/40 hover:bg-fuchsia-900 border border-fuchsia-500/40 text-fuchsia-300 font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider animate-pulse shadow-[0_0_8px_rgba(217,70,239,0.25)]"
+                               >
+                                 🧠 Mind Hack [-20 MP]
+                               </button>
+                             )}
+ 
+                             {/* Tactical combat overclock */}
+                             <button
+                               onClick={() => {
+                                 if (!gameState) return;
+                                 const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                 if (!activeActor || activeActor.ap < 1) {
+                                   triggerToast("NO AP");
+                                   return;
+                                 }
+                                 if (gameState.stamina < 15) {
+                                   triggerToast("INSUFFICIENT STAMINA");
+                                   return;
+                                 }
+ 
+                                 let ns = { ...gameState };
+                                 ns.stamina = Math.max(0, ns.stamina - 15);
+ 
+                                 const updated = gridCombat.combatants.map(c => {
+                                   if (c.id === "player") {
+                                     return {
+                                       ...c,
+                                       ap: c.ap - 1,
+                                       overclockTurns: 2,
+                                       statuses: [...(c.statuses || []).filter(s => s !== "Overclocked"), "Overclocked"]
+                                     };
+                                   }
+                                   return c;
+                                 });
+ 
+                                 setGameState(ns);
+                                 setGridCombat(prev => prev ? {
+                                   ...prev,
+                                   combatants: updated,
+                                   turnLog: `⚡ ADRENALINE OVERCLOCK ACTIVATED: Synapses overclocked! Grants +50% Evasion and double strike attack modifiers for 2 turns! (-15 Stamina)`
+                                 } : null);
+                                 triggerToast("SYSTEM OVERCLOCKED");
+                               }}
+                               className="flex-1 sm:flex-initial bg-amber-950/40 hover:bg-amber-900 border border-amber-500/40 text-amber-300 font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                             >
+                               ⚡ Overclock [-15 SP]
+                             </button>
+ 
+                             {/* Neural overload cyber hack */}
+                             <button
+                               onClick={() => {
+                                 if (!gameState) return;
+                                 const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
+                                 if (!activeActor || activeActor.ap < 1) {
+                                   triggerToast("NO AP");
+                                   return;
+                                 }
+                                 if (gameState.mana < 25) {
+                                   triggerToast("INSUFFICIENT ETHER");
+                                   return;
+                                 }
+ 
+                                 const enemy = gridCombat.combatants.find(c => c.id === "enemy-1");
+                                 if (!enemy || enemy.isDead) return;
+ 
+                                 let ns = { ...gameState };
+                                 ns.mana = Math.max(0, ns.mana - 25);
+ 
+                                 let finalDmg = 35;
+                                 const updated = gridCombat.combatants.map(c => {
+                                   if (c.id === "enemy-1") {
+                                     const finalHp = Math.max(0, c.hp - finalDmg);
+                                     const isDead = finalHp <= 0;
+                                     return { 
+                                       ...c, 
+                                       hp: finalHp, 
+                                       glitchTurns: 2, 
+                                       statuses: [...(c.statuses || []).filter(s => s !== "Glitched"), "Glitched"],
+                                       isDead 
+                                     };
+                                   }
+                                   if (c.id === activeActor.id) {
+                                     return { ...c, ap: c.ap - 1 };
+                                   }
+                                   return c;
+                                 });
+ 
+                                 ns.combatState!.enemyHp = updated.find(c => c.id === "enemy-1")?.hp || 0;
+                                 setGameState(ns);
+ 
+                                 setGridCombat(prev => prev ? {
+                                   ...prev,
+                                   combatants: updated,
+                                   turnLog: `🔌 NEURAL OVERLOAD HACK: Injected a digital neural spike directly into ${enemy.name}! Dealt ${finalDmg} damage bypassing shields completely and inflicting Glitched for 2 turns! (-25 Mana)`
+                                 } : null);
+                                 triggerToast("NEURAL OVERLOAD SENT");
+                               }}
+                               onMouseEnter={() => setHoveredAction("neural")}
+                               onMouseLeave={() => setHoveredAction(null)}
+                               className="flex-1 sm:flex-initial bg-cyan-950/40 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+                             >
+                               🔌 Neural Overload [-25 MP]
+                             </button>
+                                  </>
+                                )}
+                                {combatActionTab === "support" && (
+                                  <>
+                                    {/* Stimpack Consumable */}
+                                    <button
                               onClick={() => {
                                 if (!gameState) return;
                                 const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
@@ -7610,12 +11693,17 @@ export default function App() {
                                 } : null);
                                 triggerToast("STIMPACK CONSUMED");
                               }}
-                              className="flex-1 md:flex-initial bg-amber-950/30 hover:bg-amber-900 border border-amber-500/30 text-amber-300 font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                              className="flex-1 sm:flex-initial bg-amber-950/30 hover:bg-amber-900 border border-amber-500/30 text-amber-300 font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
                             >
-                              💊 Consume Stimpack
+                              💊 Stimpack
                             </button>
+                                  </>
+                                )}
+                              </div>
 
-                            <button
+                              {/* Persistent End Turn Trigger */}
+                              <div className="w-full border-t border-white/5 pt-2.5">
+<button
                               onClick={() => {
                                 // Advance the turn queue
                                 setGridCombat(prev => {
@@ -7647,22 +11735,104 @@ export default function App() {
                                   if (!foundAlive) return prev;
 
                                   const nextActor = updatedCombatants.find(c => c.id === prev.turnOrder[nextIdx])!;
+                                  
+                                  // Status decay & DOT processing
+                                  let dotLog = "";
+                                  if (nextActor.overclockTurns && nextActor.overclockTurns > 0) {
+                                    nextActor.overclockTurns -= 1;
+                                    if (nextActor.overclockTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Overclocked");
+                                    }
+                                  }
+                                  if (nextActor.panicTurns && nextActor.panicTurns > 0) {
+                                    nextActor.panicTurns -= 1;
+                                    if (nextActor.panicTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Panic");
+                                    }
+                                  }
+                                  if (nextActor.glitchTurns && nextActor.glitchTurns > 0) {
+                                    nextActor.hp = Math.max(0, nextActor.hp - 10);
+                                    nextActor.glitchTurns -= 1;
+                                    dotLog += `🔌 Glitch active on ${nextActor.name}: dealt 10 electric discharge damage! `;
+                                    if (nextActor.glitchTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Glitched");
+                                    }
+                                    if (nextActor.hp <= 0) {
+                                      nextActor.isDead = true;
+                                      dotLog += `💀 ${nextActor.name} short-circuited and collapsed! `;
+                                    }
+                                  }
+                                  if (nextActor.corrodedTurns && nextActor.corrodedTurns > 0) {
+                                    nextActor.hp = Math.max(0, nextActor.hp - 8);
+                                    nextActor.corrodedTurns -= 1;
+                                    dotLog += `💥 Corrosion active on ${nextActor.name}: dealt 8 acid damage! `;
+                                    if (nextActor.corrodedTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Corroded");
+                                    }
+                                    if (nextActor.hp <= 0) {
+                                      nextActor.isDead = true;
+                                      dotLog += `💀 ${nextActor.name} was dissolved! `;
+                                    }
+                                  }
+                                  if (nextActor.stunnedTurns && nextActor.stunnedTurns > 0) {
+                                    nextActor.stunnedTurns -= 1;
+                                    nextActor.ap = 0; // Set AP to 0 so they can't act
+                                    dotLog += `💫 Stunned active on ${nextActor.name}: synapses frozen. Turn skipped! `;
+                                    if (nextActor.stunnedTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Stunned");
+                                    }
+                                  }
+                                  if (nextActor.silencedTurns && nextActor.silencedTurns > 0) {
+                                    nextActor.silencedTurns -= 1;
+                                    dotLog += `🔕 Silenced active on ${nextActor.name}: cerebral connection jammed. Skills blocked! `;
+                                    if (nextActor.silencedTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Silenced");
+                                    }
+                                  }
+                                  if (nextActor.bleedTurns && nextActor.bleedTurns > 0) {
+                                    nextActor.hp = Math.max(0, nextActor.hp - 12);
+                                    nextActor.bleedTurns -= 1;
+                                    dotLog += `🩸 Bleeding active on ${nextActor.name}: dealt 12 physical bleeding damage! `;
+                                    if (nextActor.bleedTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Bleeding");
+                                    }
+                                    if (nextActor.hp <= 0) {
+                                      nextActor.isDead = true;
+                                      dotLog += `💀 ${nextActor.name} bled out! `;
+                                    }
+                                  }
+
+                                  // Sync back to main gameState
+                                  if (gameState) {
+                                    let ns = { ...gameState };
+                                    if (nextActor.id === "player") {
+                                      ns.hp = nextActor.hp;
+                                    } else if (nextActor.id === "enemy-1") {
+                                      ns.combatState!.enemyHp = nextActor.hp;
+                                    }
+                                    setGameState(ns);
+                                  }
+
                                   return {
                                     ...prev,
                                     combatants: updatedCombatants,
                                     currentTurnIdx: nextIdx,
                                     selectedAction: "move" as const,
-                                    turnLog: `Turn advanced to ${nextActor.name}. AP fully restored.`
+                                    turnLog: dotLog 
+                                      ? `${dotLog} Turn advanced to ${nextActor.name}.`
+                                      : `Turn advanced to ${nextActor.name}. AP fully restored.`
                                   };
                                 });
                                 triggerToast("TURN ENDED");
                               }}
-                              className="flex-1 md:flex-initial bg-slate-800 hover:bg-slate-700 border border-white/10 text-white font-mono font-black text-3xs px-4 py-3 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                              className="w-full bg-slate-800 hover:bg-slate-700 border border-white/10 text-white font-mono font-black text-xs py-2 rounded-lg transition-all cursor-pointer uppercase tracking-wider text-center flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(255,255,255,0.05)]"
                             >
                               ⏱️ End Turn
                             </button>
                           </div>
-                        ) : (
+                        </div>
+                      </div>
+                    ) : (
                           /* Enemy AI Resolution panel */
                           <div className="flex flex-col sm:flex-row items-center gap-3 w-full bg-red-950/20 border border-red-500/10 p-3 rounded-xl">
                             <span className="text-rose-400 font-mono text-3xs uppercase tracking-widest font-black animate-pulse flex items-center gap-1">
@@ -7698,65 +11868,103 @@ export default function App() {
                                   let movementLog = "";
                                   let attackLog = "";
 
-                                  // If out of attack range, move closer!
-                                  if (minDist > livingActor.range) {
-                                    // Pathing approximation: search cells within Manhattan distance 2
-                                    let bestX = livingActor.x;
-                                    let bestY = livingActor.y;
-                                    let closestDistAfterMove = minDist;
+                                  // Check Stun and System Panic debuffs
+                                  const isStunned = livingActor.stunnedTurns !== undefined && livingActor.stunnedTurns > 0;
+                                  const isPanicked = livingActor.panicTurns !== undefined && livingActor.panicTurns > 0;
+                                  
+                                  if (isStunned) {
+                                    livingActor.ap = 0;
+                                    attackLog = `💫 STUNNED: ${livingActor.name} is completely paralyzed and skips its action phase!`;
+                                  } else if (isPanicked) {
+                                    livingActor.hp = Math.max(0, livingActor.hp - 20);
+                                    livingActor.isDead = livingActor.hp <= 0;
+                                    livingActor.ap = 0;
+                                    attackLog = `🧠 SYSTEM PANIC: ${livingActor.name} is hallucinating from psychic hypnosis! It fires its weapon inward, dealing 20 damage to itself!`;
+                                  } else {
+                                    // If out of attack range, move closer!
+                                    if (minDist > livingActor.range) {
+                                      // Pathing approximation: search cells within Manhattan distance 2
+                                      let bestX = livingActor.x;
+                                      let bestY = livingActor.y;
+                                      let closestDistAfterMove = minDist;
 
-                                    const COMBAT_OBSTACLES = [[2, 1], [2, 4], [5, 2], [5, 3], [3, 0], [4, 5]];
-                                    const isObstacle = (cx: number, cy: number) => COMBAT_OBSTACLES.some(([ox, oy]) => ox === cx && oy === cy);
+                                      const isObstacle = (cx: number, cy: number) => {
+                                        const hardcoded = [[3, 0], [4, 5]].some(([ox, oy]) => ox === cx && oy === cy);
+                                        const dynamic = prev.interactiveObjects?.some(o => o.x === cx && o.y === cy && !o.isDestroyed) || false;
+                                        return hardcoded || dynamic;
+                                      };
 
-                                    for (let dx = -2; dx <= 2; dx++) {
-                                      for (let dy = -2; dy <= 2; dy++) {
-                                        if (Math.abs(dx) + Math.abs(dy) <= 2) {
-                                          const tx = livingActor.x + dx;
-                                          const ty = livingActor.y + dy;
+                                      for (let dx = -2; dx <= 2; dx++) {
+                                        for (let dy = -2; dy <= 2; dy++) {
+                                          if (Math.abs(dx) + Math.abs(dy) <= 2) {
+                                            const tx = livingActor.x + dx;
+                                            const ty = livingActor.y + dy;
 
-                                          // Bounds check
-                                          if (tx >= 0 && tx < 8 && ty >= 0 && ty < 6) {
-                                            const occupied = updatedCombatants.some(c => c.x === tx && c.y === ty && !c.isDead);
-                                            if (!occupied && !isObstacle(tx, ty)) {
-                                              const newD = Math.abs(tx - currentTarget.x) + Math.abs(ty - currentTarget.y);
-                                              if (newD < closestDistAfterMove) {
-                                                closestDistAfterMove = newD;
-                                                bestX = tx;
-                                                bestY = ty;
+                                            // Bounds check
+                                            if (tx >= 0 && tx < 8 && ty >= 0 && ty < 6) {
+                                              const occupied = updatedCombatants.some(c => c.x === tx && c.y === ty && !c.isDead);
+                                              if (!occupied && !isObstacle(tx, ty)) {
+                                                const newD = Math.abs(tx - currentTarget.x) + Math.abs(ty - currentTarget.y);
+                                                if (newD < closestDistAfterMove) {
+                                                  closestDistAfterMove = newD;
+                                                  bestX = tx;
+                                                  bestY = ty;
+                                                }
                                               }
                                             }
                                           }
                                         }
                                       }
+
+                                      livingActor.x = bestX;
+                                      livingActor.y = bestY;
+                                      livingActor.ap -= 1;
+                                      movementLog = `${livingActor.name} maneuvers to [${bestX}, ${bestY}]. `;
+                                      
+                                      // Re-evaluate distance
+                                      minDist = Math.abs(bestX - currentTarget.x) + Math.abs(bestY - currentTarget.y);
                                     }
 
-                                    livingActor.x = bestX;
-                                    livingActor.y = bestY;
-                                    livingActor.ap -= 1;
-                                    movementLog = `${livingActor.name} maneuvers to [${bestX}, ${bestY}]. `;
-                                    
-                                    // Re-evaluate distance
-                                    minDist = Math.abs(bestX - currentTarget.x) + Math.abs(bestY - currentTarget.y);
-                                  }
-
-                                  // If in range, attack!
-                                  if (minDist <= livingActor.range && livingActor.ap > 0) {
-                                    const enemyDmg = livingActor.damage + Math.floor(Math.random() * 5) - 2;
-                                    
-                                    if (currentTarget.shields > 0) {
-                                      currentTarget.shields -= enemyDmg;
-                                      if (currentTarget.shields < 0) {
-                                        currentTarget.hp += currentTarget.shields;
-                                        currentTarget.shields = 0;
+                                    // If in range, attack!
+                                    if (minDist <= livingActor.range && livingActor.ap > 0) {
+                                      let enemyDmg = livingActor.damage + Math.floor(Math.random() * 5) - 2;
+                                      
+                                      // Glitched penalty: reduces damage output by 40%
+                                      if (livingActor.glitchTurns !== undefined && livingActor.glitchTurns > 0) {
+                                        enemyDmg = Math.floor(enemyDmg * 0.6);
                                       }
-                                    } else {
-                                      currentTarget.hp -= enemyDmg;
-                                    }
 
-                                    currentTarget.hp = Math.max(0, currentTarget.hp);
-                                    currentTarget.isDead = currentTarget.hp <= 0;
-                                    livingActor.ap -= 1;
-                                    attackLog = `💥 ${livingActor.name} attacks ${currentTarget.name} dealing ${enemyDmg} damage directly!`;
+                                      // Check Overclock evasion
+                                      const hasOverclock = currentTarget.overclockTurns !== undefined && currentTarget.overclockTurns > 0;
+                                      const evaded = hasOverclock && Math.random() < 0.5;
+
+                                      if (evaded) {
+                                        attackLog = `💨 EVADED: ${livingActor.name} fired but you activated Adrenaline Overclock, dodging the attack completely!`;
+                                        livingActor.ap -= 1;
+                                      } else {
+                                        if (currentTarget.shields > 0) {
+                                          currentTarget.shields -= enemyDmg;
+                                          if (currentTarget.shields < 0) {
+                                            currentTarget.hp += currentTarget.shields;
+                                            currentTarget.shields = 0;
+                                          }
+                                        } else {
+                                          currentTarget.hp -= enemyDmg;
+                                        }
+
+                                        currentTarget.hp = Math.max(0, currentTarget.hp);
+                                        currentTarget.isDead = currentTarget.hp <= 0;
+                                        livingActor.ap -= 1;
+                                        attackLog = `💥 ${livingActor.name} attacks ${currentTarget.name} dealing ${enemyDmg} damage directly! ${livingActor.glitchTurns && livingActor.glitchTurns > 0 ? "[Reduced by Glitch]" : ""}`;
+
+                                        // Behemoth slime corrosion application
+                                        if (livingActor.name.includes("Behemoth") && currentTarget.id === "player" && Math.random() < 0.5) {
+                                          currentTarget.corrodedTurns = 2;
+                                          currentTarget.statuses = [...(currentTarget.statuses || []).filter(s => s !== "Corroded"), "Corroded"];
+                                          attackLog += ` 💥 Sludge splashes on you, causing CORROSION over time!`;
+                                        }
+                                      }
+                                    }
                                   }
 
                                   // Reset actor's AP on turn end
@@ -7796,6 +12004,57 @@ export default function App() {
                                   }
 
                                   const nextActor = updatedCombatants.find(c => c.id === prev.turnOrder[nextIdx])!;
+                                  
+                                  // Status decay & DOT processing for nextActor
+                                  let dotLog = "";
+                                  if (nextActor.overclockTurns && nextActor.overclockTurns > 0) {
+                                    nextActor.overclockTurns -= 1;
+                                    if (nextActor.overclockTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Overclocked");
+                                    }
+                                  }
+                                  if (nextActor.panicTurns && nextActor.panicTurns > 0) {
+                                    nextActor.panicTurns -= 1;
+                                    if (nextActor.panicTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Panic");
+                                    }
+                                  }
+                                  if (nextActor.glitchTurns && nextActor.glitchTurns > 0) {
+                                    nextActor.hp = Math.max(0, nextActor.hp - 10);
+                                    nextActor.glitchTurns -= 1;
+                                    dotLog += `🔌 Glitch active on ${nextActor.name}: dealt 10 electric discharge damage! `;
+                                    if (nextActor.glitchTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Glitched");
+                                    }
+                                    if (nextActor.hp <= 0) {
+                                      nextActor.isDead = true;
+                                      dotLog += `💀 ${nextActor.name} short-circuited and collapsed! `;
+                                    }
+                                  }
+                                  if (nextActor.corrodedTurns && nextActor.corrodedTurns > 0) {
+                                    nextActor.hp = Math.max(0, nextActor.hp - 8);
+                                    nextActor.corrodedTurns -= 1;
+                                    dotLog += `💥 Corrosion active on ${nextActor.name}: dealt 8 acid damage! `;
+                                    if (nextActor.corrodedTurns === 0) {
+                                      nextActor.statuses = (nextActor.statuses || []).filter(s => s !== "Corroded");
+                                    }
+                                    if (nextActor.hp <= 0) {
+                                      nextActor.isDead = true;
+                                      dotLog += `💀 ${nextActor.name} was dissolved! `;
+                                    }
+                                  }
+
+                                  // Sync back to main gameState
+                                  if (gameState) {
+                                    let ns = { ...gameState };
+                                    if (nextActor.id === "player") {
+                                      ns.hp = nextActor.hp;
+                                    } else if (nextActor.id === "enemy-1") {
+                                      ns.combatState!.enemyHp = nextActor.hp;
+                                    }
+                                    setGameState(ns);
+                                  }
+
                                   const actionSum = movementLog || attackLog 
                                     ? `${movementLog}${attackLog}`
                                     : `${livingActor.name} bypassed tactical action.`;
@@ -7805,7 +12064,9 @@ export default function App() {
                                     combatants: updatedCombatants,
                                     currentTurnIdx: nextIdx,
                                     selectedAction: "move" as const,
-                                    turnLog: `🤖 AI MOVE: ${actionSum} Turn passed to ${nextActor.name}.`
+                                    turnLog: dotLog 
+                                      ? `${dotLog} AI MOVE: ${actionSum} Turn passed to ${nextActor.name}.`
+                                      : `🤖 AI MOVE: ${actionSum} Turn passed to ${nextActor.name}.`
                                   };
                                 });
 
@@ -7846,11 +12107,15 @@ export default function App() {
                               triggerToast("FLEE FAILED");
                             }
                           }}
-                          className="w-full md:w-auto bg-slate-900 border border-white/10 hover:bg-slate-800 text-slate-300 font-mono font-black text-3xs px-4 py-3.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider"
+                          className="w-full bg-slate-900 border border-white/10 hover:bg-slate-850 text-slate-300 font-mono font-black text-xs py-2 rounded-lg transition-all cursor-pointer uppercase tracking-wider text-center flex items-center justify-center gap-1 mt-3"
                         >
-                          Attempt Flee
+                          🏃 Attempt Flee
                         </button>
                       </div>
+
+                    </div>
+
+                  </div>
 
                       {/* Tactical overlays: Defeat / Victory Check screens */}
                       {/* Player dead overlay */}
@@ -7957,7 +12222,18 @@ export default function App() {
                                 nextState.maxMana += 15;
                                 nextState.hp = nextState.maxHp;
                                 nextState.mana = nextState.maxMana;
+                                nextState.playerPerks = getPerksForLevel(nextState.level);
+                                
                                 narrative += `\n\n📶 SYSTEM LEVEL EXPANDED: Congratulations! Ascended to Level ${nextState.level}. Max health and mana stats fully restored!`;
+                                
+                                const unlockedPerk = nextState.level === 2 ? "Adrenaline Junkie" :
+                                                     nextState.level === 3 ? "Cyber-Optimizer" :
+                                                     nextState.level === 4 ? "Ether Conduit" :
+                                                     nextState.level === 5 ? "Hardened Chassis" :
+                                                     nextState.level === 6 ? "Lucky Jack" : null;
+                                if (unlockedPerk) {
+                                  narrative += `\n\n🧠 PASSIVE PERK INTEGRATED: Your synaptic cortex has adapted! [${unlockedPerk}] is now permanently active!`;
+                                }
                               }
 
                               nextState.combatState = null;
@@ -7991,60 +12267,232 @@ export default function App() {
                 {!gameState.combatState?.isActive && (
                   <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col gap-3">
                     <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                      <span className="font-mono text-3xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <span className="font-mono text-[10.5px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                         <Terminal size={14} className="text-cyan-400 animate-pulse" />
                         Cyberdeck Console Transmission Feed
                       </span>
                       <button
                         onClick={() => setExpandLogs(!expandLogs)}
-                        className="text-4xs font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/20 px-2 py-1 rounded bg-slate-950/40 cursor-pointer transition-all hover:bg-slate-900 font-black uppercase"
+                        className="text-[9.5px] font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/20 px-2 py-1 rounded bg-slate-950/40 cursor-pointer transition-all hover:bg-slate-900 font-black uppercase"
                       >
                         {expandLogs ? "[-] COLLAPSE BACKLOG" : "[+] EXPAND HISTORY"}
                       </button>
                     </div>
 
-                    {/* Narrative Scroll panel block */}
-                    <div 
-                      className={`bg-slate-950/60 rounded-xl p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-3.5 border border-white/5 relative box-glow-cyan transition-all duration-300 ${
-                        expandLogs ? "h-[260px]" : "h-[90px]"
-                      }`}
-                    >
-                      {(expandLogs ? logs : logs.slice(-2)).map((log) => (
-                        <div key={log.id} className="text-left transition-all">
-                          <div className="flex items-center gap-2 text-[9px] text-slate-500 tracking-wider mb-0.5 leading-none font-bold">
-                            <span>[{log.timestamp}]</span>
-                            {log.poi && <span className="text-cyan-500/75 uppercase">@{log.poi.replace("Main Headquarters ", "")}</span>}
-                            
-                            {log.type === "action" && <span className="bg-cyan-950 text-cyan-400 border border-cyan-500/10 px-1 py-0.2 rounded text-[8px] uppercase">OPERATIVE</span>}
-                            {log.type === "combat" && <span className="bg-rose-950 text-rose-400 border border-rose-500/10 px-1 py-0.2 rounded text-[8px] uppercase">TACTICAL</span>}
-                            {log.type === "system" && <span className="bg-slate-900 text-slate-300 border border-white/10 px-1 py-0.2 rounded text-[8px] uppercase">SYSTEM</span>}
+                    {/* Narrative Scroll panel block with Immersive CRT Screen overlay */}
+                    <div className="relative overflow-hidden rounded-xl border border-white/10 group shadow-[inset_0_0_15px_rgba(34,211,238,0.1)]">
+                      {/* Static monitor phosphor grid lines */}
+                      <div className="crt-screen-overlay pointer-events-none rounded-xl" />
+                      {/* Moving cathode ray scanner beam */}
+                      <div className="crt-scanline animate-scanline pointer-events-none rounded-xl" />
+                      {/* Dark frame vignette shading */}
+                      <div className="crt-vignette pointer-events-none rounded-xl" />
+                      {/* Warm screen green/cyan subtle ambient glow */}
+                      <div className="crt-flicker absolute inset-0 pointer-events-none z-[4] bg-cyan-400/[0.015] mix-blend-screen" />
+
+                      <div 
+                        className={`bg-slate-950/75 p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-3.5 relative transition-all duration-300 ${
+                          expandLogs ? "h-[260px]" : "h-[90px]"
+                        }`}
+                      >
+                        {(expandLogs ? logs : logs.slice(-2)).map((log) => (
+                          <div key={log.id} className="text-left transition-all">
+                            <div className="flex items-center gap-2 text-[9px] text-slate-500 tracking-wider mb-0.5 leading-none font-bold">
+                              <span>[{log.timestamp}]</span>
+                              {log.poi && <span className="text-cyan-500/75 uppercase">@{log.poi.replace("Main Headquarters ", "")}</span>}
+                              
+                              {log.type === "action" && <span className="bg-cyan-950 text-cyan-400 border border-cyan-500/10 px-1 py-0.2 rounded text-[8px] uppercase">OPERATIVE</span>}
+                              {log.type === "combat" && <span className="bg-rose-950 text-rose-400 border border-rose-500/10 px-1 py-0.2 rounded text-[8px] uppercase">TACTICAL</span>}
+                              {log.type === "system" && <span className="bg-slate-900 text-slate-300 border border-white/10 px-1 py-0.2 rounded text-[8px] uppercase">SYSTEM</span>}
+                            </div>
+                            <p
+                              className={`whitespace-pre-line text-xs tracking-wide leading-relaxed pl-1 pl-1 ${
+                                log.type === "action"
+                                  ? "text-cyan-300 font-bold"
+                                  : log.type === "combat"
+                                    ? "text-rose-400"
+                                    : log.type === "system"
+                                      ? "text-amber-200"
+                                      : "text-slate-300 font-sans leading-relaxed text-2xs"
+                              }`}
+                            >
+                              {log.text}
+                            </p>
                           </div>
-                          <p
-                            className={`whitespace-pre-line text-xs tracking-wide leading-relaxed pl-1 pl-1 ${
-                              log.type === "action"
-                                ? "text-cyan-300 font-bold"
-                                : log.type === "combat"
-                                  ? "text-rose-400"
-                                  : log.type === "system"
-                                    ? "text-amber-200"
-                                    : "text-slate-300 font-sans leading-relaxed text-2xs"
-                            }`}
-                          >
-                            {log.text}
-                          </p>
-                        </div>
-                      ))}
-                      <div ref={logsEndRef} />
+                        ))}
+                        <div ref={logsEndRef} />
+                      </div>
                     </div>
                   </div>
                 )}
 
               </div>
+              
+              {/* RIGHT SIDEBAR COLUMN FOR EXPLORATION (STATS & GAUGES) */}
+              {!gameState.combatState?.isActive && (
+                <div className="lg:col-span-3 flex flex-col gap-3.5 h-full justify-start text-left">
+                  {/* ATMOSPHERE CARD */}
+                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex items-center gap-2.5">
+                    <div className="p-1.5 bg-gradient-to-br from-amber-950/50 to-slate-900 border border-amber-500/30 text-amber-400 rounded-md flex-shrink-0">
+                      <CloudLightning size={14} />
+                    </div>
+                    <div className="overflow-hidden font-mono">
+                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ATMOSPHERE</span>
+                      <p className="text-[11px] font-bold text-white uppercase truncate mt-1 leading-none">
+                        {gameState.weather === "clear" && "Clear Skies ☀️"}
+                        {gameState.weather === "rain" && "Acid Rain 🌧️"}
+                        {gameState.weather === "snow" && "Neon Frost ❄️"}
+                        {gameState.weather === "storm" && "Electro Storm ⚡"}
+                        {gameState.weather === "heat" && "Thermal wave 🥵"}
+                        {gameState.weather === "smog" && "Toxic Smog 😷"}
+                        {(!gameState.weather || gameState.weather === "clear") && "Optimal skies ☀️"}
+                      </p>
+                      <span className="text-[7px] text-amber-500 block uppercase truncate font-semibold mt-1 leading-none">
+                        {gameState.weather === "clear" && "Normal Stamina Rate"}
+                        {gameState.weather === "rain" && "+2 Stamina Drain / Wet"}
+                        {gameState.weather === "snow" && "+3 Stamina / -2 Ether"}
+                        {gameState.weather === "storm" && "+5 Stamina / Static Risk"}
+                        {gameState.weather === "heat" && "+5 Stamina / Damage Risk"}
+                        {gameState.weather === "smog" && "+4 Stamina / HP & MP Drain"}
+                        {(!gameState.weather || gameState.weather === "clear") && "No Active Debuffs"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* HP CARD */}
+                  <div className={`bg-slate-950/60 border p-3.5 rounded-xl flex flex-col justify-between transition-all duration-300 ${
+                    gameState.hp < derived.maxHp * 0.35
+                      ? "border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse"
+                      : "border-white/10"
+                  }`}>
+                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                      <span className="font-bold text-rose-400 flex items-center gap-1 uppercase text-[9px]">
+                        <Heart size={10} className={`text-rose-500 ${gameState.hp < derived.maxHp * 0.35 ? "animate-bounce" : ""}`} /> HP
+                      </span>
+                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.hp} / {derived.maxHp}</span>
+                    </div>
+                    
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                      <motion.div
+                        className="bg-rose-500 h-full rounded-full shadow-[0_0_8px_rgba(239,68,68,0.7)]"
+                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.hp / derived.maxHp) * 100))}%` }}
+                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                      />
+                    </div>
+                    <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
+                      {gameState.hp < derived.maxHp * 0.35 ? (
+                        <span className="text-rose-400 font-extrabold tracking-widest animate-pulse">⚠️ CORES CRITICAL: HEAL NOW</span>
+                      ) : (
+                        <span className="text-slate-500">CORES: OPTIMAL</span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* ETH CARD */}
+                  <div className={`bg-slate-950/60 border p-3.5 rounded-xl flex flex-col justify-between transition-all duration-300 ${
+                    gameState.mana === derived.maxMana
+                      ? "border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.2)]"
+                      : "border-white/10"
+                  }`}>
+                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                      <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase text-[9px]">
+                        <Zap size={10} className={`text-cyan-400 ${gameState.mana === derived.maxMana ? "animate-pulse" : ""}`} /> ETH
+                      </span>
+                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.mana} / {derived.maxMana}</span>
+                    </div>
+                    
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                      <motion.div
+                        className="bg-cyan-500 h-full rounded-full shadow-[0_0_8px_rgba(6,182,212,0.7)]"
+                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.mana / derived.maxMana) * 100))}%` }}
+                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                      />
+                    </div>
+                    <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
+                      {gameState.mana === derived.maxMana ? (
+                        <span className="text-cyan-400 font-extrabold tracking-widest animate-pulse">⚡ MAX COGNITION DECKED</span>
+                      ) : gameState.mana === 0 ? (
+                        <span className="text-rose-400/80 font-semibold">DECK DRAINED: MEDITATE</span>
+                      ) : (
+                        <span className="text-slate-500">CHIP CALIBRATED</span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* STAMINA CARD */}
+                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex flex-col justify-between">
+                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                      <span className="font-bold text-amber-500 flex items-center gap-1 uppercase text-[9px]">
+                        <Activity size={10} className="text-amber-500 animate-pulse" /> STAMINA
+                      </span>
+                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.stamina ?? 100} / 100</span>
+                    </div>
+                    
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                      <motion.div
+                        className="bg-amber-500 h-full rounded-full shadow-[0_0_8px_rgba(245,158,11,0.7)]"
+                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.stamina ?? 100)))}%` }}
+                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                      />
+                    </div>
+                    <span className="text-[7.5px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
+                      {gameState.stamina === 0 ? "⚠️ EXHAUSTED: REST" : "ACTUATORS: OPERATIONAL"}
+                    </span>
+                  </div>
+
+                  {/* BALANCE & ACTIVE SECTOR */}
+                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex justify-between items-center">
+                    <div className="text-left font-mono">
+                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">BALANCE</span>
+                      <p className="text-xs font-black text-amber-400 mt-1 leading-none">
+                        {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
+                      </p>
+                    </div>
+                    <div className="text-right font-mono">
+                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ACTIVE SECTOR</span>
+                      <span className="text-[9px] font-bold text-cyan-400 mt-1 block uppercase leading-none truncate max-w-[100px]">
+                        {REGIONS.find(r => r.id === activeRegionId)?.name.split(" ")[0] || "Slums"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* CHARACTER STATS INTERACTION BUTTON WITH TOOLTIP */}
+                  <div className="relative group/db mt-2">
+                    <button
+                      onClick={() => setGameTab("database")}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-950/80 to-slate-900 border border-rose-500/30 hover:border-rose-400 text-rose-400 hover:text-white py-3.5 px-4 rounded-lg font-mono text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg active:scale-95"
+                    >
+                      <Database size={15} />
+                      <span>Character Stats</span>
+                    </button>
+                    <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-rose-500/30 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/db:opacity-100 transition-all pointer-events-none scale-90 group-hover/db:scale-100 z-50 text-left font-mono">
+                      <p className="text-3xs font-extrabold text-rose-400 uppercase tracking-widest">ACCESS OPERATIVE DATABASE</p>
+                      <p className="text-[8px] text-slate-400 mt-0.5 leading-tight">VIEW PROFILE, INVENTORY, SKILLS & COMPANIONS</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              </>
             )}
 
               {/* RIGHT COLUMN (12/12): PLAYER STATS DECK, INVENTORY, COMPANIONS AND ACTIVE TASKS */}
               {gameTab === "database" && (
-                <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div className="lg:col-span-12 flex flex-col gap-4">
+                  {/* Return to Map bar */}
+                  <div className="flex justify-between items-center bg-slate-950/60 border border-white/10 rounded-xl p-3 shadow-md">
+                    <span className="font-mono text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      OPERATIVE SYSTEM ACCESS SECURE
+                    </span>
+                    <button
+                      onClick={() => setGameTab("exploration")}
+                      className="flex items-center gap-2 bg-gradient-to-r from-cyan-950/80 to-slate-900 border border-cyan-500/30 hover:border-cyan-400 text-cyan-400 hover:text-white px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg active:scale-95"
+                    >
+                      <ArrowLeft size={14} className="text-cyan-400" /> Go Back to Map
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                   
                   {/* CHARACTER SHEET PROFILE CARD */}
                   <div className="lg:col-span-4 flex flex-col gap-6 font-mono text-left animate-fadeIn">
@@ -8111,9 +12559,10 @@ export default function App() {
                             <span className="text-white font-bold">{gameState.hp} / {derived.maxHp}</span>
                           </div>
                           <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <div 
-                              className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)] transition-all duration-300"
-                              style={{ width: `${Math.min(100, (gameState.hp / derived.maxHp) * 100)}%` }}
+                            <motion.div 
+                              className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
+                              animate={{ width: `${Math.min(100, (gameState.hp / derived.maxHp) * 100)}%` }}
+                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
                             />
                           </div>
                         </div>
@@ -8125,9 +12574,10 @@ export default function App() {
                             <span className="text-white font-bold">{gameState.mana} / {derived.maxMana}</span>
                           </div>
                           <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <div 
-                              className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)] transition-all duration-300"
-                              style={{ width: `${Math.min(100, (gameState.mana / derived.maxMana) * 100)}%` }}
+                            <motion.div 
+                              className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]"
+                              animate={{ width: `${Math.min(100, (gameState.mana / derived.maxMana) * 100)}%` }}
+                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
                             />
                           </div>
                         </div>
@@ -8139,9 +12589,10 @@ export default function App() {
                             <span className="text-white font-bold">{gameState.experience ?? 0}%</span>
                           </div>
                           <div className="h-1.5 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <div 
-                              className="h-full rounded-full bg-indigo-500 transition-all duration-300"
-                              style={{ width: `${gameState.experience ?? 0}%` }}
+                            <motion.div 
+                              className="h-full rounded-full bg-indigo-500"
+                              animate={{ width: `${gameState.experience ?? 0}%` }}
+                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
                             />
                           </div>
                         </div>
@@ -8259,29 +12710,14 @@ export default function App() {
                         })}
                       </div>
                     </div>
-
-                    {/* SENSORY WORLDCLOCK DATE COMPONENT */}
-                    <div className="bg-slate-950/80 border border-white/10 rounded-2xl p-4 text-left font-mono text-3xs text-slate-500 space-y-2.5 relative">
-                      <div className="flex justify-between items-center text-slate-400 text-2xs leading-none">
-                        <span className="flex items-center gap-1 uppercase font-bold text-cyan-400">
-                          <Clock size={12} /> Temporal State
-                        </span>
-                        <span className="text-[10px] text-white font-bold bg-white/5 px-2 py-0.5 rounded uppercase">
-                          DAY {gameState.day ?? 1} • {gameState.timeOfDay || "Morning"}
-                        </span>
-                      </div>
-                      <p className="leading-snug">
-                        Time progresses on regional transit travels or medical recuperations. Server crews pay dividends every morning. Safe operations require consistent parameters monitoring.
-                      </p>
-                    </div>
                   </div>
 
                   {/* RIGHT COLUMN DATABASE HUD */}
-                  <div className="lg:col-span-8 flex flex-col gap-6 animate-fadeIn">
+                    <div className="lg:col-span-8 flex flex-col gap-6 animate-fadeIn">
 
-                    {/* ADVANCED EQUIP DECK HUD */}
-                    <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl p-4 flex flex-col gap-4">
-                  <div className="flex border-b border-white/15 text-xs font-mono">
+                      {/* ADVANCED EQUIP DECK HUD */}
+                      <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl p-4 flex flex-col gap-4">
+                        <div className="flex border-b border-white/15 text-xs font-mono">
                     <button
                       onClick={() => setActiveTab("inventory")}
                       className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
@@ -8305,6 +12741,14 @@ export default function App() {
                       }`}
                     >
                       <Award size={12} /> Quests
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("factions")}
+                      className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
+                        activeTab === "factions" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <Shield size={12} /> Factions
                     </button>
                   </div>
 
@@ -8564,12 +13008,26 @@ export default function App() {
                                         : "bg-slate-950/40 border-white/5 opacity-80"
                                   }`}
                                 >
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <p className="font-extrabold text-slate-200 uppercase flex items-center gap-1 text-2xs leading-none">
-                                        {comp.name} <span className="text-3xs text-slate-500 font-normal">({comp.role})</span>
-                                      </p>
-                                      <p className="text-[9px] text-slate-500 mt-1 italic font-sans">{comp.bio}</p>
+                                  <div className="flex gap-3 items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      {/* High-Resolution Tactical Portrait Showcase */}
+                                      <div className="w-16 h-20 rounded-lg overflow-hidden border border-cyan-500/30 bg-slate-900 shrink-0 flex items-center justify-center text-2xl shadow-[0_0_10px_rgba(6,182,212,0.15)] relative">
+                                        {comp.image ? (
+                                          <>
+                                            <img src={comp.image} alt={comp.name} className="w-full h-full object-cover object-top filter contrast-[1.05] brightness-[1.02]" referrerPolicy="no-referrer" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent pointer-events-none" />
+                                            <span className="absolute bottom-1 right-1 text-[10px] select-none">{comp.avatar}</span>
+                                          </>
+                                        ) : (
+                                          <span>{comp.avatar || "👤"}</span>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <p className="font-extrabold text-slate-200 uppercase flex items-center gap-1 text-2xs leading-none">
+                                          {comp.name} <span className="text-3xs text-slate-500 font-normal">({comp.role})</span>
+                                        </p>
+                                        <p className="text-[9px] text-slate-500 mt-1 italic font-sans leading-tight max-w-[260px] md:max-w-[340px]">{comp.bio}</p>
+                                      </div>
                                     </div>
                                     
                                     {/* Payout Tag */}
@@ -8922,6 +13380,628 @@ export default function App() {
                       );
                     })()}
 
+                    {activeTab === "factions" && (
+                      <motion.div
+                        key="factions-tab"
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="space-y-4 font-mono text-xs text-left"
+                      >
+                        <div className="flex flex-col gap-1 border-b border-white/5 pb-2">
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">FACTION DIRECTIVE & ALIGNMENTS</p>
+                          <p className="text-3xs text-slate-500 font-sans leading-relaxed">
+                            Reputation affects shop prices across POIs (Marv's Clinic and Nouveau Chrome) and changes dialogue nodes. Completing contracts and taking sides shapes how these factions perceive your operations.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Street Outlaws */}
+                          {(() => {
+                            const rep = gameState.reputations?.streetOutlaws ?? 50;
+                            let status = "Neutral";
+                            let statusColor = "text-slate-400 border-slate-500/20 bg-slate-950/40";
+                            let rateDisplay = "Standard Rates";
+                            if (rep >= 80) {
+                              status = "Allied";
+                              statusColor = "text-cyan-400 border-cyan-500/30 bg-cyan-950/30";
+                              rateDisplay = "20% Shop Discount";
+                            } else if (rep >= 61) {
+                              status = "Friendly";
+                              statusColor = "text-sky-400 border-sky-500/20 bg-sky-950/20";
+                              rateDisplay = "10% Shop Discount";
+                            } else if (rep <= 20) {
+                              status = "Hostile";
+                              statusColor = "text-rose-500 border-rose-500/30 bg-rose-950/30";
+                              rateDisplay = "50% Price Markup";
+                            } else if (rep <= 40) {
+                              status = "Distant";
+                              statusColor = "text-amber-500 border-amber-500/20 bg-amber-950/20";
+                              rateDisplay = "20% Price Markup";
+                            }
+
+                            const tiers = FACTION_TIERS.streetOutlaws;
+                            const activeTierIdx = getTierIndexForRepValue(rep);
+
+                            return (
+                              <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 flex flex-col gap-3.5 relative overflow-hidden min-h-[300px]">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-extrabold text-cyan-400 uppercase tracking-wider text-xs">STREET OUTLAWS</h4>
+                                  <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${statusColor}`}>
+                                    {status}
+                                  </span>
+                                </div>
+                                
+                                <p className="text-slate-400 text-3xs font-sans leading-relaxed min-h-[50px]">
+                                  Gritty neon hackers and cyber-punk syndicates controlling the black markets of Shatter Ridge. Allied with Dr. Marv's clinic.
+                                </p>
+
+                                <div className="space-y-1 relative">
+                                  <div className="flex justify-between text-[8px] font-extrabold text-slate-500">
+                                    <span>REP VALUE: {rep}%</span>
+                                    <span>{rateDisplay}</span>
+                                  </div>
+                                  <div 
+                                    className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-white/5 relative cursor-help"
+                                    onMouseEnter={() => setHoveredFaction("streetOutlaws")}
+                                    onMouseLeave={() => setHoveredFaction(null)}
+                                  >
+                                    <div className="bg-cyan-500 h-full transition-all duration-300" style={{ width: `${rep}%` }} />
+                                  </div>
+
+                                  {/* Quick Hover Tooltip */}
+                                  <AnimatePresence>
+                                    {hoveredFaction === "streetOutlaws" && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        className="absolute bottom-full left-0 right-0 mb-2 bg-slate-900/95 border border-cyan-500/30 p-2.5 rounded-lg text-[9px] text-slate-300 z-10 pointer-events-none shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                                      >
+                                        <p className="font-extrabold text-cyan-400 uppercase tracking-widest leading-none mb-1">
+                                          CURRENT: {status} ({rep}%)
+                                        </p>
+                                        <p className="text-[8px] text-slate-400 mb-1">
+                                          Shop Rates: <span className="text-white font-bold">{rateDisplay}</span>
+                                        </p>
+                                        <div className="h-px bg-white/5 my-1" />
+                                        <p className="text-[7.5px] text-cyan-500 font-bold uppercase tracking-wider">
+                                          Click "INSPECT TIERS" for full details & penalties schema.
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+
+                                <div className="bg-slate-900/60 p-2.5 rounded border border-white/5 text-[9px] text-slate-400 space-y-1 mt-auto">
+                                  <p className="font-extrabold text-slate-300 uppercase text-[8px] tracking-wider">ACTIVE MATRIX PERKS:</p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 61 ? "text-cyan-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 61 ? "text-slate-200" : "text-slate-500"}>Marv's Clinic Discounts</span>
+                                  </p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 80 ? "text-cyan-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 80 ? "text-slate-200" : "text-slate-500"}>Special dialogue checks</span>
+                                  </p>
+                                </div>
+
+                                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                                  <span className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">LEDGER METADATA</span>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInspectTierIndex(activeTierIdx);
+                                      setClickedFaction("streetOutlaws");
+                                    }}
+                                    className="flex items-center gap-1 text-[8.5px] text-cyan-400 hover:text-cyan-300 font-extrabold uppercase transition-all cursor-pointer"
+                                  >
+                                    <HelpCircle size={10} /> Inspect Tiers
+                                  </button>
+                                </div>
+
+                                {/* Full Interactive Overlay inside Card */}
+                                <AnimatePresence>
+                                  {clickedFaction === "streetOutlaws" && (
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.95 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0, scale: 0.95 }}
+                                      className="absolute inset-0 bg-slate-950/98 border border-cyan-500/30 rounded-xl p-4 flex flex-col z-20 font-mono text-left"
+                                    >
+                                      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2.5">
+                                        <div>
+                                          <span className="text-[7.5px] text-cyan-400 font-extrabold tracking-widest block uppercase">STANDING INSPECTION MATRIX</span>
+                                          <h5 className="font-extrabold text-white text-[10px] uppercase">STREET OUTLAWS TIERS</h5>
+                                        </div>
+                                        <button
+                                          onClick={() => setClickedFaction(null)}
+                                          className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+
+                                      {/* Horizontal tier mini-tabs */}
+                                      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-white/5 mb-2.5 scrollbar-thin">
+                                        {tiers.map((tier, idx) => {
+                                          const isSelected = idx === selectedInspectTierIndex;
+                                          const isPlayerActualTier = idx === activeTierIdx;
+                                          return (
+                                            <button
+                                              key={tier.name}
+                                              onClick={() => setSelectedInspectTierIndex(idx)}
+                                              className={`px-1.5 py-1 text-[8px] font-extrabold uppercase rounded border cursor-pointer shrink-0 transition-all ${
+                                                isSelected
+                                                  ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/40 shadow-[0_0_8px_rgba(34,211,238,0.2)]"
+                                                  : "bg-slate-900/60 text-slate-500 border-white/5 hover:text-slate-300"
+                                              }`}
+                                            >
+                                              {tier.name} {isPlayerActualTier && "●"}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Tier content details */}
+                                      {(() => {
+                                        const t = tiers[selectedInspectTierIndex];
+                                        const isPlayerActualTier = selectedInspectTierIndex === activeTierIdx;
+                                        return (
+                                          <div className="flex-1 flex flex-col justify-between space-y-2">
+                                            <div className="space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${t.statusColor}`}>
+                                                  {t.name} Standing
+                                                </span>
+                                                <span className="text-[8px] text-slate-500 font-extrabold">RANGE: {t.range}</span>
+                                              </div>
+
+                                              <div className="bg-slate-900/40 p-2 rounded border border-white/5 text-[9px] flex justify-between items-center">
+                                                <span className="text-slate-500 uppercase text-[8px] font-bold">MERCHANT RATES:</span>
+                                                <span className={`font-black uppercase text-[8.5px] ${
+                                                  selectedInspectTierIndex <= 1 ? "text-emerald-400" : selectedInspectTierIndex >= 3 ? "text-rose-400" : "text-slate-300"
+                                                }`}>
+                                                  {t.pricing}
+                                                </span>
+                                              </div>
+
+                                              <div className="space-y-1">
+                                                <p className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">SYSTEM BENEFITS & DIRECTIVES:</p>
+                                                <div className="space-y-1 max-h-[85px] overflow-y-auto pr-1">
+                                                  {t.perks.map((p, pidx) => (
+                                                    <p key={pidx} className="text-3xs text-slate-300 flex items-start gap-1 leading-normal font-sans">
+                                                      <span className="text-cyan-400 text-[10px] leading-none shrink-0">•</span>
+                                                      <span>{p}</span>
+                                                    </p>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {isPlayerActualTier ? (
+                                              <div className="bg-cyan-500/5 border border-cyan-500/20 rounded p-1.5 text-center text-[8px] font-extrabold text-cyan-400 flex items-center justify-center gap-1 mt-auto">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block animate-pulse" />
+                                                NEURAL SYNC ACTIVE: CURRENT STANDING STATE
+                                              </div>
+                                            ) : (
+                                              <div className="bg-slate-900/60 border border-white/5 rounded p-1.5 text-center text-[8px] font-bold text-slate-500 mt-auto">
+                                                REQUIRES REP RANGE: {t.range}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Titan Logistics */}
+                          {(() => {
+                            const rep = gameState.reputations?.titanLogistics ?? 50;
+                            let status = "Neutral";
+                            let statusColor = "text-slate-400 border-slate-500/20 bg-slate-950/40";
+                            let rateDisplay = "Standard Rates";
+                            if (rep >= 80) {
+                              status = "Allied";
+                              statusColor = "text-amber-400 border-amber-500/30 bg-amber-950/30";
+                              rateDisplay = "20% Shop Discount";
+                            } else if (rep >= 61) {
+                              status = "Friendly";
+                              statusColor = "text-orange-400 border-orange-500/20 bg-orange-950/20";
+                              rateDisplay = "10% Shop Discount";
+                            } else if (rep <= 20) {
+                              status = "Hostile";
+                              statusColor = "text-rose-500 border-rose-500/30 bg-rose-950/30";
+                              rateDisplay = "50% Price Markup";
+                            } else if (rep <= 40) {
+                              status = "Distant";
+                              statusColor = "text-amber-500 border-amber-500/20 bg-amber-950/20";
+                              rateDisplay = "20% Price Markup";
+                            }
+
+                            const tiers = FACTION_TIERS.titanLogistics;
+                            const activeTierIdx = getTierIndexForRepValue(rep);
+
+                            return (
+                              <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 flex flex-col gap-3.5 relative overflow-hidden min-h-[300px]">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-extrabold text-amber-400 uppercase tracking-wider text-xs">TITAN LOGISTICS</h4>
+                                  <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${statusColor}`}>
+                                    {status}
+                                  </span>
+                                </div>
+                                
+                                <p className="text-slate-400 text-3xs font-sans leading-relaxed min-h-[50px]">
+                                  Under-the-table military hardware shipping conglomerate operating regional transit channels and the Nexus Agency deck.
+                                </p>
+
+                                <div className="space-y-1 relative">
+                                  <div className="flex justify-between text-[8px] font-extrabold text-slate-500">
+                                    <span>REP VALUE: {rep}%</span>
+                                    <span>{rateDisplay}</span>
+                                  </div>
+                                  <div 
+                                    className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-white/5 relative cursor-help"
+                                    onMouseEnter={() => setHoveredFaction("titanLogistics")}
+                                    onMouseLeave={() => setHoveredFaction(null)}
+                                  >
+                                    <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${rep}%` }} />
+                                  </div>
+
+                                  {/* Quick Hover Tooltip */}
+                                  <AnimatePresence>
+                                    {hoveredFaction === "titanLogistics" && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        className="absolute bottom-full left-0 right-0 mb-2 bg-slate-900/95 border border-amber-500/30 p-2.5 rounded-lg text-[9px] text-slate-300 z-10 pointer-events-none shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                                      >
+                                        <p className="font-extrabold text-amber-400 uppercase tracking-widest leading-none mb-1">
+                                          CURRENT: {status} ({rep}%)
+                                        </p>
+                                        <p className="text-[8px] text-slate-400 mb-1">
+                                          Shop Rates: <span className="text-white font-bold">{rateDisplay}</span>
+                                        </p>
+                                        <div className="h-px bg-white/5 my-1" />
+                                        <p className="text-[7.5px] text-amber-500 font-bold uppercase tracking-wider">
+                                          Click "INSPECT TIERS" for full details & penalties schema.
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+
+                                <div className="bg-slate-900/60 p-2.5 rounded border border-white/5 text-[9px] text-slate-400 space-y-1 mt-auto">
+                                  <p className="font-extrabold text-slate-300 uppercase text-[8px] tracking-wider">ACTIVE MATRIX PERKS:</p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 61 ? "text-amber-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 61 ? "text-slate-200" : "text-slate-500"}>Transit cost reduction</span>
+                                  </p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 80 ? "text-amber-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 80 ? "text-slate-200" : "text-slate-500"}>Elite weapons clearance</span>
+                                  </p>
+                                </div>
+
+                                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                                  <span className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">LEDGER METADATA</span>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInspectTierIndex(activeTierIdx);
+                                      setClickedFaction("titanLogistics");
+                                    }}
+                                    className="flex items-center gap-1 text-[8.5px] text-amber-400 hover:text-amber-300 font-extrabold uppercase transition-all cursor-pointer"
+                                  >
+                                    <HelpCircle size={10} /> Inspect Tiers
+                                  </button>
+                                </div>
+
+                                {/* Full Interactive Overlay inside Card */}
+                                <AnimatePresence>
+                                  {clickedFaction === "titanLogistics" && (
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.95 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0, scale: 0.95 }}
+                                      className="absolute inset-0 bg-slate-950/98 border border-amber-500/30 rounded-xl p-4 flex flex-col z-20 font-mono text-left"
+                                    >
+                                      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2.5">
+                                        <div>
+                                          <span className="text-[7.5px] text-amber-400 font-extrabold tracking-widest block uppercase">STANDING INSPECTION MATRIX</span>
+                                          <h5 className="font-extrabold text-white text-[10px] uppercase">TITAN LOGISTICS TIERS</h5>
+                                        </div>
+                                        <button
+                                          onClick={() => setClickedFaction(null)}
+                                          className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+
+                                      {/* Horizontal tier mini-tabs */}
+                                      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-white/5 mb-2.5 scrollbar-thin">
+                                        {tiers.map((tier, idx) => {
+                                          const isSelected = idx === selectedInspectTierIndex;
+                                          const isPlayerActualTier = idx === activeTierIdx;
+                                          return (
+                                            <button
+                                              key={tier.name}
+                                              onClick={() => setSelectedInspectTierIndex(idx)}
+                                              className={`px-1.5 py-1 text-[8px] font-extrabold uppercase rounded border cursor-pointer shrink-0 transition-all ${
+                                                isSelected
+                                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                                                  : "bg-slate-900/60 text-slate-500 border-white/5 hover:text-slate-300"
+                                              }`}
+                                            >
+                                              {tier.name} {isPlayerActualTier && "●"}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Tier content details */}
+                                      {(() => {
+                                        const t = tiers[selectedInspectTierIndex];
+                                        const isPlayerActualTier = selectedInspectTierIndex === activeTierIdx;
+                                        return (
+                                          <div className="flex-1 flex flex-col justify-between space-y-2">
+                                            <div className="space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${t.statusColor}`}>
+                                                  {t.name} Standing
+                                                </span>
+                                                <span className="text-[8px] text-slate-500 font-extrabold">RANGE: {t.range}</span>
+                                              </div>
+
+                                              <div className="bg-slate-900/40 p-2 rounded border border-white/5 text-[9px] flex justify-between items-center">
+                                                <span className="text-slate-500 uppercase text-[8px] font-bold">MERCHANT RATES:</span>
+                                                <span className={`font-black uppercase text-[8.5px] ${
+                                                  selectedInspectTierIndex <= 1 ? "text-emerald-400" : selectedInspectTierIndex >= 3 ? "text-rose-400" : "text-slate-300"
+                                                }`}>
+                                                  {t.pricing}
+                                                </span>
+                                              </div>
+
+                                              <div className="space-y-1">
+                                                <p className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">SYSTEM BENEFITS & DIRECTIVES:</p>
+                                                <div className="space-y-1 max-h-[85px] overflow-y-auto pr-1">
+                                                  {t.perks.map((p, pidx) => (
+                                                    <p key={pidx} className="text-3xs text-slate-300 flex items-start gap-1 leading-normal font-sans">
+                                                      <span className="text-amber-400 text-[10px] leading-none shrink-0">•</span>
+                                                      <span>{p}</span>
+                                                    </p>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {isPlayerActualTier ? (
+                                              <div className="bg-amber-500/5 border border-amber-500/20 rounded p-1.5 text-center text-[8px] font-extrabold text-amber-400 flex items-center justify-center gap-1 mt-auto">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block animate-pulse" />
+                                                NEURAL SYNC ACTIVE: CURRENT STANDING STATE
+                                              </div>
+                                            ) : (
+                                              <div className="bg-slate-900/60 border border-white/5 rounded p-1.5 text-center text-[8px] font-bold text-slate-500 mt-auto">
+                                                REQUIRES REP RANGE: {t.range}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Ares Corporate */}
+                          {(() => {
+                            const rep = gameState.reputations?.aresCorporate ?? 50;
+                            let status = "Neutral";
+                            let statusColor = "text-slate-400 border-slate-500/20 bg-slate-950/40";
+                            let rateDisplay = "Standard Rates";
+                            if (rep >= 80) {
+                              status = "Allied";
+                              statusColor = "text-indigo-400 border-indigo-500/30 bg-indigo-950/30";
+                              rateDisplay = "20% Shop Discount";
+                            } else if (rep >= 61) {
+                              status = "Friendly";
+                              statusColor = "text-purple-400 border-purple-500/20 bg-purple-950/20";
+                              rateDisplay = "10% Shop Discount";
+                            } else if (rep <= 20) {
+                              status = "Hostile";
+                              statusColor = "text-rose-500 border-rose-500/30 bg-rose-950/30";
+                              rateDisplay = "50% Price Markup";
+                            } else if (rep <= 40) {
+                              status = "Distant";
+                              statusColor = "text-amber-500 border-amber-500/20 bg-amber-950/20";
+                              rateDisplay = "20% Price Markup";
+                            }
+
+                            const tiers = FACTION_TIERS.aresCorporate;
+                            const activeTierIdx = getTierIndexForRepValue(rep);
+
+                            return (
+                              <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 flex flex-col gap-3.5 relative overflow-hidden min-h-[300px]">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-extrabold text-indigo-400 uppercase tracking-wider text-xs">ARES CORP</h4>
+                                  <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${statusColor}`}>
+                                    {status}
+                                  </span>
+                                </div>
+                                
+                                <p className="text-slate-400 text-3xs font-sans leading-relaxed min-h-[50px]">
+                                  Elite militarized technology conglomerate running premium highwalk cyberware labs and Nouveau Chrome luxury showroom.
+                                </p>
+
+                                <div className="space-y-1 relative">
+                                  <div className="flex justify-between text-[8px] font-extrabold text-slate-500">
+                                    <span>REP VALUE: {rep}%</span>
+                                    <span>{rateDisplay}</span>
+                                  </div>
+                                  <div 
+                                    className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-white/5 relative cursor-help"
+                                    onMouseEnter={() => setHoveredFaction("aresCorporate")}
+                                    onMouseLeave={() => setHoveredFaction(null)}
+                                  >
+                                    <div className="bg-indigo-500 h-full transition-all duration-300" style={{ width: `${rep}%` }} />
+                                  </div>
+
+                                  {/* Quick Hover Tooltip */}
+                                  <AnimatePresence>
+                                    {hoveredFaction === "aresCorporate" && (
+                                      <motion.div
+                                        initial={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 5, scale: 0.95 }}
+                                        className="absolute bottom-full left-0 right-0 mb-2 bg-slate-900/95 border border-indigo-500/30 p-2.5 rounded-lg text-[9px] text-slate-300 z-10 pointer-events-none shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                                      >
+                                        <p className="font-extrabold text-indigo-400 uppercase tracking-widest leading-none mb-1">
+                                          CURRENT: {status} ({rep}%)
+                                        </p>
+                                        <p className="text-[8px] text-slate-400 mb-1">
+                                          Showroom Rates: <span className="text-white font-bold">{rateDisplay}</span>
+                                        </p>
+                                        <div className="h-px bg-white/5 my-1" />
+                                        <p className="text-[7.5px] text-indigo-400 font-bold uppercase tracking-wider">
+                                          Click "INSPECT TIERS" for full details & penalties schema.
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+
+                                <div className="bg-slate-900/60 p-2.5 rounded border border-white/5 text-[9px] text-slate-400 space-y-1 mt-auto">
+                                  <p className="font-extrabold text-slate-300 uppercase text-[8px] tracking-wider">ACTIVE MATRIX PERKS:</p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 61 ? "text-indigo-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 61 ? "text-slate-200" : "text-slate-500"}>Nouveau Chrome Discounts</span>
+                                  </p>
+                                  <p className="flex items-center gap-1">
+                                    <span className={rep >= 80 ? "text-indigo-400 font-black" : "text-slate-600"}>•</span>
+                                    <span className={rep >= 80 ? "text-slate-200" : "text-slate-500"}>Premium nanotech clearance</span>
+                                  </p>
+                                </div>
+
+                                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                                  <span className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">LEDGER METADATA</span>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInspectTierIndex(activeTierIdx);
+                                      setClickedFaction("aresCorporate");
+                                    }}
+                                    className="flex items-center gap-1 text-[8.5px] text-indigo-400 hover:text-indigo-300 font-extrabold uppercase transition-all cursor-pointer"
+                                  >
+                                    <HelpCircle size={10} /> Inspect Tiers
+                                  </button>
+                                </div>
+
+                                {/* Full Interactive Overlay inside Card */}
+                                <AnimatePresence>
+                                  {clickedFaction === "aresCorporate" && (
+                                    <motion.div
+                                      initial={{ opacity: 0, scale: 0.95 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0, scale: 0.95 }}
+                                      className="absolute inset-0 bg-slate-950/98 border border-indigo-500/30 rounded-xl p-4 flex flex-col z-20 font-mono text-left"
+                                    >
+                                      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-2.5">
+                                        <div>
+                                          <span className="text-[7.5px] text-indigo-400 font-extrabold tracking-widest block uppercase">STANDING INSPECTION MATRIX</span>
+                                          <h5 className="font-extrabold text-white text-[10px] uppercase">ARES CORP TIERS</h5>
+                                        </div>
+                                        <button
+                                          onClick={() => setClickedFaction(null)}
+                                          className="text-slate-400 hover:text-white p-0.5 rounded hover:bg-white/5 transition-colors cursor-pointer"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+
+                                      {/* Horizontal tier mini-tabs */}
+                                      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-white/5 mb-2.5 scrollbar-thin">
+                                        {tiers.map((tier, idx) => {
+                                          const isSelected = idx === selectedInspectTierIndex;
+                                          const isPlayerActualTier = idx === activeTierIdx;
+                                          return (
+                                            <button
+                                              key={tier.name}
+                                              onClick={() => setSelectedInspectTierIndex(idx)}
+                                              className={`px-1.5 py-1 text-[8px] font-extrabold uppercase rounded border cursor-pointer shrink-0 transition-all ${
+                                                isSelected
+                                                  ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.2)]"
+                                                  : "bg-slate-900/60 text-slate-500 border-white/5 hover:text-slate-300"
+                                              }`}
+                                            >
+                                              {tier.name} {isPlayerActualTier && "●"}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* Tier content details */}
+                                      {(() => {
+                                        const t = tiers[selectedInspectTierIndex];
+                                        const isPlayerActualTier = selectedInspectTierIndex === activeTierIdx;
+                                        return (
+                                          <div className="flex-1 flex flex-col justify-between space-y-2">
+                                            <div className="space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${t.statusColor}`}>
+                                                  {t.name} Standing
+                                                </span>
+                                                <span className="text-[8px] text-slate-500 font-extrabold">RANGE: {t.range}</span>
+                                              </div>
+
+                                              <div className="bg-slate-900/40 p-2 rounded border border-white/5 text-[9px] flex justify-between items-center">
+                                                <span className="text-slate-500 uppercase text-[8px] font-bold">MERCHANT RATES:</span>
+                                                <span className={`font-black uppercase text-[8.5px] ${
+                                                  selectedInspectTierIndex <= 1 ? "text-emerald-400" : selectedInspectTierIndex >= 3 ? "text-rose-400" : "text-slate-300"
+                                                }`}>
+                                                  {t.pricing}
+                                                </span>
+                                              </div>
+
+                                              <div className="space-y-1">
+                                                <p className="text-[8px] text-slate-500 uppercase tracking-wider font-extrabold">SYSTEM BENEFITS & DIRECTIVES:</p>
+                                                <div className="space-y-1 max-h-[85px] overflow-y-auto pr-1">
+                                                  {t.perks.map((p, pidx) => (
+                                                    <p key={pidx} className="text-3xs text-slate-300 flex items-start gap-1 leading-normal font-sans">
+                                                      <span className="text-indigo-400 text-[10px] leading-none shrink-0">•</span>
+                                                      <span>{p}</span>
+                                                    </p>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {isPlayerActualTier ? (
+                                              <div className="bg-indigo-500/5 border border-indigo-500/20 rounded p-1.5 text-center text-[8px] font-extrabold text-indigo-400 flex items-center justify-center gap-1 mt-auto">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block animate-pulse" />
+                                                NEURAL SYNC ACTIVE: CURRENT STANDING STATE
+                                              </div>
+                                            ) : (
+                                              <div className="bg-slate-900/60 border border-white/5 rounded p-1.5 text-center text-[8px] font-bold text-slate-500 mt-auto">
+                                                REQUIRES REP RANGE: {t.range}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </motion.div>
+                    )}
+
                   </AnimatePresence>
 
                 </div>
@@ -8929,6 +14009,7 @@ export default function App() {
               </div>
 
             </div>
+          </div>
           )}
 
               </div>
@@ -9439,8 +14520,12 @@ export default function App() {
                       {/* Companion Card */}
                       <div className="bg-slate-950/60 border border-white/5 rounded-xl p-4 text-left space-y-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-lg bg-purple-950/30 border border-purple-500/20 overflow-hidden flex items-center justify-center text-xl shrink-0">
-                            {companion.avatar || "👤"}
+                          <div className="w-12 h-12 rounded-lg bg-purple-950/30 border border-purple-500/20 overflow-hidden flex items-center justify-center shrink-0 shadow-lg">
+                            {companion.image ? (
+                              <img src={companion.image} alt={companion.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <span className="text-xl">{companion.avatar || "👤"}</span>
+                            )}
                           </div>
                           <div>
                             <h3 className="font-extrabold text-white text-sm uppercase">{companion.name}</h3>
@@ -9689,6 +14774,571 @@ export default function App() {
             setGameState={setGameState}
             triggerToast={triggerToast}
           />
+        )}
+
+        {/* Cyber-Lab Clinic Modal */}
+        {cyberLabOpen && gameState && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 font-mono overflow-y-auto">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-2xl bg-slate-900 border border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.15)] overflow-hidden"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-cyan-950/60 to-slate-900 p-6 border-b border-cyan-500/20 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🔌</span>
+                  <div>
+                    <h3 className="text-lg font-black text-white tracking-wider uppercase">AURUS SAFEHOUSE: CHROMIUM CLINIC</h3>
+                    <p className="text-xs text-cyan-400">AUTHORIZED RIPPER-DOC WORKSTATION v4.8</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-white/5">
+                  <span className="text-3xs text-slate-500 uppercase font-bold">LIQUID CREDITS:</span>
+                  <span className="text-cyan-400 font-black text-sm">{gameState.credits}¤</span>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-6">
+                <p className="text-xs text-slate-400 leading-relaxed bg-slate-950/40 p-3 rounded-lg border border-white/5">
+                  Welcome to the safehouse Cyber-Lab. Here, you can splice military-grade neural chips and dermal reinforcements directly into your bio-structure. Cyberware stats integrate with combat triggers automatically.
+                </p>
+
+                <div className="space-y-4">
+                  {[
+                    {
+                      id: "Sub-dermal Armor",
+                      name: "Sub-dermal Carapace Armor",
+                      desc: "Splices flexible graphene plates into your skin layers. Permanently increases Max HP by +30, and automatically absorbs -5 kinetic/melee damage from enemy counter-strikes.",
+                      cost: 120,
+                      badge: "🛡️ STRUCTURAL",
+                      badgeColor: "text-emerald-400 bg-emerald-950/50 border-emerald-500/30",
+                      benefits: "+30 Max HP, Passive -5 Damage Mitigation"
+                    },
+                    {
+                      id: "Neural Reflex-Boosters",
+                      name: "Neural Reflex-Boosters",
+                      desc: "Accelerates synaptic conductivity along your peripheral nervous system. Grants +2 DEX, and adds a passive +20% chance to completely evade enemy attacks in combat.",
+                      cost: 100,
+                      badge: "⚡ NEURAL SPEED",
+                      badgeColor: "text-amber-400 bg-amber-950/50 border-amber-500/30",
+                      benefits: "+2 DEX, 20% Evasion Strike Protection"
+                    },
+                    {
+                      id: "Optical HUDs",
+                      name: "Multi-Spectrum Optical HUD",
+                      desc: "Overlays tactical battlefield projections over your primary retinas. Grants +2 INT, and adds a passive +25% chance to trigger CRITICAL OVERDRIVE! on physical, spell, or hack attacks, dealing +50% extra damage.",
+                      cost: 80,
+                      badge: "👁️ RETINAL SENSORS",
+                      badgeColor: "text-purple-400 bg-purple-950/50 border-purple-500/30",
+                      benefits: "+2 INT, +25% Critical Overdrive Chance"
+                    }
+                  ].map((cyber) => {
+                    const isInstalled = gameState.installedCyberware?.includes(cyber.id);
+                    const canAfford = gameState.credits >= cyber.cost;
+
+                    const handleInstall = () => {
+                      if (isInstalled) return;
+                      if (!canAfford) {
+                        triggerToast("INSUFFICIENT FUNDS: Need more Credits!");
+                        return;
+                      }
+
+                      let nextState = { ...gameState };
+                      nextState.credits -= cyber.cost;
+                      if (!nextState.installedCyberware) {
+                        nextState.installedCyberware = [];
+                      }
+                      nextState.installedCyberware.push(cyber.id);
+
+                      // Apply permanent stat boosts
+                      if (cyber.id === "Sub-dermal Armor") {
+                        nextState.maxHp += 30;
+                        nextState.hp += 30;
+                      } else if (cyber.id === "Neural Reflex-Boosters") {
+                        if (nextState.attributes) {
+                          nextState.attributes.dex = (nextState.attributes.dex || 10) + 2;
+                        }
+                      } else if (cyber.id === "Optical HUDs") {
+                        if (nextState.attributes) {
+                          nextState.attributes.int = (nextState.attributes.int || 10) + 2;
+                        }
+                      }
+
+                      setGameState(nextState);
+                      triggerToast(`CYBERWARE INSTALLED: ${cyber.name} synchronized successfully!`);
+                      
+                      // Append log
+                      const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      setLogs(prev => [
+                        ...prev,
+                        {
+                          id: crypto.randomUUID(),
+                          timestamp: timeString,
+                          text: `🔌 RIPPER-DOC SUCCESS: Installed ${cyber.name}. Credits deducted: -${cyber.cost}¤. Permanent benefits applied: ${cyber.benefits}.`,
+                          type: "system",
+                          district: nextState.district,
+                          poi: nextState.poi
+                        }
+                      ]);
+                    };
+
+                    return (
+                      <div key={cyber.id} className="p-4 bg-slate-950/60 rounded-xl border border-white/5 hover:border-cyan-500/20 transition-all flex flex-col md:flex-row justify-between gap-4">
+                        <div className="space-y-2 max-w-md">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cyber.badgeColor}`}>{cyber.badge}</span>
+                            {isInstalled && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-950 text-emerald-400">INSTALLED</span>
+                            )}
+                          </div>
+                          <h4 className="text-white font-bold uppercase text-sm">{cyber.name}</h4>
+                          <p className="text-xs text-slate-400 leading-relaxed font-sans">{cyber.desc}</p>
+                          <div className="text-3xs text-cyan-400 uppercase font-black">BENEFIT: {cyber.benefits}</div>
+                        </div>
+
+                        <div className="flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-3 border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
+                          <div className="text-right">
+                            <span className="text-3xs text-slate-500 uppercase block">PRICE</span>
+                            <span className="text-white font-extrabold text-sm font-mono">{cyber.cost}¤</span>
+                          </div>
+
+                          <button
+                            disabled={isInstalled}
+                            onClick={handleInstall}
+                            className={`px-4 py-2 rounded-lg font-bold uppercase text-2xs tracking-wider transition-all cursor-pointer w-full md:w-auto text-center ${
+                              isInstalled
+                                ? "bg-slate-800 border border-white/5 text-slate-500 cursor-not-allowed"
+                                : canAfford
+                                  ? "bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-500/40 hover:border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.1)]"
+                                  : "bg-red-950/20 border border-red-500/20 text-red-400 cursor-not-allowed hover:bg-red-950/30"
+                            }`}
+                          >
+                            {isInstalled ? "CHROMED" : canAfford ? "INSTALL CHROME" : "LACK CREDITS"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 bg-slate-950/40 border-t border-white/5 flex justify-end">
+                <button
+                  onClick={() => setCyberLabOpen(false)}
+                  className="px-5 py-2.5 bg-slate-950 border border-rose-500/30 hover:bg-rose-950/60 hover:border-rose-400 text-rose-300 font-bold uppercase rounded-lg tracking-wider text-xs transition-all cursor-pointer"
+                >
+                  DISCONNECT CLINIC CORE
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Gear Modding Terminal Modal */}
+        {gearModdingOpen && gameState && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 font-mono overflow-y-auto">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-3xl bg-slate-900 border border-purple-500/30 rounded-2xl shadow-[0_0_50px_rgba(168,85,247,0.15)] overflow-hidden flex flex-col"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-950/60 to-slate-900 p-6 border-b border-purple-500/20 flex justify-between items-center flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🛠️</span>
+                  <div>
+                    <h3 className="text-lg font-black text-white tracking-wider uppercase">AURUS SAFEHOUSE: GEAR MOD WORKBENCH</h3>
+                    <p className="text-xs text-purple-400">TACTICAL ELEMENTAL INFUSION CALIBRATOR</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-white/5">
+                  <span className="text-3xs text-slate-500 uppercase font-bold">LIQUID CREDITS:</span>
+                  <span className="text-purple-400 font-black text-sm">{gameState.credits}¤</span>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                <p className="text-xs text-slate-400 leading-relaxed bg-slate-950/40 p-3 rounded-lg border border-white/5">
+                  Welcome to the Gear Modding workstation. Select any melee or ranged weapon in your loadout, then toggle between purchasing elemental infusions or utilizing raw salvage materials to craft advanced enhancements.
+                </p>
+
+                {/* Workbench Tab Selection */}
+                <div className="flex border-b border-purple-500/20 bg-slate-950/50 p-1.5 rounded-xl border border-white/5">
+                  <button
+                    onClick={() => setWorkbenchTab("infusion")}
+                    className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider transition-all rounded-lg cursor-pointer flex items-center justify-center gap-2 ${
+                      workbenchTab === "infusion"
+                        ? "bg-purple-950/60 border border-purple-500/40 text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.1)]"
+                        : "border border-transparent text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🔌 ELEMENTAL INFUSIONS (CREDITS)
+                  </button>
+                  <button
+                    onClick={() => setWorkbenchTab("crafting")}
+                    className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider transition-all rounded-lg cursor-pointer flex items-center justify-center gap-2 ${
+                      workbenchTab === "crafting"
+                        ? "bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.1)]"
+                        : "border border-transparent text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🛠️ SCRAP CRAFTING (ASSEMBLY)
+                  </button>
+                </div>
+
+                {/* Grid Layout: Select Weapon / Select Mod or Craft */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column: Weapon Selection */}
+                  <div className="space-y-3">
+                    <span className="text-slate-400 text-3xs uppercase font-black tracking-widest border-b border-white/10 pb-2 block">
+                      1. SELECT WEAPON TO CALIBRATE
+                    </span>
+                    
+                    {(() => {
+                      const equippedMelee = gameState.equipment?.meleeWeapon;
+                      const equippedRanged = gameState.equipment?.rangedWeapon;
+                      
+                      const inventoryWeapons = (gameState.inventory || []).filter(item => {
+                        const l = item.toLowerCase();
+                        return l.includes("blade") || l.includes("pistol") || l.includes("katana") || l.includes("smg") || l.includes("baton") || l.includes("slicer") || l.includes("focus");
+                      });
+
+                      const allWeapons = Array.from(new Set([
+                        ...(equippedMelee ? [equippedMelee] : []),
+                        ...(equippedRanged ? [equippedRanged] : []),
+                        ...inventoryWeapons
+                      ]));
+
+                      if (allWeapons.length === 0) {
+                        return (
+                          <div className="p-4 bg-slate-950/40 border border-white/5 rounded-lg text-slate-500 text-xs text-center italic">
+                            No weapons detected in active loadout or inventory. Go find or purchase a weapon first!
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2">
+                          {allWeapons.map((wpn) => {
+                            const isEquipped = wpn === equippedMelee || wpn === equippedRanged;
+                            const isSelected = selectedWeaponForModding === wpn;
+                            const activeMod = gameState.weaponMods?.[wpn];
+
+                            return (
+                              <button
+                                key={wpn}
+                                onClick={() => setSelectedWeaponForModding(wpn)}
+                                className={`w-full text-left p-3 rounded-lg border font-mono text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                  isSelected
+                                    ? "bg-purple-950/40 border-purple-500/80 text-white shadow-[0_0_12px_rgba(168,85,247,0.15)]"
+                                    : "bg-slate-950/60 border-white/5 text-slate-300 hover:border-white/15"
+                                }`}
+                              >
+                                <div className="flex justify-between items-center w-full font-mono">
+                                  <span className="font-extrabold text-cyan-400 text-2xs uppercase truncate">{wpn}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    {isEquipped && (
+                                      <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded-full font-bold">EQUIPPED</span>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center justify-between text-3xs mt-1 font-mono">
+                                  <span className="text-slate-500">INFUSION MOD:</span>
+                                  {activeMod ? (
+                                    <span className={`font-black uppercase flex items-center gap-1 ${
+                                      activeMod === "Toxic Vials" ? "text-emerald-400" :
+                                      activeMod === "Bio-Shocks" ? "text-amber-400" :
+                                      activeMod === "Plasma Heat Coil" ? "text-rose-400" :
+                                      activeMod === "Cryo-Fluid Injector" ? "text-cyan-400" :
+                                      activeMod === "Nano-Laser Sight" ? "text-red-400" : "text-purple-400"
+                                    }`}>
+                                      {activeMod === "Toxic Vials" ? "🧪 Toxic Vials" :
+                                       activeMod === "Bio-Shocks" ? "⚡ Bio-Shocks" :
+                                       activeMod === "Plasma Heat Coil" ? "🔥 Plasma Heat" :
+                                       activeMod === "Cryo-Fluid Injector" ? "❄️ Cryo Injector" :
+                                       activeMod === "Nano-Laser Sight" ? "🎯 Nano Laser" : "🌐 EMP Chamber"}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 italic">None</span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Right Column: Tab-Dependent Content */}
+                  {workbenchTab === "infusion" ? (
+                    /* Infusion Selection Column */
+                    <div className="space-y-3">
+                      <span className="text-slate-400 text-3xs uppercase font-black tracking-widest border-b border-white/10 pb-2 block">
+                        2. SELECT INFUSION ATTACHMENT
+                      </span>
+
+                      {!selectedWeaponForModding ? (
+                        <div className="p-6 bg-slate-950/40 border border-white/5 rounded-lg text-slate-500 text-xs text-center italic h-full flex items-center justify-center">
+                          Please select a weapon on the left to calibrate modifications.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {[
+                            {
+                              id: "Toxic Vials",
+                              name: "🧪 Bio-Toxic Vials",
+                              desc: "Injects concentrated acidic neurotoxin into the striking core or ammunition feed.",
+                              vulnerability: "VULNERABILITY EXPLOIT: Corporate Officers, Enforcers, and Organic Bosses take +25 Acid Damage (Normal enemies take +12).",
+                              cost: 60,
+                              icon: "🧪",
+                              color: "hover:border-emerald-500/40 hover:bg-emerald-950/10 text-emerald-400 border-emerald-500/10 bg-emerald-950/20"
+                            },
+                            {
+                              id: "Bio-Shocks",
+                              name: "⚡ Bio-Electric Shock Capacitor",
+                              desc: "Wires direct electrical micro-surges across physical impact and muzzle surfaces.",
+                              vulnerability: "VULNERABILITY EXPLOIT: Mutants, Sludge Beasts, and Rust-Claw Orcs take +25 Shock Damage (Normal enemies take +12).",
+                              cost: 60,
+                              icon: "⚡",
+                              color: "hover:border-amber-500/40 hover:bg-amber-950/10 text-amber-400 border-amber-500/10 bg-amber-950/20"
+                            },
+                            {
+                              id: "Electromagnetic Chambers",
+                              name: "🌐 Electromagnetic EMP Chamber",
+                              desc: "Mounts high-capacity EMP generators directly into the firing/striking core.",
+                              vulnerability: "VULNERABILITY EXPLOIT: Autonomous Security Drones, Sentinels, and Robotic Mechs take +25 EMP Damage (Normal enemies take +12).",
+                              cost: 60,
+                              icon: "🌐",
+                              color: "hover:border-purple-500/40 hover:bg-purple-950/10 text-purple-400 border-purple-500/10 bg-purple-950/20"
+                            }
+                          ].map((mod) => {
+                            const isCurrentlyApplied = gameState.weaponMods?.[selectedWeaponForModding] === mod.id;
+                            const canAfford = gameState.credits >= mod.cost;
+
+                            const handleApplyMod = () => {
+                              if (!canAfford) {
+                                triggerToast("INSUFFICIENT FUNDS: Elemental modules cost 60¤!");
+                                    return;
+                                  }
+
+                                  let nextState = { ...gameState };
+                                  nextState.credits -= mod.cost;
+                                  if (!nextState.weaponMods) {
+                                    nextState.weaponMods = {};
+                                  }
+                                  nextState.weaponMods[selectedWeaponForModding] = mod.id;
+
+                                  setGameState(nextState);
+                                  triggerToast(`MODIFICATION INSTALLED: ${selectedWeaponForModding} infused with ${mod.id}!`);
+
+                                  // Append log
+                                  const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                  setLogs(prev => [
+                                    ...prev,
+                                    {
+                                      id: crypto.randomUUID(),
+                                      timestamp: timeString,
+                                      text: `🛠️ WEAPON CALIBRATED: Mounted [${mod.id}] elemental attachment onto ${selectedWeaponForModding}. Deducted: -${mod.cost}¤.`,
+                                      type: "system",
+                                      district: nextState.district,
+                                      poi: nextState.poi
+                                    }
+                                  ]);
+                                };
+
+                                return (
+                                  <div 
+                                    key={mod.id} 
+                                    className={`p-3.5 rounded-xl border font-mono flex flex-col gap-2 transition-all ${
+                                      isCurrentlyApplied 
+                                        ? "border-purple-500/50 bg-purple-950/30 text-white" 
+                                        : mod.color
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-center w-full">
+                                      <span className="font-extrabold uppercase text-xs flex items-center gap-1.5">{mod.name}</span>
+                                      {isCurrentlyApplied && (
+                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-500/40 bg-purple-950 text-purple-300 animate-pulse">ACTIVE INFUSION</span>
+                                      )}
+                                    </div>
+                                    
+                                    <p className="text-3xs text-slate-400 leading-normal font-sans">{mod.desc}</p>
+                                    <p className="text-[10px] text-purple-300 font-bold font-sans bg-purple-950/50 p-2 rounded border border-purple-500/20">{mod.vulnerability}</p>
+
+                                    <div className="flex justify-between items-center mt-1 pt-2 border-t border-white/5">
+                                      <span className="text-3xs text-slate-500 uppercase">COST: <span className="text-white font-extrabold">{mod.cost}¤</span></span>
+                                      
+                                      <button
+                                        disabled={isCurrentlyApplied}
+                                        onClick={handleApplyMod}
+                                        className={`px-3 py-1.5 rounded text-4xs uppercase font-extrabold tracking-wider transition-all cursor-pointer ${
+                                          isCurrentlyApplied
+                                            ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5"
+                                            : canAfford
+                                              ? "bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 hover:border-purple-400 text-purple-200"
+                                              : "bg-red-950/20 text-red-400 cursor-not-allowed border border-red-500/20"
+                                        }`}
+                                      >
+                                        {isCurrentlyApplied ? "CALIBRATED" : canAfford ? "MOUNT MOD (-60¤)" : "LACK CREDITS"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                    </div>
+                  ) : (
+                    /* Scrap Crafting Column */
+                    <div className="space-y-4">
+                      <span className="text-cyan-400 text-3xs uppercase font-black tracking-widest border-b border-cyan-500/20 pb-2 block">
+                        2. ASSEMBLY &amp; SALVAGE COMBINATOR
+                      </span>
+                      
+                      {/* Selected Target Weapon Indicator */}
+                      <div className="p-3 bg-slate-950/60 border border-white/5 rounded-xl flex items-center justify-between">
+                        <span className="text-3xs text-slate-500 font-bold uppercase font-mono">TARGET CHASSIS:</span>
+                        {selectedWeaponForModding ? (
+                          <span className="text-xs text-cyan-400 font-black uppercase font-mono">{selectedWeaponForModding}</span>
+                        ) : (
+                          <span className="text-3xs text-red-400 font-bold uppercase animate-pulse font-mono">⚠️ NO WEAPON SELECTED</span>
+                        )}
+                      </div>
+
+                      {/* Inventory Scraps Balance */}
+                      <div className="bg-slate-950/40 border border-cyan-500/10 rounded-xl p-4 space-y-3">
+                        <span className="text-[10px] text-cyan-400 uppercase font-bold tracking-wider block font-mono">REQUIRED COMPONENTS</span>
+                        
+                        <div className="space-y-2 font-mono">
+                          {/* Component 1 */}
+                          <div className="flex items-center justify-between text-xs border-b border-white/5 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">🔩</span>
+                              <div>
+                                <span className="font-bold text-slate-300 block">High-Grade Scrap Salvage</span>
+                                <span className="text-[9px] text-slate-500 leading-none">Premium carbon-reinforced alloy scrap</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xs text-slate-500">OWNED:</span>
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded text-2xs ${
+                                (gameState.inventory || []).filter(i => i === "High-Grade Scrap Salvage").length >= 1
+                                  ? "bg-emerald-950 text-emerald-400 border border-emerald-500/20"
+                                  : "bg-red-950 text-red-400 border border-red-500/20"
+                              }`}>
+                                {(gameState.inventory || []).filter(i => i === "High-Grade Scrap Salvage").length} / 1
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Component 2 */}
+                          <div className="flex items-center justify-between text-xs pb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">📟</span>
+                              <div>
+                                <span className="font-bold text-slate-300 block">Rusted Circuitry</span>
+                                <span className="text-[9px] text-slate-500 leading-none">Scavenged copper-clad micro-cores</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xs text-slate-500">OWNED:</span>
+                              <span className={`font-mono font-bold px-2 py-0.5 rounded text-2xs ${
+                                (gameState.inventory || []).filter(i => i === "Rusted Circuitry").length >= 1
+                                  ? "bg-emerald-950 text-emerald-400 border border-emerald-500/20"
+                                  : "bg-red-950 text-red-400 border border-red-500/20"
+                              }`}>
+                                {(gameState.inventory || []).filter(i => i === "Rusted Circuitry").length} / 1
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Craft Button */}
+                      {(() => {
+                        const scrapCount = (gameState.inventory || []).filter(i => i === "High-Grade Scrap Salvage").length;
+                        const circuitryCount = (gameState.inventory || []).filter(i => i === "Rusted Circuitry").length;
+                        const canAssemble = scrapCount >= 1 && circuitryCount >= 1 && selectedWeaponForModding;
+
+                        return (
+                          <button
+                            onClick={handleCraftWeaponMod}
+                            disabled={!canAssemble}
+                            className={`w-full py-4 rounded-xl font-bold uppercase text-xs tracking-widest border transition-all cursor-pointer flex flex-col items-center justify-center gap-1 font-mono ${
+                              canAssemble
+                                ? "bg-cyan-950/80 hover:bg-cyan-900 border-cyan-500 hover:border-cyan-400 text-cyan-200 shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+                                : "bg-slate-950/40 border-white/5 text-slate-500 cursor-not-allowed"
+                            }`}
+                          >
+                            <span>🔧 COMBINE &amp; ASSEMBLE TIER-1 MOD</span>
+                            <span className="text-4xs text-slate-400 font-medium font-sans">Combines 1x of each scrap to synthesize a random mod</span>
+                          </button>
+                        );
+                      })()}
+
+                      {/* Loot Table Preview */}
+                      <div className="p-3 bg-slate-950/30 border border-white/5 rounded-xl space-y-2 font-mono">
+                        <span className="text-3xs text-slate-500 font-black block tracking-wider uppercase">ROLLABLE UPGRADES INDEX (TIER-1)</span>
+                        <div className="grid grid-cols-2 gap-2 text-4xs leading-relaxed text-slate-400 font-sans">
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">🧪</span> <strong className="text-emerald-400">Bio-Toxic Vials</strong></div>
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">⚡</span> <strong className="text-amber-400">Shock Capacitor</strong></div>
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">🌐</span> <strong className="text-purple-400">EMP Chamber</strong></div>
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">🔥</span> <strong className="text-rose-400">Plasma Heat Coil</strong></div>
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">❄️</span> <strong className="text-cyan-400">Cryo-Fluid Injector</strong></div>
+                          <div className="flex items-center gap-1.5"><span className="text-[10px]">🎯</span> <strong className="text-red-400">Nano-Laser Sight</strong></div>
+                        </div>
+                      </div>
+
+                      {/* Material Requisition Terminal */}
+                      <div className="p-3.5 bg-slate-950/60 border border-cyan-500/10 rounded-xl space-y-2.5 font-mono">
+                        <span className="text-3xs text-cyan-500 font-black block tracking-wider uppercase">🔌 MATERIAL REQUISITION TERMINAL</span>
+                        <p className="text-4xs text-slate-500 leading-relaxed font-sans">
+                          Need additional scrap components? Requisition raw materials directly from Sector 4 black market channels.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => buyCraftingMaterial("High-Grade Scrap Salvage", 50)}
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/40 text-slate-300 font-bold uppercase rounded text-4xs transition-all flex items-center justify-between cursor-pointer"
+                          >
+                            <span>BUY SCRAP x1</span>
+                            <span className="text-cyan-400 font-mono">-50¤</span>
+                          </button>
+                          <button
+                            onClick={() => buyCraftingMaterial("Rusted Circuitry", 30)}
+                            className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/40 text-slate-300 font-bold uppercase rounded text-4xs transition-all flex items-center justify-between cursor-pointer"
+                          >
+                            <span>BUY CIRCUITRY x1</span>
+                            <span className="text-cyan-400 font-mono">-30¤</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-6 bg-slate-950/40 border-t border-white/5 flex justify-end flex-shrink-0">
+                <button
+                  onClick={() => {
+                    setGearModdingOpen(false);
+                    setSelectedWeaponForModding(null);
+                  }}
+                  className="px-5 py-2.5 bg-slate-950 border border-rose-500/30 hover:bg-rose-950/60 hover:border-rose-400 text-rose-300 font-bold uppercase rounded-lg tracking-wider text-xs transition-all cursor-pointer"
+                >
+                  LOCK DOWN WORKBENCH
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
 
       </main>

@@ -6,6 +6,7 @@ export interface CompanionState {
   role: string;
   equipment?: EquipmentState;
   avatar?: string;
+  image?: string;
   inventory?: string[];
 }
 
@@ -17,6 +18,13 @@ export interface CombatState {
   enemyMaxShields: number;
   isActive: boolean;
   turnLog: string;
+  playerStatuses?: string[];
+  enemyStatuses?: string[];
+  playerOverclockTurns?: number;
+  enemyGlitchTurns?: number;
+  playerCorrodedTurns?: number;
+  enemyPanicTurns?: number;
+  ironWillTriggered?: boolean;
 }
 
 export interface EquipmentState {
@@ -69,6 +77,8 @@ export interface GameState {
   playerAvatarUrl?: string;
   playerBackground?: string;
   playerPerks?: string[];
+  installedCyberware?: string[];
+  weaponMods?: { [weaponName: string]: string };
   // Stamina / Fatigue and Weather system
   stamina: number;
   maxStamina: number;
@@ -98,6 +108,15 @@ export interface GameState {
     risk: string;
     rewardType: string;
   }[];
+  reputations?: {
+    streetOutlaws: number;
+    titanLogistics: number;
+    aresCorporate: number;
+  };
+  activeBranchingDialogue?: {
+    npcId: "jax" | "marv" | "cipher";
+    nodeId: string;
+  } | null;
 }
 
 export interface BaseNPC {

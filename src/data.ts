@@ -46,28 +46,36 @@ export const INITIAL_COMPANIONS: CompanionState[] = [
     fee: 100,
     status: "available",
     role: "Infiltrator / Cyber-Ninja",
-    bio: "Ex-Apex Cyber-Dynamics black-ops. Discarded after a botched corporate raid. Highly skilled with stealth, active camo, and mono-blade systems."
+    bio: "Ex-Apex Cyber-Dynamics black-ops. Discarded after a botched corporate raid. Highly skilled with stealth, active camo, and mono-blade systems.",
+    avatar: "🥷",
+    image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=600"
   },
   {
     name: "Vex",
     fee: 80,
     status: "available",
     role: "Techno-Mage Decryptor",
-    bio: "Nerve-fried hacker hailing from the Iron Coven syndicates. Specializes in burning through firewalls and siphoning bank feeds."
+    bio: "Nerve-fried hacker hailing from the Iron Coven syndicates. Specializes in burning through firewalls and siphoning bank feeds.",
+    avatar: "🔮",
+    image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600"
   },
   {
     name: "Brick",
     fee: 90,
     status: "available",
     role: "Heavy Cyber-Orc Mercenary",
-    bio: "A bio-engineered street enforcer measuring seven feet of alloy, muscle, and malice. Brings massive damage mitigation and heavy firearms."
+    bio: "A bio-engineered street enforcer measuring seven feet of alloy, muscle, and malice. Brings massive damage mitigation and heavy firearms.",
+    avatar: "🦾",
+    image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600"
   },
   {
     name: "Trigger",
     fee: 95,
     status: "available",
     role: "Vanguard Gunner / Heavy Marksman",
-    bio: "Former syndicate heavy weapons expert. Carries a modified plasma rifle with long-range armor-piercing rounds."
+    bio: "Former syndicate heavy weapons expert. Carries a modified plasma rifle with long-range armor-piercing rounds.",
+    avatar: "🔫",
+    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=600"
   }
 ];
 
@@ -463,7 +471,7 @@ export const REGIONS: Region[] = [
     id: "aurus",
     name: "Aurus District",
     description: "The gritty, neon-soaked rain corridors and crowded lower-level slums of Aurus District.",
-    bgImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=1200"
+    bgImage: "/src/assets/images/aurus-district.png"
   },
   {
     id: "docks",
@@ -482,8 +490,69 @@ export const REGIONS: Region[] = [
     name: "Satoshi Square Region",
     description: "The high-tech ancestral heart of Megacity-9. Combines glowing server columns with digital blossom gardens.",
     bgImage: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "waste_barrens",
+    name: "Grid Waste-Barrens",
+    description: "The toxic outskirts of Megacity-9. Towering heaps of discarded mainframes, green-glowing radioactive runoff channels, and severe electromagnetic lightning storms define this unmapped frontier.",
+    bgImage: "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "kurogane_industrial",
+    name: "Kurogane Heavy Industrial",
+    description: "Multi-tiered heavy robotic factories and automated steel lifters. Deep orange sparks fly from high-pressure molten blast furnaces and magnetic crane routes.",
+    bgImage: "https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&q=80&w=1200"
+  },
+  {
+    id: "hyperion_cathedral",
+    name: "Hyperion Neo-Cathedral",
+    description: "A breathtaking cyber-gothic cathedral constructed around giant server arrays. Majestic digital stained-glass windows project vibrant violet patterns across hyper-conducting copper spires.",
+    bgImage: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=1200"
   }
 ];
+
+export interface TravelConnection {
+  targetRegionId: string;
+  label: string;
+  x: number;
+  y: number;
+  direction: "N" | "S" | "E" | "W" | "NE" | "NW" | "SE" | "SW";
+}
+
+export const REGION_CONNECTIONS: Record<string, TravelConnection[]> = {
+  aurus: [
+    { targetRegionId: "docks", label: "WEST TRANSIT: THE DOCKS", x: 6, y: 50, direction: "W" },
+    { targetRegionId: "downtown", label: "EAST TRANSIT: DOWNTOWN CORRIDORS", x: 94, y: 50, direction: "E" },
+    { targetRegionId: "satoshi", label: "NORTH TRANSIT: SATOSHI SQUARE", x: 50, y: 10, direction: "N" }
+  ],
+  docks: [
+    { targetRegionId: "aurus", label: "EAST TRANSIT: AURUS SLUMS", x: 94, y: 50, direction: "E" },
+    { targetRegionId: "kurogane_industrial", label: "SOUTH TRANSIT: KUROGANE FACTORIES", x: 50, y: 90, direction: "S" }
+  ],
+  downtown: [
+    { targetRegionId: "aurus", label: "WEST TRANSIT: AURUS SLUMS", x: 6, y: 50, direction: "W" },
+    { targetRegionId: "satoshi", label: "NORTH-WEST: SATOSHI SQUARE", x: 30, y: 10, direction: "NW" },
+    { targetRegionId: "hyperion_cathedral", label: "EAST: HYPERION CATHEDRAL", x: 94, y: 50, direction: "E" }
+  ],
+  satoshi: [
+    { targetRegionId: "aurus", label: "SOUTH TRANSIT: AURUS SLUMS", x: 50, y: 90, direction: "S" },
+    { targetRegionId: "downtown", label: "SOUTH-EAST: DOWNTOWN CORRIDORS", x: 82, y: 90, direction: "SE" },
+    { targetRegionId: "waste_barrens", label: "NORTH: THE WASTELAND GRID", x: 50, y: 10, direction: "N" }
+  ],
+  waste_barrens: [
+    { targetRegionId: "satoshi", label: "SOUTH TRANSIT: SATOSHI SQUARE", x: 50, y: 90, direction: "S" },
+    { targetRegionId: "kurogane_industrial", label: "WEST: KUROGANE INDUSTRIAL", x: 6, y: 50, direction: "W" },
+    { targetRegionId: "hyperion_cathedral", label: "EAST: HYPERION CATHEDRAL", x: 94, y: 50, direction: "E" }
+  ],
+  kurogane_industrial: [
+    { targetRegionId: "docks", label: "NORTH TRANSIT: THE DOCKS", x: 50, y: 10, direction: "N" },
+    { targetRegionId: "waste_barrens", label: "EAST TRANSIT: THE WASTELAND GRID", x: 94, y: 50, direction: "E" }
+  ],
+  hyperion_cathedral: [
+    { targetRegionId: "downtown", label: "WEST TRANSIT: DOWNTOWN CORRIDORS", x: 6, y: 50, direction: "W" },
+    { targetRegionId: "waste_barrens", label: "NORTH-WEST: THE WASTELAND GRID", x: 30, y: 10, direction: "NW" }
+  ]
+};
 
 export interface MapPOI {
   id: string;
@@ -650,7 +719,9 @@ export const MAP_POIS: MapPOI[] = [
       "Rest & Recover at Hideout",
       "Check Stash Inventory",
       "Manage Passive Server Work",
-      "Base Crew Management (NPCs)"
+      "Base Crew Management (NPCs)",
+      "🔌 Access Cyber-Lab Clinic",
+      "🛠️ Open Gear Modding Terminal"
     ]
   },
   {
@@ -714,6 +785,22 @@ export const MAP_POIS: MapPOI[] = [
       "Enter Auction Lobby",
       "Inspect Holdout Pens",
       "Bribe Syndicate Warden (-40¤)"
+    ]
+  },
+  {
+    id: "aurus_arena",
+    name: "Aurus Fighting Arena (The Pit)",
+    district: "aurus",
+    description: "A dark, blood-spattered underground fighting ring wrapped in flickering high-voltage hazard fences. Ruthless street gangs and corporate scouts gather here to bet on contract combat slaves and cyber-gladiators who trade blood for survival. Here you can find Mira Voss, a fierce, contract fight slave who dominates the ring.",
+    image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=600",
+    x: 35,
+    y: 88,
+    type: "quest",
+    buttons: [
+      "Enter the Arena Pit",
+      "Challenge Mira Voss to an Action-AP Duel (Melee Check)",
+      "Buy Mira Voss's Arena Contract (-200¤)",
+      "Gamble on Underground Arena Fight (-50¤)"
     ]
   },
 
@@ -930,6 +1017,48 @@ export const MAP_POIS: MapPOI[] = [
       "Meditate with Shrines (+10 HP, +15 Mana)",
       "Perform Ritual Tech Offering (-20¤)"
     ]
+  },
+  {
+    id: "scavenger_outpost",
+    name: "Scavenger Junkyard Outpost",
+    district: "waste_barrens",
+    description: "A gritty merchant settlement constructed underneath a collapsed orbital sky-line support beam. Discarded server mainframes are sieved for obsolete crypto ledgers and cyberware alloys.",
+    image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=600",
+    x: 50,
+    y: 65,
+    type: "quest",
+    buttons: [
+      "Sift through server junk (INT Check)",
+      "Trade with Scrap-Merchant"
+    ]
+  },
+  {
+    id: "blast_furnace_07",
+    name: "Heavy Blast Furnace 07",
+    district: "kurogane_industrial",
+    description: "Sizzling rivers of molten titanium flow through heavy automated sorting gates. Robotic lifters hum as warning sirens flash yellow. Interfacing with the main power grid control might be profitable, but highly risky.",
+    image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
+    x: 45,
+    y: 40,
+    type: "combat",
+    buttons: [
+      "Overload automated grid line (HACK check)",
+      "Inspect thermal pipes"
+    ]
+  },
+  {
+    id: "altar_column",
+    name: "High-Voltage Altar Column",
+    district: "hyperion_cathedral",
+    description: "A massive cyber-gothic altar surrounded by humming copper spires and glowing blue stained-glass circuits. Cyber-nuns in dark hoods recite hexadecimal litanies to calibrate neural frequencies.",
+    image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=600",
+    x: 50,
+    y: 45,
+    type: "arcane",
+    buttons: [
+      "Calibrate deck at the Ley-Matrix (Will Check)",
+      "Recite high-level binary litany"
+    ]
   }
 ];
 
@@ -1076,15 +1205,16 @@ export function getInitialState(archetype: Archetype): GameState {
         log: ["Infiltrated Level B4 corridors. Evading drone alerts."]
       }
     ],
-    inventory: [...archetype.startingEquipment],
+    inventory: [...archetype.startingEquipment, "High-Grade Scrap Salvage", "High-Grade Scrap Salvage", "Rusted Circuitry", "Rusted Circuitry"],
     companions: [
       {
         name: "Vice",
         fee: 0,
         status: "in_party",
         role: "Tactical Leader",
-        bio: "The veteran leader of your shadow-running cell. Armed with years of combat telemetry, tactical insight, and a modified plasma sidearm.",
-        avatar: "🔫",
+        bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
+        avatar: "👩‍🎤",
+        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
         equipment: {
           meleeWeapon: "Vibroblade",
           rangedWeapon: "Battle Pistol BP132",
@@ -1101,6 +1231,7 @@ export function getInitialState(archetype: Archetype): GameState {
         role: "Vanguard Operator",
         bio: "Your squad's scout and electronic warfare specialist. Cynical, precise, and obsessed with tracing optimal infiltration vectors.",
         avatar: "📟",
+        image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=600",
         equipment: {
           meleeWeapon: "Electric Baton",
           rangedWeapon: null,
@@ -1153,6 +1284,12 @@ export function getInitialState(archetype: Archetype): GameState {
         "🔋 Safehouse initial power grid linked successfully.",
         "📡 Stealth frequency beacon activated - safehouse hidden from city radars."
       ]
-    }
+    },
+    reputations: {
+      streetOutlaws: 50,
+      titanLogistics: 50,
+      aresCorporate: 30
+    },
+    activeBranchingDialogue: null
   };
 }

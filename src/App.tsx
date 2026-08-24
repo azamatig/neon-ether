@@ -40,15 +40,30 @@ import {
   Check,
   Edit,
   UserCog,
-  CloudLightning
+  CloudLightning,
+  Menu,
+  FolderOpen,
+  Code
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
+import MainMenuScreen from "./components/MainMenuScreen";
+import IntroStoryScreen from "./components/IntroStoryScreen";
+import CharacterSelectScreen from "./components/CharacterSelectScreen";
+import SaveManager from "./components/SaveManager";
 import WeatherOverlay from "./components/WeatherOverlay";
 import NPCBaseManagement from "./components/NPCBaseManagement";
 import TypewriterText from "./components/TypewriterText";
+import TacticalCombatView from "./components/combat/TacticalCombatView";
+import DevStudioModal from "./components/dev/DevStudioModal";
+
+import { GameProvider, useGame } from "./context/GameContext";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward } from "./types";
+import vicePortrait from "./assets/characters/vice/vice_portrait.png";
+import viceBody from "./assets/characters/vice/vice_body.png";
+import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
+import trackerBody from "./assets/characters/tracker/tracker_body.png";
 import {
   ARCHETYPES,
   SHOP_ITEMS,
@@ -81,476 +96,9 @@ interface DialogueNode {
   choices: DialogueChoice[];
 }
 
-const BRANCHING_DIALOGUES: Record<"jax" | "marv" | "cipher", Record<string, DialogueNode>> = {
-  jax: {
-    start: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "Rookie, good to see you. The street is a wire-thin path of sparks. The Outlaws are preparing for a massive push against corporate checkpoints in Chapter 2, but we need supplies and secure channels. What's your current status?",
-      choices: [
-        { text: "I'm looking for contract work.", nodeId: "contracts_hub" },
-        { text: "Tell me about the Street Outlaws' vision.", nodeId: "outlaws_lore" },
-        {
-          text: "🔮 Peek into his surface thoughts",
-          nodeId: "jax_mindmance",
-          prereqText: "[Requires Mindmancer Level 1]",
-          prereq: (s) => (s.skills?.mindmancer || 0) >= 1,
-          onSelect: (s) => {
-            if (s.reputations) {
-              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 10);
-            }
-            return s;
-          }
-        },
-        { text: "Understood. I will come back later.", nodeId: "exit" }
-      ]
-    },
-    outlaws_lore: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "Vision? We don't have time for poetry, kid. We are the discarded cells of Megacity-9. Ares corporate elite breathes pure air, while our lungs collapse in sulfur-smog Sewage. We want a clean override of the city grids. True agency, offline from corporate neural relays.",
-      choices: [
-        { text: "How can I support the cause?", nodeId: "contracts_hub" },
-        { text: "Understood. Let's talk about other affairs.", nodeId: "start" }
-      ]
-    },
-    jax_mindmance: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "[SUCCESS] Your eyes flicker with faint purple static. You tap his cognitive field. Instantly, your brain is flooded with the scream of air-raid alarms, holographic battle layouts of the Satoshi checkpoints, and a deep, aching sorrow for lost comrades... Jax rubs his temple, squinting at you: 'Did you feel that chill? Damn under-city draft. You have some strange eyes, kid. But I respect your focus.' (Reputation: +10 Street Outlaws)",
-      choices: [
-        { text: "Let's discuss our operations.", nodeId: "start" }
-      ]
-    },
-    contracts_hub: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "What operation details are you trying to finalize, rookie?",
-      choices: [
-        {
-          text: "Deliver Technical Signal Core",
-          nodeId: "deliver_core_success",
-          prereqText: "[Requires Technical Signal Core]",
-          prereq: (s) => s.inventory.includes("Technical Signal Core"),
-          onSelect: (s) => {
-            s.inventory = s.inventory.filter(i => i !== "Technical Signal Core");
-            s.credits += 150;
-            s.experience += 100;
-            if (s.reputations) {
-              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
-            }
-            s.completedQuests.push("Side Quest: Delivered Signal Core to Jax");
-            return s;
-          }
-        },
-        {
-          text: "Deliver Experimental Drone Chip",
-          nodeId: "deliver_drone_success",
-          prereqText: "[Requires Experimental Drone Chip]",
-          prereq: (s) => s.inventory.includes("Experimental Drone Chip"),
-          onSelect: (s) => {
-            s.inventory = s.inventory.filter(i => i !== "Experimental Drone Chip");
-            s.credits += 200;
-            s.experience += 100;
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Drone"));
-            if (s.reputations) {
-              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
-            }
-            s.completedQuests.push("Side Quest: Drone Schematic Delivered to Jax");
-            return s;
-          }
-        },
-        { text: "Check my active Street Outlaws reputation Standing", nodeId: "reputation_outlaws" },
-        { text: "Let me look at other options.", nodeId: "start" }
-      ]
-    },
-    deliver_core_success: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "Unbelievable work, rookie! The Technical Signal Core's raw data matrices will keep our encrypted wireless feeds fully synchronized, shielding our safehouse beacon from local security trackers. Take your payment, you've earned it! (+150¤, +100 XP, +15 Street Outlaws Rep)",
-      choices: [
-        { text: "Excellent.", nodeId: "start" }
-      ]
-    },
-    deliver_drone_success: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: "This schematic is pure military gold! With these experimental flight templates, our security drones will completely out-maneuver Ares air interceptors! Your payment is fully processed. (+200¤, +100 XP, +15 Street Outlaws Rep)",
-      choices: [
-        { text: "Glad to assist.", nodeId: "start" }
-      ]
-    },
-    reputation_outlaws: {
-      title: "Agent Jax",
-      role: "Outcast Coordinator",
-      image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
-      text: (s: GameState) => {
-        const score = s.reputations?.streetOutlaws ?? 50;
-        let standing = "Neutral Outcast";
-        if (score >= 80) standing = "Rebel Hero (15% Store Discount)";
-        else if (score >= 60) standing = "Amiable Comrade (10% Store Discount)";
-        else if (score < 40) standing = "Untrusted Stray (No Discount)";
-        return `Your active faction score with the Street Outlaws is ${score}%. They view you as a [${standing}]. Standing affects future item pricing and unlocks exclusive resistance contracts in Chapter 2!`;
-      },
-      choices: [
-        { text: "Back to operations.", nodeId: "contracts_hub" }
-      ]
-    }
-  },
-  marv: {
-    start: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Wipes black motor oil and synthetic blood off his latex apron. 'Need a clean patch, some adrenaline stims, or some fresh cybernetic chrome? Don't ask where I source my carbon-mesh, and we'll get along fine.'",
-      choices: [
-        {
-          text: "💬 Ask about his previous corporate work at Ares",
-          nodeId: "marv_ares_lore",
-          prereqText: "[Requires Intelligence Check 12]",
-          prereq: (s) => (s.attributes?.int || 10) >= 12,
-          onSelect: (s) => {
-            s.experience += 30;
-            if (s.reputations) {
-              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 15);
-            }
-            return s;
-          }
-        },
-        { text: "Tell me about the Cybernetic Harvest contract.", nodeId: "harvest_info" },
-        {
-          text: "🔮 Force his mind to reveal his secret prototype blueprints",
-          nodeId: "marv_mindmance",
-          prereqText: "[Requires Mindmancer Level 2]",
-          prereq: (s) => (s.skills?.mindmancer || 0) >= 2,
-          onSelect: (s) => {
-            if (!s.inventory.includes("Smart-Targeting Visor")) {
-              s.inventory.push("Smart-Targeting Visor");
-            }
-            if (s.reputations) {
-              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 10);
-            }
-            return s;
-          }
-        },
-        {
-          text: "I need to undergo experimental bio-splice.",
-          nodeId: "undergo_bio_splice",
-          prereq: (s) => !s.completedPOIActions?.includes("marv_clinic:bio_spliced")
-        },
-        { text: "I must leave now.", nodeId: "exit" }
-      ]
-    },
-    undergo_bio_splice: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Interested in our premium bio-splitting suture? It stitches advanced synthetic muscle fibers directly into your heart valves. It is extremely painful. If your body rejects it, you'll suffer severe systemic fatigue.",
-      choices: [
-        {
-          text: "💪 Let's begin the bio-splice",
-          nodeId: "bio_splice_success",
-          prereqText: "[Requires Strength Check 13]",
-          prereq: (s) => (s.attributes?.str || 10) >= 13,
-          onSelect: (s) => {
-            if (!s.completedPOIActions) s.completedPOIActions = [];
-            s.completedPOIActions.push("marv_clinic:bio_spliced");
-            s.maxHp += 15;
-            s.hp = s.maxHp;
-            s.experience += 30;
-            return s;
-          }
-        },
-        {
-          text: "Let's undergo standard gamble splice (Roll Luck).",
-          nodeId: "bio_splice_gamble"
-        },
-        { text: "On second thought, nevermind.", nodeId: "start" }
-      ]
-    },
-    bio_splice_success: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Superb physical constitution! You didn't even flinch. The synthetic weave binds perfectly to your chest, boosting your cardiovascular threshold permanently. (+15 Max HP, Health Fully Restored!)",
-      choices: [
-        { text: "Superb.", nodeId: "start" }
-      ]
-    },
-    bio_splice_gamble: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: (s: GameState) => {
-        const str = s.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + str;
-        if (roll >= 16) {
-          return `[ROLL SUCCESS: ${roll} vs 16] Your body successfully fused with the synthetic fibers! Dr. Marv smiles: 'Incredible luck, runner. Permanent Boost: Max HP +15, health fully restored!'`;
-        } else {
-          return `[ROLL CRITICAL FAILURE: ${roll} vs 16] Your central nervous system rejected the synthetics! You sweat heavily as your arteries swell in agony. Dr. Marv sighs: 'A clinical rejection. You survived, but you are severely weakened.' (-25 HP, -20 Stamina)`;
-        }
-      },
-      choices: [
-        {
-          text: "Acknowledge results.",
-          nodeId: "start",
-          onSelect: (s: GameState) => {
-            if (!s.completedPOIActions) s.completedPOIActions = [];
-            const str = s.attributes?.str || 10;
-            const roll = Math.floor(Math.random() * 20) + 1 + str;
-            if (roll >= 16) {
-              s.completedPOIActions.push("marv_clinic:bio_spliced");
-              s.maxHp += 15;
-              s.hp = s.maxHp;
-              s.experience += 30;
-            } else {
-              s.completedPOIActions.push("marv_clinic:bio_spliced");
-              s.hp = Math.max(10, s.hp - 25);
-              s.stamina = Math.max(0, s.stamina - 20);
-            }
-            return s;
-          }
-        }
-      ]
-    },
-    marv_ares_lore: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "You ask too many questions, patient. But... you've got an eye for corporate branding. Yes, I was a Senior Prosthesis Designer for Ares Biotech. I quit when the Executive Board ordered me to harvest neural bio-nodes from healthy under-city subjects. I fled with three cases of experimental cyberware prototypes. Ares is keeping my silence, and I keep theirs. Keep this quiet. (+15 Ares Corporate Rep, +30 XP)",
-      choices: [
-        { text: "Your secret is safe with me, Doctor.", nodeId: "start" }
-      ]
-    },
-    marv_mindmance: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "[SUCCESS] Your gaze drills into Marv's mechanical optic. A tiny purple spark arches across his cybernetic lens. His shoulders drop, and his voice grows monotone: 'The locked... metal floor crate... code is 4F-FF-55... Inside is an experimental sensor visor...' He suddenly blinks, shaking his head with a violent grunt: 'What the... what did you just do? My optic short-circuited. Bah, wait, you found my spare visor? Take it and get out of my sight!' (Acquired: 'Smart-Targeting Visor', +10 Ares Rep!)",
-      choices: [
-        { text: "Thanks for the visor.", nodeId: "start" }
-      ]
-    },
-    harvest_info: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Ares automated patrol drones scout the Highwalk Homicide Site Downtown. Their main control boards carry fluid-cooled Neural Regulators. Bring me two of those pristine regulators, and I'll pay you 250¤ plus a custom Smart-Targeting Visor.",
-      choices: [
-        {
-          text: "Deliver 2x Neural Regulators",
-          nodeId: "harvest_delivery_success",
-          prereqText: "[Requires 2x Neural Regulators]",
-          prereq: (s: GameState) => s.inventory.filter(i => i === "Neural Regulator").length >= 2,
-          onSelect: (s: GameState) => {
-            let count = 0;
-            s.inventory = s.inventory.filter(i => {
-              if (i === "Neural Regulator" && count < 2) {
-                count++;
-                return false;
-              }
-              return true;
-            });
-            s.credits += 250;
-            s.experience += 120;
-            if (!s.inventory.includes("Smart-Targeting Visor")) {
-              s.inventory.push("Smart-Targeting Visor");
-            }
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Harvest"));
-            if (s.reputations) {
-              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 20);
-            }
-            s.completedQuests.push("Side Quest: Cybernetic Harvest Delivered");
-            return s;
-          }
-        },
-        {
-          text: "Accept the contract details.",
-          nodeId: "harvest_accept",
-          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Harvest")) && !s.completedQuests.some(q => q.includes("Harvest")),
-          onSelect: (s: GameState) => {
-            s.activeQuests.push("Side Quest: Cybernetic Harvest - Harvest 2x Neural Regulators by ambushing patrols at the Highwalk Homicide Site.");
-            return s;
-          }
-        },
-        { text: "Check my active Ares Corporate Reputation standing", nodeId: "reputation_ares" },
-        { text: "Understood, Doctor.", nodeId: "start" }
-      ]
-    },
-    harvest_delivery_success: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Incredible specimens! The neural relays are pristine, completely free of feedback carbon-scab. I've wired 250¤ into your grid deck and injected the smart-targeting telemetry scripts into your visor storage! Pleasure doing business, streetrunner. (+250¤, +120 XP, +20 Ares Rep, 'Smart-Targeting Visor')",
-      choices: [
-        { text: "Excellent.", nodeId: "start" }
-      ]
-    },
-    harvest_accept: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: "Contract recorded in your neural logs. Highwalk skybridges are heavily patrolled, so keep your weapons charged and wait for drone scanning windows.",
-      choices: [
-        { text: "Understood.", nodeId: "start" }
-      ]
-    },
-    reputation_ares: {
-      title: "Dr. Marv",
-      role: "Underground Surgeon",
-      image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
-      text: (s: GameState) => {
-        const score = s.reputations?.aresCorporate ?? 30;
-        let standing = "Suspicious Rogue";
-        if (score >= 70) standing = "Valued Associate (15% Nano-stim discount)";
-        else if (score >= 50) standing = "Neutral Client (10% Nano-stim discount)";
-        return `Your active standing with Ares Biotech Corporation is ${score}%. They categorize you as a [${standing}]. Siphoning or completing corporate salvage operations alters this index.`;
-      },
-      choices: [
-        { text: "Back.", nodeId: "harvest_info" }
-      ]
-    }
-  },
-  cipher: {
-    start: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "Sips high-oxygen, self-chilling synthetic champagne inside his custom VIP velvet booth. 'Ah, the rising street runner. My neural sensors record high levels of code activity in your cyberdeck. What digital mischief are we compiling today?'",
-      choices: [
-        {
-          text: "Discuss security mainframes and high-level hacks",
-          nodeId: "slicing_lore",
-          prereqText: "[Requires NetSlicer Level 2]",
-          prereq: (s) => (s.skills?.netSlicer || 0) >= 2,
-          onSelect: (s) => {
-            if (!s.inventory.includes("VIP Afterlife Keycard")) {
-              s.inventory.push("VIP Afterlife Keycard");
-            }
-            if (s.reputations) {
-              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 15);
-            }
-            return s;
-          }
-        },
-        { text: "Let's discuss the Nouveau Cybernetic Showroom Heist.", nodeId: "heist_info" },
-        {
-          text: "🔮 Perform a silent mind-hack into his memory arrays",
-          nodeId: "cipher_mindmance",
-          prereqText: "[Requires Mindmancer Level 1]",
-          prereq: (s) => (s.skills?.mindmancer || 0) >= 1,
-          onSelect: (s) => {
-            if (s.reputations) {
-              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 15);
-            }
-            if (!s.completedPOIActions) s.completedPOIActions = [];
-            if (!s.completedPOIActions.includes("cipher:decrypted_code")) {
-              s.completedPOIActions.push("cipher:decrypted_code");
-            }
-            return s;
-          }
-        },
-        { text: "Just looking around.", nodeId: "exit" }
-      ]
-    },
-    slicing_lore: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "Ha! You understand the code. Hacking isn't just typing digits; it's like bending the electronic ether of Megacity-9. I can tell you're a true slicer. Take my personal Afterlife VIP keycard. It bypasses security shields and gives you +2 extra attempt cycles on any Nouveau showroom terminals! (Acquired: 'VIP Afterlife Keycard', +15 Titan Logistics Rep)",
-      choices: [
-        { text: "This is extremely helpful, thank you.", nodeId: "start" }
-      ]
-    },
-    cipher_mindmance: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "[SUCCESS] Your gaze burns violet. A silent stream of sub-vocal commands overflows Cipher's optic nodes. A brief memory cascade floods your mind... 'Nouveau showroom high-security vault bypass sequence: 5F-AA-BD-FF...' Cipher blink-resets his visor, smiling: 'Whoa. Did you see that spark? The bar's electrical relays must be leaking plasma. Let's stay focused, alright?' (Unlocked decryption sequence clue for Nouveau Heist! +15 Titan Logistics Rep)",
-      choices: [
-        { text: "Thank you, Cipher.", nodeId: "start" }
-      ]
-    },
-    heist_info: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "Nouveau's luxury showroom has a prototype Singularity Battery cell behind polarized energy grids. If you slip inside, override their safe, and bring that battery to me, I'll pay you 350¤ and hand you an Unstable Plasma Core. Deal?",
-      choices: [
-        {
-          text: "Deliver Prototype Singularity Battery",
-          nodeId: "heist_delivery_success",
-          prereqText: "[Requires Prototype Singularity Battery]",
-          prereq: (s: GameState) => s.inventory.includes("Prototype Singularity Battery"),
-          onSelect: (s: GameState) => {
-            s.inventory = s.inventory.filter(i => i !== "Prototype Singularity Battery");
-            s.credits += 350;
-            s.experience += 150;
-            if (!s.inventory.includes("Unstable Plasma Core")) {
-              s.inventory.push("Unstable Plasma Core");
-            }
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Heist"));
-            if (s.reputations) {
-              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 25);
-            }
-            s.completedQuests.push("Side Quest: Nouveau Heist Complete");
-            return s;
-          }
-        },
-        {
-          text: "Inquire about the heist.",
-          nodeId: "heist_accept",
-          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Heist")) && !s.completedQuests.some(q => q.includes("Heist")),
-          onSelect: (s: GameState) => {
-            s.activeQuests.push("Side Quest: Nouveau Heist - Meet Cipher at Club Afterlife, get a VIP Keycard, and steal the Prototype Singularity Battery from Nouveau Showroom.");
-            return s;
-          }
-        },
-        { text: "Check Titan Logistics reputation standing instead.", nodeId: "reputation_titan" },
-        { text: "Let me think about it.", nodeId: "start" }
-      ]
-    },
-    heist_delivery_success: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "Magnificent execution, runner! The cold-fusion power of this battery is enough to run my private server cluster for a decade. I've processed your 350¤ wire and unlocked the premium Unstable Plasma Core from my cache! Faction reputation updated. (+350¤, +150 XP, +25 Titan Logistics Rep, 'Unstable Plasma Core')",
-      choices: [
-        { text: "Wonderful.", nodeId: "start" }
-      ]
-    },
-    heist_accept: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: "Superb. You'll need an Afterlife VIP keycard to disable their pressure shield easily, otherwise the hacking mainframe puzzle will burn through your attempts fast. Get to work!",
-      choices: [
-        { text: "Understood.", nodeId: "start" }
-      ]
-    },
-    reputation_titan: {
-      title: "Cipher",
-      role: "Elite Code Broker",
-      image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
-      text: (s: GameState) => {
-        const score = s.reputations?.titanLogistics ?? 50;
-        let standing = "Independent Contractor";
-        if (score >= 80) standing = "Valued Partner (15% Upgrade & Shipyard discount)";
-        else if (score >= 60) standing = "Trusted Hauler (10% Upgrade discount)";
-        return `Your active score with Titan Logistics is ${score}%. They record your status as [${standing}]. Standing lowers safehouse construction costs and unlocks premium black-market items.`;
-      },
-      choices: [
-        { text: "Back to heist contracts.", nodeId: "heist_info" }
-      ]
-    }
-  }
-};
+
+import { BRANCHING_DIALOGUES } from "./dialoguesData";
+
 
 const getItemIcon = (itemName: string, slot?: string) => {
   const nameLower = itemName.toLowerCase();
@@ -1060,11 +608,11 @@ export const FACTION_TIERS: Record<"streetOutlaws" | "titanLogistics" | "aresCor
     { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["50% markup on generic sector merchants", "Travel costs doubled to +10 stamina (20 total)"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
   ],
   aresCorporate: [
-    { name: "Allied", range: "80% - 100%", pricing: "20% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 20% less", "Ambush Rate: 0% (Corporate strike teams stand down)", "Elite corporate nanotech clearance"], statusColor: "text-indigo-400 border-indigo-500/30 bg-indigo-950/30" },
-    { name: "Friendly", range: "61% - 79%", pricing: "10% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 10% less", "Ambush Rate: 2% (Sector-wide transit security)"], statusColor: "text-purple-400 border-purple-500/20 bg-purple-950/20" },
-    { name: "Neutral", range: "41% - 60%", pricing: "Standard Showroom Prices", perks: ["Base Nouveau Chrome showroom pricing", "Ambush Rate: 5% (Standard patrol intercept probability)"], statusColor: "text-slate-400 border-slate-500/20 bg-slate-950/40" },
-    { name: "Distant", range: "21% - 40%", pricing: "20% Price Markup", perks: ["Nouveau Chrome showroom items cost 20% more", "Ambush Rate: 15% (Low notoriety triggers corporate intercept)"], statusColor: "text-amber-500 border-amber-500/20 bg-amber-950/20" },
-    { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["Nouveau Chrome showroom items cost 50% more", "Ambush Rate: 30% during travel", "Elite level-3 strike drone interceptors deployed"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
+    { name: "Allied", range: "80% - 100%", pricing: "20% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 20% less", "Encounters: Scripted story nodes only", "Elite corporate nanotech clearance"], statusColor: "text-indigo-400 border-indigo-500/30 bg-indigo-950/30" },
+    { name: "Friendly", range: "61% - 79%", pricing: "10% Shop Discount", perks: ["Nouveau Chrome luxury showroom items cost 10% less", "Encounters: Scripted story nodes only"], statusColor: "text-purple-400 border-purple-500/20 bg-purple-950/20" },
+    { name: "Neutral", range: "41% - 60%", pricing: "Standard Showroom Prices", perks: ["Base Nouveau Chrome showroom pricing", "Encounters: Scripted story nodes only"], statusColor: "text-slate-400 border-slate-500/20 bg-slate-950/40" },
+    { name: "Distant", range: "21% - 40%", pricing: "20% Price Markup", perks: ["Nouveau Chrome showroom items cost 20% more", "Encounters: Scripted story nodes only"], statusColor: "text-amber-500 border-amber-500/20 bg-amber-950/20" },
+    { name: "Hostile", range: "0% - 20%", pricing: "50% Price Markup", perks: ["Nouveau Chrome showroom items cost 50% more", "Encounters: Scripted story nodes only"], statusColor: "text-rose-500 border-rose-500/30 bg-rose-950/30" }
   ]
 };
 
@@ -1083,57 +631,75 @@ const slideInVariants = {
 };
 
 export default function App() {
-  // Screens: "menu" | "game" | "character_select" | "intro_story"
-  const [currentScreen, setCurrentScreen] = useState<"menu" | "game" | "character_select" | "intro_story">("menu");
-  
-  const [selectedArchetype, setSelectedArchetype] = useState(ARCHETYPES[0]);
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [logs, setLogs] = useState<LogMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  return (
+    <GameProvider>
+      <MainGame />
+    </GameProvider>
+  );
+}
 
-  // --- CHARACTER CUSTOMIZATION STATES ---
-  const [customName, setCustomName] = useState("Kaelen");
-  const [customAge, setCustomAge] = useState(24);
-  const [customRace, setCustomRace] = useState("Human");
-  const [customAvatarUrl, setCustomAvatarUrl] = useState("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300");
-  const [customBackground, setCustomBackground] = useState("Street Rat");
-  const [selectedPerks, setSelectedPerks] = useState<string[]>([]);
-  const [charSelectStep, setCharSelectStep] = useState(1);
-  const [statPointsPool, setStatPointsPool] = useState(10);
-  const [addedStats, setAddedStats] = useState({
-    str: 0,
-    dex: 0,
-    int: 0,
-    will: 0,
-    eth: 0,
-  });
-  const [previewSkillTreeClass, setPreviewSkillTreeClass] = useState<string>("Cyber-Blade");
-  
-  // Custom manual terminal commands
-  const [customInput, setCustomInput] = useState("");
-  
-  // Tabs for inventory deck
-  const [activeTab, setActiveTab] = useState<"inventory" | "companions" | "quests" | "factions">("inventory");
-  const [clickedFaction, setClickedFaction] = useState<"streetOutlaws" | "titanLogistics" | "aresCorporate" | null>(null);
-  const [hoveredFaction, setHoveredFaction] = useState<"streetOutlaws" | "titanLogistics" | "aresCorporate" | null>(null);
-  const [selectedInspectTierIndex, setSelectedInspectTierIndex] = useState<number>(0);
-  const [selectedQuestId, setSelectedQuestId] = useState<string | null>(null);
-  const [questFilter, setQuestFilter] = useState<"all" | "main" | "side" | "completed">("all");
-
-  // Gameplay view screens inside game mode: "exploration" | "database"
-  const [gameTab, setGameTab] = useState<"exploration" | "database">("exploration");
-
-  // Toggle log expansion
-  const [expandLogs, setExpandLogs] = useState(false);
-
-  // Stash Filter for Inventory sorting
-  const [stashFilter, setStashFilter] = useState<"all" | "weapons" | "cyberware" | "consumables" | "valuables">("all");
-
-  // State to track which companion is being edited in the detailed gear manager
-  const [editingCompanionName, setEditingCompanionName] = useState<string | null>(null);
+function MainGame() {
+  const {
+    currentScreen,
+    setCurrentScreen,
+    selectedArchetype,
+    setSelectedArchetype,
+    gameState,
+    setGameState,
+    logs,
+    setLogs,
+    isLoading,
+    setIsLoading,
+    customName,
+    setCustomName,
+    customAge,
+    setCustomAge,
+    customRace,
+    setCustomRace,
+    customAvatarUrl,
+    setCustomAvatarUrl,
+    customBackground,
+    setCustomBackground,
+    selectedPerks,
+    setSelectedPerks,
+    charSelectStep,
+    setCharSelectStep,
+    statPointsPool,
+    setStatPointsPool,
+    addedStats,
+    setAddedStats,
+    previewSkillTreeClass,
+    setPreviewSkillTreeClass,
+    customInput,
+    setCustomInput,
+    activeTab,
+    setActiveTab,
+    clickedFaction,
+    setClickedFaction,
+    hoveredFaction,
+    setHoveredFaction,
+    selectedInspectTierIndex,
+    setSelectedInspectTierIndex,
+    selectedQuestId,
+    setSelectedQuestId,
+    questFilter,
+    setQuestFilter,
+    gameTab,
+    setGameTab,
+    expandLogs,
+    setExpandLogs,
+    stashFilter,
+    setStashFilter,
+    editingCompanionName,
+    setEditingCompanionName,
+  } = useGame();
 
   // State to track whether the Base NPC Management modal is open
   const [baseNPCManagerOpen, setBaseNPCManagerOpen] = useState(false);
+  const [isSaveDeckOpen, setIsSaveDeckOpen] = useState(false);
+  const [isGameMenuOpen, setIsGameMenuOpen] = useState(false);
+  const [showMainMenuConfirm, setShowMainMenuConfirm] = useState(false);
+  const [isDevStudioOpen, setIsDevStudioOpen] = useState(false);
 
   // State for Cyber-Lab clinic and Gear Modding terminal
   const [cyberLabOpen, setCyberLabOpen] = useState(false);
@@ -1233,38 +799,26 @@ export default function App() {
     });
   };
 
-  // Shop Filter for buying items
-  const [shopFilter, setShopFilter] = useState<string>("all");
-
-  // Active Companion opinion bubble
-  const [companionOpinion, setCompanionOpinion] = useState<{ name: string; line: string } | null>(null);
-  
-  // Highlighting selected companion in roster
-  const [selectedCompanion, setSelectedCompanion] = useState<CompanionState | null>(null);
-  
-  // Detailed Map View: ID of POI the player is currently viewing close-up inside the map box. 
-  // If null, the player is viewing the global Holographic Region Map.
-  const [activePOIView, setActivePOIView] = useState<string | null>(null);
-  
-  // Region currently focused on the global Holographic Map
-  const [activeRegionId, setActiveRegionId] = useState<string>("aurus");
-  
-  // Dialogue state: ID of active NPC dialogue ("jax" | "aria" | "morgana" | "recruiter" | null)
-  const [activeDialogue, setActiveDialogue] = useState<string | null>(null);
-
-  // Squad dialogue state for conversations with Vice & Tracker
-  const [squadDialogue, setSquadDialogue] = useState<{
-    sceneId: "banter" | "peptalk" | "tactics" | "transit_conduit_to_ridge" | "transit_ridge_to_vault";
-    nodeId: string;
-  } | null>(null);
-
-  // In-your-face beautiful HUD notification popup
-  const [activePopup, setActivePopup] = useState<{
-    title: string;
-    subtitle?: string;
-    type: "transit" | "loot" | "check_success" | "check_failure" | "action_success";
-    text: string;
-  } | null>(null);
+  const {
+    shopFilter,
+    setShopFilter,
+    companionOpinion,
+    setCompanionOpinion,
+    selectedCompanion,
+    setSelectedCompanion,
+    activePOIView,
+    setActivePOIView,
+    activeRegionId,
+    setActiveRegionId,
+    activeDialogue,
+    setActiveDialogue,
+    relicStep,
+    setRelicStep,
+    squadDialogue,
+    setSquadDialogue,
+    activePopup,
+    setActivePopup,
+  } = useGame();
 
   // Advanced Shop vendor popup modal
   const [shopVendorOpen, setShopVendorOpen] = useState(false);
@@ -1383,7 +937,7 @@ export default function App() {
       start: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "We're almost at the core, recruit. Tracker is sweating bullets and my plasma battery is only at seventy percent. How's your gear holding up?",
         choices: [
           {
@@ -1403,7 +957,7 @@ export default function App() {
       vesper_confident: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Confidence is cheap, kid. But I like the fire in your circuit board. Keep that SMG ready—I'm getting faint energy spikes ahead. We're not alone in these shafts.",
         choices: [
           { text: "Ask: 'What's the history of Conduit 09?'", nodeId: "history_conduit" },
@@ -1414,7 +968,7 @@ export default function App() {
       history_conduit: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Conduit 09 was built during the great silicon rush fifty years ago. Ares used it as a subterranean waste disposal tube for high-capacity cooling pipes. When the lower city flooded, they sealed it off and left it to decay. Ideal for us outcasts, except the security arrays are still powered on.",
         choices: [
           { text: "Go back.", nodeId: "start" },
@@ -1424,7 +978,7 @@ export default function App() {
       ares_security: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "They use old autonomous MK-II drones armed with high-frequency pulse-lasers. They ignore energy shields sometimes, so watch your physical armor. My bio-scanners suggest there's a guard locker nearby containing high-tech flak armor. Keep an eye out for a barracks room.",
         choices: [
           { text: "Go back.", nodeId: "start" },
@@ -1434,7 +988,7 @@ export default function App() {
       vesper_worried: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Always is, rookie. The Ares database crystals contain bio-synthetic schemas that the Outcast union will buy for ten thousand credits. We split that, and we can finally afford tickets out of Megacity-9 slums. Hang tight.",
         choices: [
           { text: "Ask: 'Ten thousand credits is a lot. How do we fence corporate crystals?'", nodeId: "fencing_crystals" },
@@ -1445,7 +999,7 @@ export default function App() {
       fencing_crystals: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "I've got a contact in the Red Neon slums, goes by 'Solder'. He strips the encryption sleeves and cleans the memory chips. He'll pay cold, hard credits. None of that traceable corporate script. Don't worry, kid, Solder's reliable.",
         choices: [
           { text: "Go back.", nodeId: "start" },
@@ -1455,7 +1009,7 @@ export default function App() {
       orbit_cities: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Vesper, the high orbit habitats like 'Elysian Canopy' have real sunlight. Pure oxygen. Clean synthetic water. Down here in Megacity-9, we breathe recycled copper-dust and industrial smog. If this heist goes right, we can buy clean bio-breathers or a shuttle ticket. Yes, it's worth it.",
         choices: [
           { text: "Go back.", nodeId: "start" },
@@ -1465,7 +1019,7 @@ export default function App() {
       tracker_agrees: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "The kid is right, Vice. Shut your grill. If their auditory arrays pick up your voice, we'll have an entire squad of Ares Enforcers sealing the vents. Focus on prying that valve.",
         choices: [
           { text: "Acknowledged. Staying silent. (Exit Conversation)", nodeId: null }
@@ -1476,7 +1030,7 @@ export default function App() {
       start: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Damn, look at those energy tripwires flashing. If we step on those, the defensive system will slice us into cyber-scrap. Tracker, can you hack it?",
         choices: [
           {
@@ -1504,7 +1058,7 @@ export default function App() {
       pep_trust: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Damn straight. I've got my railgun locked on the main corridor. No corporate drone is getting past me while Tracker does his magic. Let's do this!",
         choices: [
           { text: "Prepare yourself. (Exit Conversation)", nodeId: null }
@@ -1513,7 +1067,7 @@ export default function App() {
       pep_calm: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Appreciate the neural grounding, kid. The ionization level is dropping in my sensors. Bypassing the security gate registers now... (You feel your own cognitive deck stabilize, gaining +15 Mana!)",
         choices: [
           { text: "Excellent. (Exit Conversation)", nodeId: null }
@@ -1522,7 +1076,7 @@ export default function App() {
       pep_outcasts: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "For the Union! Those suits in Megacity-9 towers think we're just scrap metal. Let's show them what outcast grit can do. I feel a surge of overdrive in my chassis! (Your squad is inspired, restoring +15 HP!)",
         choices: [
           { text: "For the Union. (Exit Conversation)", nodeId: null }
@@ -1533,7 +1087,7 @@ export default function App() {
       start: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "The main array core is just behind the next bulk door. The terminal registers show three heavy sentry drones patrolling the column. If we charge in blind, we'll be surrounded in seconds. What's the plan, recruit?",
         choices: [
           {
@@ -1553,7 +1107,7 @@ export default function App() {
       tac_charge: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Bold. Insane, but bold. I'll cover you with high-caliber plasma suppressive fire. The moment they target you, I'll melt their sensor lenses from the dark.",
         choices: [
           { text: "Sounds like a plan. (Exit Conversation)", nodeId: null }
@@ -1562,7 +1116,7 @@ export default function App() {
       tac_sabotage: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Incredibly smart. Siphoning the reactor well will overload their recharge docks, shutting down their auxiliary energy shields! That gives us a massive combat advantage.",
         choices: [
           { text: "Let's execute it. (Exit Conversation)", nodeId: null }
@@ -1571,7 +1125,7 @@ export default function App() {
       tac_ambush: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "A tactical choke point. Yes, the narrow bridge of the reactor well restricts their flight patterns. We'll bottleneck them easily. You've got a sharp tactical processor, Vesper.",
         choices: [
           { text: "Agreed. Let's move. (Exit Conversation)", nodeId: null }
@@ -1582,7 +1136,7 @@ export default function App() {
       start: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Wait. Before we climb through that gate into Shatter-Ridge Core, we need to decide on our insertion strategy. Ares Biotech has a secure cargo scanner running on that gate. If we push through directly, they'll tag our energy signatures immediately.",
         choices: [
           {
@@ -1602,7 +1156,7 @@ export default function App() {
       sneak_emp: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Smart. If I discharge my auxiliary cyber-deck battery, I can generate a micro-EMP. It'll keep us off their thermal sensors, but it drains some of my deck capacity. Vesper, this will grant you a localized active-shroud shield for the next district! (+20 starting Shields)",
         choices: [
           {
@@ -1618,7 +1172,7 @@ export default function App() {
       overload_grid: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "I like the way you think, recruit! A clean energy overload will short-circuit their automated turret docks. They won't be able to lock onto us when we breach. It costs us some conduit coolant, but it'll make any automated systems in the next district spark out! (You gain +20 Stamina for systemic preparedness)",
         choices: [
           {
@@ -1634,7 +1188,7 @@ export default function App() {
       force_through: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "Hell yeah! That's what I'm talking about! Let the corporate pigs hear us coming. It gets the adrenaline pumping. Look at you—your cyber-muscles are flexing under the pressure. Let's kick that gate in! (Adrenaline rush restores +20 Health!)",
         choices: [
           {
@@ -1652,7 +1206,7 @@ export default function App() {
       start: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "The lift is ready, recruit. We are descending into the holy grail: the Ares Biotech Deep Data Vault. This is where they store their core genetic crystals. Once we breach that chamber, there's no turning back. How's your neural matrix holding up?",
         choices: [
           {
@@ -1672,7 +1226,7 @@ export default function App() {
       clear_mind: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Good. Decrypting corporate vault crystal schemas requires cold logic and precise synaptic timing. Maintain that focus. Here, take this military-grade neural stim-pack I salvaged. It will stabilize your cognitive deck. (+30 Mana for the upcoming puzzle!)",
         choices: [
           {
@@ -1688,7 +1242,7 @@ export default function App() {
       psychic_surge: {
         speakerName: "Tracker",
         speakerRole: "Decker & Squad Leader",
-        portrait: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
+        portrait: trackerPortrait,
         text: "Fascinating... the exposure to the ancient relic is mutating your cerebral pathways at an exponential rate. Your brain is generating biological ether waves. Let it flow, Vesper—but guide it carefully. (Your maximum psychic potential expands! Maximum Mana permanently increased by +15!)",
         choices: [
           {
@@ -1705,7 +1259,7 @@ export default function App() {
       for_union: {
         speakerName: "Vice",
         speakerRole: "Heavy Weapons & Smuggler",
-        portrait: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200",
+        portrait: vicePortrait,
         text: "For the Union! Those suits up in their ivory towers have sucked the life out of this city for too long. Today, we claw some of it back. Take this alloy-shroud weave to reinforce your chest armor. We aren't dying in there! (Maximum Health permanently increased by +15!)",
         choices: [
           {
@@ -2026,7 +1580,7 @@ export default function App() {
   };
   
   // Success toast indicators
-  const [saveToast, setSaveToast] = useState<string | null>(null);
+  const { saveToast, setSaveToast } = useGame();
   const [hasSave, setHasSave] = useState(false);
 
   // Ventilation Shaft failure state for richer branch options
@@ -2087,20 +1641,35 @@ export default function App() {
     interactiveObjects?: GridInteractiveObject[];
   }
 
-  const [gridCombat, setGridCombat] = useState<GridCombatState | null>(null);
-  const [combatActionTab, setCombatActionTab] = useState<"attacks" | "skills" | "support">("attacks");
-  const [hoveredAction, setHoveredAction] = useState<"move" | "meleeAtk" | "rangedAtk" | "spell" | "mind" | "neural" | null>(null);
-  const [hoveredEntity, setHoveredEntity] = useState<any | null>(null);
-  const [selectedSkill, setSelectedSkill] = useState<{
-    name: string;
-    cost: number;
-    costType: "MP" | "SP";
-    desc: string;
-    icon: string;
-    scope: "enemy" | "self" | "all_enemies";
-  } | null>(null);
+  const {
+    gridCombat,
+    setGridCombat,
+    combatActionTab,
+    setCombatActionTab,
+    hoveredAction,
+    setHoveredAction,
+    hoveredEntity,
+    setHoveredEntity,
+    selectedSkill,
+    setSelectedSkill,
+    hackingPuzzle,
+    setHackingPuzzle
+  } = useGame() as any;
 
-  // Upgraded Immersive retro-themed cyberdeck hex matrix hacking state
+  const addLog = (text: string, type: "narration" | "combat" | "dialogue" | "system" = "narration") => {
+    setLogs(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        text,
+        type,
+        district: gameState?.district,
+        poi: gameState?.poi
+      }
+    ]);
+  };
+
   interface HackingPuzzleState {
     type: "sanctuary" | "cargo_logs" | "security_mainframe" | "cryo_bypass" | "nouveau_safe" | "rebel_courier" | "shatter_ridge_server";
     status: "idle" | "playing" | "success" | "failure";
@@ -2117,8 +1686,6 @@ export default function App() {
     usedPerkBuffer: boolean;
     usedPerkAttempts: boolean;
   }
-
-  const [hackingPuzzle, setHackingPuzzle] = useState<HackingPuzzleState | null>(null);
 
   const initHackingGame = (
     type: "sanctuary" | "cargo_logs" | "security_mainframe" | "cryo_bypass" | "nouveau_safe" | "rebel_courier" | "shatter_ridge_server",
@@ -2302,7 +1869,7 @@ export default function App() {
           role: "Tactical Leader",
           bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
           avatar: "👩‍🎤",
-          image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+          image: vicePortrait,
           equipment: {
             meleeWeapon: "Vibroblade",
             rangedWeapon: "Battle Pistol BP132",
@@ -2322,7 +1889,7 @@ export default function App() {
         name: "Vice",
         role: "Weapons & Field Coordinator",
         avatar: "👩‍🎤",
-        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+        image: vicePortrait,
         description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
         dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
         reaction: null,
@@ -2670,7 +2237,8 @@ export default function App() {
 
     setCompanionOpinion({
       name: comp.name,
-      line: dialogueLine
+      line: dialogueLine,
+      image: comp.image
     });
   };
 
@@ -2741,7 +2309,7 @@ export default function App() {
         x: 1,
         y: 1,
         avatar: "👩‍🎤",
-        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+        image: viceBody,
         color: "border-rose-500 text-rose-400",
         range: 3,
         damage: 16,
@@ -2762,7 +2330,7 @@ export default function App() {
         x: 0,
         y: 3,
         avatar: "📟",
-        image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=600",
+        image: trackerBody,
         color: "border-amber-500 text-amber-400",
         range: 3,
         damage: 12,
@@ -2784,7 +2352,7 @@ export default function App() {
         x: 1,
         y: 1,
         avatar: "👩‍🎤",
-        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+        image: viceBody,
         color: "border-rose-500 text-rose-400",
         range: 3,
         damage: 16,
@@ -2897,7 +2465,7 @@ export default function App() {
             x: 0,
             y: idx + 1,
             avatar: "👩‍🎤",
-            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            image: viceBody,
             color: "border-rose-500 text-rose-400",
             range: 3,
             damage: 18,
@@ -3056,13 +2624,57 @@ export default function App() {
     }
   }, [gameState?.combatState?.isActive]);
 
-  // Check if save exists on load
+  // Check if save exists on load across all slots
   useEffect(() => {
-    const savedState = localStorage.getItem("neon_ether_state");
-    if (savedState) {
+    const keys = [
+      "neon_ether_state",
+      "neon_ether_state_slot1",
+      "neon_ether_state_slot2",
+      "neon_ether_state_slot3",
+      "neon_ether_state_autosave"
+    ];
+    const found = keys.some(k => localStorage.getItem(k) !== null);
+    if (found) {
       setHasSave(true);
     }
   }, []);
+
+  // Ensure Vice and Tracker always use official character portraits across state updates
+  useEffect(() => {
+    if (!gameState) return;
+    let modified = false;
+    const nextCompanions = gameState.companions?.map(c => {
+      if (c.name === "Vice" && c.image !== vicePortrait) {
+        modified = true;
+        return { ...c, image: vicePortrait };
+      }
+      if (c.name === "Tracker" && c.image !== trackerPortrait) {
+        modified = true;
+        return { ...c, image: trackerPortrait };
+      }
+      return c;
+    });
+
+    const nextBaseNPCs = gameState.baseNPCs?.map(n => {
+      if ((n.name === "Vice" || n.id === "vice") && n.image !== vicePortrait) {
+        modified = true;
+        return { ...n, image: vicePortrait };
+      }
+      if ((n.name === "Tracker" || n.id === "tracker") && n.image !== trackerPortrait) {
+        modified = true;
+        return { ...n, image: trackerPortrait };
+      }
+      return n;
+    });
+
+    if (modified) {
+      setGameState(prev => prev ? {
+        ...prev,
+        companions: nextCompanions || prev.companions,
+        baseNPCs: nextBaseNPCs || prev.baseNPCs
+      } : null);
+    }
+  }, [gameState?.companions, gameState?.baseNPCs]);
 
   // Scroll to latest logs
   useEffect(() => {
@@ -3096,90 +2708,91 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [gameState, isLoading, currentScreen, activePOIView]);
 
-  // Load from LocalStorage
-  const handleLoadGame = () => {
-    const savedState = localStorage.getItem("neon_ether_state");
-    const savedLogs = localStorage.getItem("neon_ether_logs");
-    if (savedState && savedLogs) {
-      try {
-        const parsedState = JSON.parse(savedState);
-        // Clean migration of old state variables
-        const isBlade = parsedState.archetype === "Cyber-Blade";
-        const isMage = parsedState.archetype === "Techno-Mage";
-        const migratedState: GameState = {
-          district: "aurus",
-          poi: "Main Headquarters (The Hideout)",
-          hp: 100,
-          maxHp: 100,
-          mana: 50,
-          maxMana: 50,
-          credits: 100,
-          party: [],
-          activeQuests: [],
-          completedQuests: [],
-          inventory: [],
-          companions: [],
-          combatState: null,
-          archetype: "Cyber-Blade",
-          level: 1,
-          experience: 0,
-          day: 1,
-          timeOfDay: "Morning",
-          attributes: {
-            str: isBlade ? 14 : isMage ? 9 : 10,
-            dex: isBlade ? 15 : isMage ? 11 : 13,
-            int: isBlade ? 10 : isMage ? 14 : 15,
-            will: isBlade ? 11 : isMage ? 12 : 11,
-            eth: isBlade ? 10 : isMage ? 15 : 11,
-          },
-          skills: {
-            cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
-            netSlicer: isBlade ? 1 : isMage ? 2 : 3,
-            heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
-            mindmancer: isMage ? 1 : 0
-          },
-          equipment: {
-            meleeWeapon: null,
-            rangedWeapon: null,
-            armor: null,
-            headpiece: null,
-            trinket: null
-          },
-          ...parsedState
-        };
+  // Unified helper to restore state and logs from save structure
+  const handleRestoreStateAndLogs = (state: any, savedLogs: any[]) => {
+    try {
+      // Clean migration of old state variables
+      const isBlade = state.archetype === "Cyber-Blade";
+      const isMage = state.archetype === "Techno-Mage";
+      const migratedState: GameState = {
+        district: "aurus",
+        poi: "Main Headquarters (The Hideout)",
+        hp: 100,
+        maxHp: 100,
+        mana: 50,
+        maxMana: 50,
+        credits: 100,
+        party: [],
+        activeQuests: [],
+        completedQuests: [],
+        inventory: [],
+        companions: [],
+        combatState: null,
+        archetype: "Cyber-Blade",
+        level: 1,
+        experience: 0,
+        day: 1,
+        timeOfDay: "Morning",
+        attributes: {
+          str: isBlade ? 14 : isMage ? 9 : 10,
+          dex: isBlade ? 15 : isMage ? 11 : 13,
+          int: isBlade ? 10 : isMage ? 14 : 15,
+          will: isBlade ? 11 : isMage ? 12 : 11,
+          eth: isBlade ? 10 : isMage ? 15 : 11,
+        },
+        skills: {
+          cyberBlade: isBlade ? 3 : isMage ? 1 : 1,
+          netSlicer: isBlade ? 1 : isMage ? 2 : 3,
+          heavyChrome: isBlade ? 2 : isMage ? 1 : 1,
+          mindmancer: isMage ? 1 : 0
+        },
+        equipment: {
+          meleeWeapon: null,
+          rangedWeapon: null,
+          armor: null,
+          headpiece: null,
+          trinket: null
+        },
+        ...state
+      };
 
-        // Migrate old weapon slot if exists
-        if (migratedState.equipment && (migratedState.equipment as any).weapon) {
-          const oldWeapon = (migratedState.equipment as any).weapon;
-          delete (migratedState.equipment as any).weapon;
-          const details = ITEM_METADATA[oldWeapon];
-          if (details && details.slot === "meleeWeapon") {
-            migratedState.equipment.meleeWeapon = oldWeapon;
-          } else if (details && details.slot === "rangedWeapon") {
-            migratedState.equipment.rangedWeapon = oldWeapon;
-          } else {
-            migratedState.equipment.meleeWeapon = oldWeapon;
-          }
+      // Migrate old weapon slot if exists
+      if (migratedState.equipment && (migratedState.equipment as any).weapon) {
+        const oldWeapon = (migratedState.equipment as any).weapon;
+        delete (migratedState.equipment as any).weapon;
+        const details = ITEM_METADATA[oldWeapon];
+        if (details && details.slot === "meleeWeapon") {
+          migratedState.equipment.meleeWeapon = oldWeapon;
+        } else if (details && details.slot === "rangedWeapon") {
+          migratedState.equipment.rangedWeapon = oldWeapon;
+        } else {
+          migratedState.equipment.meleeWeapon = oldWeapon;
         }
-        setGameState(migratedState);
-        setLogs(JSON.parse(savedLogs));
-        setActiveRegionId(migratedState.district || "aurus");
-        
-        // If they were at a POI, open its detailed view
-        const targetPOI = MAP_POIS.find(p => p.name === migratedState.poi);
-        if (targetPOI) {
-          setActivePOIView(targetPOI.id);
-        }
-        
-        setCurrentScreen("game");
-        triggerToast("VIRTUAL MEMORY STREAM RESTORED SUCCESS");
-      } catch (e) {
-        console.error("Failed to restore save game file", e);
-        triggerToast("CRITICAL FAIL: CORRUPTED DATA DECK");
       }
-    } else {
-      triggerToast("FAILED: NO RESIDUAL CELL RECOVERY FILE FOUND");
+
+      setGameState(migratedState);
+      setLogs(savedLogs);
+      setActiveRegionId(migratedState.district || "aurus");
+      
+      // If they were at a POI, open its detailed view
+      const targetPOI = MAP_POIS.find(p => p.name === migratedState.poi);
+      if (targetPOI) {
+        setActivePOIView(targetPOI.id);
+      } else {
+        setActivePOIView(null);
+      }
+      
+      setCurrentScreen("game");
+      triggerToast("VIRTUAL MEMORY STREAM RESTORED SUCCESS");
+    } catch (e) {
+      console.error("Failed to restore save game file", e);
+      triggerToast("CRITICAL FAIL: CORRUPTED DATA DECK");
     }
+  };
+
+  // Load from LocalStorage - opens Save Deck so player can pick which slot to restore
+  const handleLoadGame = () => {
+    setIsSaveDeckOpen(true);
   };
 
   // Save changes to localStorage manually
@@ -3192,17 +2805,81 @@ export default function App() {
     }
   };
 
-  // Wipe Save completely and return to main menu
-  const handleRestartFull = () => {
-    localStorage.removeItem("neon_ether_state");
-    localStorage.removeItem("neon_ether_logs");
+  // Automated background save to AUTOSAVE slot
+  const triggerAutosave = (state: GameState, logsList: LogMessage[]) => {
+    const isEnabled = localStorage.getItem("neon_ether_autosave_enabled") !== "false";
+    if (!isEnabled) return;
+
+    try {
+      const slotId = "autosave";
+      const timestamp = new Date().toLocaleString();
+      const metadata = {
+        slotId,
+        timestamp,
+        playerName: state.playerName || "Kaelen",
+        archetype: state.archetype || "Unknown",
+        level: state.level || 1,
+        credits: state.credits || 0,
+        hp: state.hp || 100,
+        maxHp: state.maxHp || 100,
+        district: state.district || "Aurus Hideout",
+        poi: state.poi || "Hideout Core",
+        day: state.day || 1
+      };
+
+      localStorage.setItem(`neon_ether_state_${slotId}`, JSON.stringify(state));
+      localStorage.setItem(`neon_ether_logs_${slotId}`, JSON.stringify(logsList));
+      localStorage.setItem(`neon_ether_meta_${slotId}`, JSON.stringify(metadata));
+      setHasSave(true);
+      console.log("Autosave updated successfully");
+    } catch (err) {
+      console.error("Autosave failed", err);
+    }
+  };
+
+  // Resets current runtime session and returns to Main Menu WITHOUT deleting save slots
+  const handleResetModuleSession = () => {
     setGameState(null);
     setLogs([]);
-    setHasSave(false);
     setActivePOIView(null);
     setActiveDialogue(null);
+    setGridCombat(null);
     setCurrentScreen("menu");
-    triggerToast("AGENT CONSPIRACY PURGED COMPLETELY");
+
+    // Sync hasSave based on whether any saved slots exist in localStorage
+    const keys = [
+      "neon_ether_state",
+      "neon_ether_state_slot1",
+      "neon_ether_state_slot2",
+      "neon_ether_state_slot3",
+      "neon_ether_state_autosave"
+    ];
+    const found = keys.some(k => localStorage.getItem(k) !== null);
+    setHasSave(found);
+
+    triggerToast("SESSION RESET: RETURNED TO MAIN MENU");
+  };
+
+  // Wipe Save completely from localStorage and return to main menu
+  const handleWipeAllSaves = () => {
+    if (window.confirm("⚠️ CONFIRM PURGE: Are you sure you want to permanently erase all saved matrix slots?")) {
+      const keys = ["slot1", "slot2", "slot3", "autosave"];
+      keys.forEach(slotId => {
+        localStorage.removeItem(`neon_ether_state_${slotId}`);
+        localStorage.removeItem(`neon_ether_logs_${slotId}`);
+        localStorage.removeItem(`neon_ether_meta_${slotId}`);
+      });
+      localStorage.removeItem("neon_ether_state");
+      localStorage.removeItem("neon_ether_logs");
+      setGameState(null);
+      setLogs([]);
+      setHasSave(false);
+      setActivePOIView(null);
+      setActiveDialogue(null);
+      setGridCombat(null);
+      setCurrentScreen("menu");
+      triggerToast("SYSTEM PURGED: ALL SAVED MATRICES ERASED");
+    }
   };
 
   // Skip Intro and begin Chapter 1 in Aurus Hideout base
@@ -3429,23 +3106,8 @@ export default function App() {
       }
     }
 
-    // 7. Corporate Notoriety Check: If Ares Corporate rep is <= 30, there's a 15% chance of a sudden Elite Interceptor ambush!
-    const aresRep = nextState.reputations?.aresCorporate ?? 50;
-    if (aresRep <= 30 && (!nextState.combatState || !nextState.combatState.isActive)) {
-      if (Math.random() < 0.15) {
-        nextState.combatState = {
-          enemyName: "Ares Elite Strike Drone",
-          enemyHp: 130,
-          enemyMaxHp: 130,
-          enemyShields: 60,
-          enemyMaxShields: 60,
-          isActive: true,
-          turnLog: "🚨 WARNING: Your high Ares notoriety has triggered immediate corporate interception! An Ares Elite Strike Drone has cornered you during transit. Protect your cyberware frame!"
-        };
-        warningText = "🚨 CORPORATE AMBUSH: Low Ares reputation triggered an immediate elite drone strike!";
-        logsText.push(`🚨 AMBUSH DETECTED: Ares Biotech elite hit-squad intercepted your coordinates during sector travel. Engage combat immediately!`);
-      }
-    }
+    // 7. Corporate Notoriety Check: Random ambushes disabled in favor of scripted encounters.
+    // (Ares corporate notoriety ambushes disabled)
 
     // Transform logsText array into LogMessage structures
     logsText.forEach(txt => {
@@ -3527,11 +3189,11 @@ export default function App() {
       baseAttrs.str += 2;
       baseAttrs.eth += 2;
       baseAttrs.int -= 2;
-    } else if (customRace === "Neuro-Elf") {
+    } else if (customRace === "Elf" || customRace === "Neuro-Elf") {
       baseAttrs.int += 2;
       baseAttrs.will += 2;
       baseAttrs.str -= 1;
-    } else if (customRace === "Chrome-Dwarf") {
+    } else if (customRace === "Dwarf" || customRace === "Chrome-Dwarf") {
       baseAttrs.str += 2;
       baseAttrs.will += 2;
       baseAttrs.dex -= 1;
@@ -3659,7 +3321,9 @@ export default function App() {
       district: regionId,
       poi: "Transit Node"
     };
-    setLogs(prev => [...prev, log, ...travelResult.logs]);
+    const updatedLogs: LogMessage[] = [...logs, log, ...travelResult.logs];
+    setLogs(updatedLogs);
+    triggerAutosave(nextState, updatedLogs);
 
     if (travelResult.warningText) {
       triggerToast(travelResult.warningText);
@@ -4189,18 +3853,20 @@ export default function App() {
         if (Math.random() > 0.4) {
           nextState.combatState = null;
           nextState.dojoBuffActive = false;
-          setGameState(nextState);
-          setLogs(prev => [
-            ...prev,
+          const updatedLogs = [
+            ...logs,
             {
               id: crypto.randomUUID(),
               timestamp: timeString,
               text: `🏃 ESCAPE DEPLOYED: You deploy active cloaking mesh and successfully broke contact back to security.`,
-              type: "narration",
+              type: "narration" as const,
               district: nextState.district,
               poi: nextState.poi
             }
-          ]);
+          ];
+          setGameState(nextState);
+          setLogs(updatedLogs);
+          triggerAutosave(nextState, updatedLogs);
           setIsLoading(false);
           return;
         } else {
@@ -4578,58 +4244,7 @@ export default function App() {
             intrusionLogs: []
           };
           
-          // 25% chance of corporate sweep raid intrusion
-          if (Math.random() < 0.25) {
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            // If shield capacitors are high (e.g. above 40%), the shield grid blocks the intrusion completely, absorbing the blow!
-            if (defenses.shieldStrength > 40) {
-              const shieldDamage = 45 - (defenses.fortifiedDoors ? 15 : 0);
-              const remainingShield = Math.max(0, defenses.shieldStrength - shieldDamage);
-              
-              const absorbLog = `[${timeStr}] 📡 INCIDENT DEFLECTED: Security grid detected an Ares tracker probe. Energy shields absorbed the sweep (-${shieldDamage}% Shield energy). No breach occurred.`;
-              
-              nextState.safehouseDefenses = {
-                ...defenses,
-                shieldStrength: remainingShield,
-                intrusionLogs: [absorbLog, ...(defenses.intrusionLogs || [])]
-              };
-              narrative += `\n\n🛡️ SECURITY WARNING: Corporate scanner sweep deflected! Safehouse energy shields absorbed the tracking telemetry probe, but shield capacitors took damage. Recharge them in the Base Defenses console!`;
-            } else {
-              // Shield capacitor is depleted! Infiltration breach occurs!
-              const breachLog = `[${timeStr}] 🚨 SEC-GRID BREACHED: Elite corporate Strike Team bypassed weak shields and infiltrated Aurus Hideout! Base defenses engaged.`;
-              
-              // Sentry turrets reduce the intruder's initial health/shields before the grid combat begins
-              const baseEnemyHp = 100;
-              const enemyHpDamage = defenses.turrets * 20; // 20 damage per active turret
-              const actualEnemyHp = Math.max(30, baseEnemyHp - enemyHpDamage);
-              
-              nextState.safehouseDefenses = {
-                ...defenses,
-                shieldStrength: 0,
-                intrusionLogs: [breachLog, ...(defenses.intrusionLogs || [])]
-              };
-
-              nextState.combatState = {
-                enemyName: "Ares Assault Commander (Base Raider)",
-                enemyHp: actualEnemyHp,
-                enemyMaxHp: baseEnemyHp,
-                enemyShields: Math.max(0, 30 - (defenses.turrets * 5)),
-                enemyMaxShields: 30,
-                isActive: true,
-                turnLog: `🚨 ALARM: BASE SEC-GRID BREACHED! An elite corporate Strike Commando team led by an Ares Assault Commander has traced your telemetrics and breached the safehouse! Automated turrets dealt damage to the intruder as they entered. Defend the core safehouse node!`
-              };
-
-              narrative += `\n\n🚨 ALARM CLAXONS BLARING: BREACH DETECTED! While you were sleeping, an elite Ares Corp tactical team breached our lower sewer entrance! Automated turrets have engaged, but the Commander is inside the main hub. PREPARE TO DEFEND THE HIDEOUT!`;
-
-              setActivePopup({
-                title: "🚨 SAFEHOUSE BREACHED!",
-                subtitle: "TACTICAL BASE RAID ENGAGED",
-                type: "combat_warning",
-                text: `Warning: An elite corporate Strike Commando team has breached your perimeter lock! Sentry turrets have engaged, dealing ${enemyHpDamage} initial damage to the invaders. Defend your base operations now!`
-              });
-            }
-          }
+          // Corporate sweep raid random intrusion disabled in favor of scripted encounters
         }
       }
       
@@ -5071,12 +4686,13 @@ export default function App() {
       // ---- PROLOGUE MAP 3: DATA VAULT SANCTUARY ----
       else if (cleanAction.includes("activate mysterious relic")) {
         setActiveDialogue("relic_awakening");
-        narrative = "💥 NEURAL CONTACT DETECTED: You touch the floating golden relic, triggering a massive psychic feedback surge in your brain cells! Read the high-priority alarm dialogue box above immediately to proceed.";
+        setRelicStep("intro");
+        narrative = "👁️ ANOMALY DETECTED: You approach the heavy obsidian altar. The golden device hovers silently, vibrating with an eerie psych-ether frequency. Your squad begins discussing the potential danger. Decide how to proceed in the dialog panel above.";
         setActivePopup({
-          title: "NEURAL CONTACT REGISTERED",
-          subtitle: "ALTAIC ENERGY SURGE",
+          title: "ANOMALY DETECTED",
+          subtitle: "UNKNOWN ARTIFACT",
           type: "loot",
-          text: "You touch the cold, floating metallic edges of the golden relic. Instantly, a massive electrostatic wave flashes across your neural cortex, uploading cryptic pre-collapse bio-schemas. Read the high-priority dialog above!"
+          text: "A floating golden device of pre-collapse origin hovers above the obsidian altar. It radiates a warm, pulsing energy field that tickles your neural cyberdeck. Consult your squad above before interacting."
         });
       }
 
@@ -5652,6 +5268,180 @@ export default function App() {
           });
         }
       }
+      else if (cleanAction.includes("command supervisor") || cleanAction.includes("mind control - mindmancer level 1] command supervisor")) {
+        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
+        const targetDC = 12;
+        if (roll >= targetDC) {
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+            nextState.inventory.push("Decrypted Ares Transit Token");
+          }
+          nextState.experience += 100;
+          narrative = `🔮 MIND CONTROL SUCCESS: Your eyes flash with a deep violet glare (Roll: ${roll} vs ${targetDC}). You project a crushing suggestion directly into the freight supervisor's cerebral cortex. He blankly types his override code, hands you the Decrypted Ares Transit Token, and mutters, 'Take whatever you need.'`;
+          setActivePopup({
+            title: "NEURAL COMMAND SECURED",
+            subtitle: "MIND CONTROL SUCCESS",
+            type: "check_success",
+            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe supervisor's pupils dilate fully. Bypassing his neural firewall, you forced his physical muscles to hand over the decrypted transit clearance token!\n\nEarned +100 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 15);
+          nextState.mana = Math.max(0, nextState.mana - 10);
+          narrative = `💥 NEURAL RECOIL: The supervisor's simple cybernetic visor filters your brain signal and sounds an alarm! The neural feedback strikes your cerebral nodes for -15 damage and costs -10 Mana. You are forced to hack manually.`;
+          setActivePopup({
+            title: "COGNITIVE BACKLASH",
+            subtitle: "MIND CONTROL FAILURE",
+            type: "check_failure",
+            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nHis head-mounted optical filter shielded his optic nerve from the purple ley flash. He staggered backward and hit the hangar alert siren!\n\nLost -15 HP and -10 Mana.`
+          });
+        }
+      }
+      else if (cleanAction.includes("wipe patrol officer's brain record") || cleanAction.includes("wipe patrol") || cleanAction.includes("erase patrol")) {
+        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
+        const targetDC = 12;
+        if (roll >= targetDC) {
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
+          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
+            nextState.inventory.push("Decrypted Ares Transit Token");
+          }
+          nextState.experience += 100;
+          narrative = `🧠 MEMORY WIPE SUCCESS: You walk directly up to the patrolling officer and touch his temple (Roll: ${roll} vs ${targetDC}). A powerful synaptic shockwave wipes his last 15 minutes of memory. You pluck the decrypted transit key token from his hand as he blinks in confusion, wondering why he's standing in the dark.`;
+          setActivePopup({
+            title: "COGNITIVE VOID",
+            subtitle: "MEMORY WIPE SUCCESS",
+            type: "check_success",
+            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou completely erased the officer's temporary cognitive buffer! He remembers nothing of your presence as you walk away with his decryption key.\n\nEarned +100 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 20);
+          narrative = `💥 MEMORY WIPE FAILURE: The officer's neural visor records the invasive mental scan, triggering an automatic shock charge (Roll: ${roll} vs ${targetDC})! You take -20 electrical shock damage as he raises his rifle!`;
+          setActivePopup({
+            title: "SYNAPTIC FIREWALL ACTIVE",
+            subtitle: "MEMORY WIPE FAILURE",
+            type: "check_failure",
+            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe officer's sub-dermal security nodes isolated the cognitive intrusion, discharging a physical feedback shock to your fingers.\n\nLost -20 HP.`
+          });
+        }
+      }
+      else if (cleanAction.includes("mind control plaza gate sentinel") || cleanAction.includes("mind control the plaza gate")) {
+        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
+        const targetDC = 13;
+        if (roll >= targetDC) {
+          if (!nextState.completedPOIActions.includes("corporate_plaza:security_bypassed")) {
+            nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
+          }
+          nextState.experience += 110;
+          narrative = `🔮 COGNITIVE OVERRIDE SUCCESS: You stare into the gate sentinel's eyes (Roll: ${roll} vs ${targetDC}). Your violet ley energy invades his neural cyberdeck. He blankly overrides the security terminal locks, bowing his head as you walk past.`;
+          setActivePopup({
+            title: "SENTINEL COGNITIVELY BYPASSED",
+            subtitle: "MIND CONTROL SUCCESS",
+            type: "check_success",
+            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe sentinel's security grid is fully breached from within his own brain. He has safely opened the primary Plaza security barriers for you.\n\nEarned +110 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 25);
+          narrative = `💥 COGNITIVE SPIKE FAILURE: The gate sentinel has an advanced cerebral firewall (Roll: ${roll} vs ${targetDC})! A heavy electric counter-pulse hits your skull for -25 damage, and the guards raise their plasma carbines!`;
+          setActivePopup({
+            title: "COGNITIVE FIREWALL SPARK",
+            subtitle: "MIND CONTROL FAILURE",
+            type: "check_failure",
+            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nHis military-grade synaptic shield deflected your command, discharging a direct cybernetic shockwave back into your brain.\n\nLost -25 HP.`
+          });
+        }
+      }
+      else if (cleanAction.includes("neural shock the valve glands") || cleanAction.includes("neural shock the valve")) {
+        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
+        const targetDC = 11;
+        if (roll >= targetDC) {
+          if (!nextState.completedPOIActions.includes("corporate_plaza:detention_floor")) {
+            nextState.completedPOIActions.push("corporate_plaza:detention_floor");
+          }
+          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice"));
+          if (!nextState.completedQuests.includes("Main Quest: Rescue Vice")) {
+            nextState.completedQuests.push("Main Quest: Rescue Vice");
+          }
+          nextState.experience += 150;
+          
+          // Recruit Vice as a companion
+          const viceComp = {
+            id: "vice",
+            name: "Vice",
+            role: "Assault / Demolitions Specialist",
+            avatar: "🔫",
+            image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=600",
+            description: "Vice is a battle-hardened veteran runner from the Old Sector. His left eye is replaced by a military tactical targeting tracker. He is an expert in heavy particle rifles, magnetic explosives, and concrete-breaching operations.",
+            dialogue: "You actually made it, kid. Didn't think you had the grit. Let's show these corporate suits what happens when you cross the runners.",
+            reaction: null,
+            happiness: 100,
+            affection: "Loyal",
+            affectionValue: 50,
+            willpower: 75,
+            corruption: 25,
+            hygiene: "Normal",
+            discipline: 80,
+            hunger: "Satiated",
+            respect: 90,
+            withdrawRisk: "None",
+            anger: 0,
+            defiance: 20,
+            fear: 10,
+            inventory: ["Heavy Particle Rifle", "EMP Detonator", "Tactical Body Armor"],
+            currentJob: "Security Guard"
+          };
+          nextState.baseNPCs = [...(nextState.baseNPCs || []), viceComp];
+          
+          narrative = `🔮 BIOMENTAL SHOCK SUCCESS: You focus your Mindmancer ley current directly onto the cryo-release valve's hydraulic bio-sensors (Roll: ${roll} vs ${targetDC}). The valve expands instantly under the bio-electric pulse, safely venting the cryo-fluid. Vice steps out of the cell, breathing heavy: 'Kid... how did you do that without the access keys? Dynamic work.'`;
+          setActivePopup({
+            title: "VICE LIBERATED",
+            subtitle: "BIOMENTAL MANIPULATION SUCCESS",
+            type: "check_success",
+            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou successfully bypassed the physical lock by sending a high-frequency cognitive wave that forced the hydraulic bio-receptors to open. Vice has been rescued and joined your safehouse squad!\n\nEarned +150 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 20);
+          narrative = `💥 BIOMENTAL SHOCK FAILURE: Your neural pulse is grounded by the valve's heavy shielding (Roll: ${roll} vs ${targetDC})! A high-voltage thermal back-arc shocks you for -20 HP.`;
+          setActivePopup({
+            title: "HYDRO-SHOCK BACKLASH",
+            subtitle: "BIOMENTAL MANIPULATION FAILURE",
+            type: "check_failure",
+            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe valve casing was heavily grounded. Your cognitive wave triggered a static arc discharge that burned your palms.\n\nLost -20 HP.`
+          });
+        }
+      }
+      else if (cleanAction.includes("psychic tunnel through security firewall") || cleanAction.includes("psychic tunnel through security")) {
+        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
+        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
+        const targetDC = 13;
+        if (roll >= targetDC) {
+          if (!nextState.inventory.includes("Encrypted Ares Ledger")) {
+            nextState.inventory.push("Encrypted Ares Ledger");
+          }
+          nextState.experience += 120;
+          narrative = `🔮 PSYCHIC TUNNEL SUCCESS: You connect your cerebral deck directly to the servers and channel raw psychic ley-currents (Roll: ${roll} vs ${targetDC}). The firewall's encryption nodes melt, letting you slip past the physical defenses and secure the Encrypted Ares Ledger!`;
+          setActivePopup({
+            title: "LEDGER SECURED",
+            subtitle: "PSYCHIC BYPASS SUCCESS",
+            type: "check_success",
+            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou bypassed standard mainframe security entirely by projecting a heavy mental bypass wave that spoofed the physical decrypters.\n\nEarned +120 XP!`
+          });
+        } else {
+          nextState.hp = Math.max(10, nextState.hp - 20);
+          nextState.mana = Math.max(0, nextState.mana - 15);
+          narrative = `💥 PSYCHIC COLLAPSE: The secure servers detect your non-standard signal and trigger a high-intensity cognitive burn (Roll: ${roll} vs ${targetDC})! You take -20 HP and -15 Mana from the brutal feedback.`;
+          setActivePopup({
+            title: "COGNITIVE DESTRUCTION FEEDBACK",
+            subtitle: "PSYCHIC BYPASS FAILURE",
+            type: "check_failure",
+            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe Ares servers fired a lethal defensive sub-routine that fried your active cognitive buffers.\n\nLost -20 HP and -15 Mana.`
+          });
+        }
+      }
       else if (cleanAction.includes("bribe security automated bot")) {
         if (nextState.credits >= 15) {
           nextState.credits -= 15;
@@ -5744,7 +5534,7 @@ export default function App() {
               role: "Tactical Leader",
               bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
               avatar: "👩‍🎤",
-              image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+              image: vicePortrait,
               equipment: {
                 meleeWeapon: "Vibroblade",
                 rangedWeapon: "Battle Pistol BP132",
@@ -5764,7 +5554,7 @@ export default function App() {
             name: "Vice",
             role: "Weapons & Field Coordinator",
             avatar: "👩‍🎤",
-            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            image: vicePortrait,
             description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
             dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
             reaction: null,
@@ -5825,7 +5615,7 @@ export default function App() {
               role: "Tactical Leader",
               bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
               avatar: "👩‍🎤",
-              image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+              image: vicePortrait,
               equipment: {
                 meleeWeapon: "Vibroblade",
                 rangedWeapon: "Battle Pistol BP132",
@@ -5845,7 +5635,7 @@ export default function App() {
             name: "Vice",
             role: "Weapons & Field Coordinator",
             avatar: "👩‍🎤",
-            image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+            image: vicePortrait,
             description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
             dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
             reaction: null,
@@ -6452,18 +6242,18 @@ export default function App() {
       triggerToast("STAMINA DEPLETED: Teleported to Safehouse");
     }
 
+    const finalLog: LogMessage = {
+      id: crypto.randomUUID(),
+      timestamp: timeString,
+      text: narrative,
+      type: logType,
+      district: nextState.district,
+      poi: nextState.poi
+    };
+    const updatedLogs = [...logs, finalLog];
     setGameState(nextState);
-    setLogs(prev => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        timestamp: timeString,
-        text: narrative,
-        type: logType,
-        district: nextState.district,
-        poi: nextState.poi
-      }
-    ]);
+    setLogs(updatedLogs);
+    triggerAutosave(nextState, updatedLogs);
     setCustomInput("");
     setIsLoading(false);
   };
@@ -6599,7 +6389,7 @@ export default function App() {
   const derived = getDerivedStats();
 
   return (
-    <div className="min-h-screen bg-[#070913] text-slate-100 font-sans flex flex-col antialiased relative selection:bg-rose-500 selection:text-white p-0 m-0 overflow-x-hidden">
+    <div className="h-screen w-screen bg-[#070913] text-slate-100 font-sans flex flex-col antialiased relative selection:bg-rose-500 selection:text-white p-0 m-0 overflow-hidden select-none">
       
       {/* Background Ambient Glowing Orbs - Frosted Glass Aesthetics */}
       <div className="absolute inset-0 pointer-events-none select-none z-0 overflow-hidden">
@@ -6611,54 +6401,7 @@ export default function App() {
         <div className="absolute inset-x-0 top-0 h-full opacity-5 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
       </div>
 
-      {/* HEADER BAR */}
-      <div className="z-10 bg-slate-950/80 backdrop-blur-md border-b border-white/10 py-2.5 md:py-3 px-4 md:px-6 shadow-xl flex flex-wrap justify-between items-center gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.15)]">
-            <Flame size={18} className="animate-pulse" />
-          </div>
-          <div>
-            <span className="text-[9px] font-mono tracking-widest text-cyan-400 uppercase font-bold flex items-center gap-1">
-              <Sparkles size={10} /> CORE OFFLINE SANDBOX ENGINE
-            </span>
-            <h1 className="font-display font-extrabold tracking-wider text-lg text-white uppercase leading-none mt-0.5">
-              NEON <span className="text-rose-500 tracking-tight font-light">&amp;</span> ETHER
-            </h1>
-          </div>
-        </div>
 
-        {/* Global Notifications and Save Operations */}
-        <div className="flex items-center gap-2.5 font-mono text-xs">
-          {gameState && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleSkipIntro}
-                className="bg-emerald-950 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.15)] animate-pulse"
-              >
-                ⚡ Skip Intro (Base Crew)
-              </button>
-              <button
-                onClick={handleSaveGame}
-                className="bg-cyan-950/50 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.08)]"
-              >
-                <Save size={11} /> Save Matrix
-              </button>
-              <button
-                onClick={handleRestartFull}
-                className="bg-rose-950/50 border border-rose-500/30 text-rose-300 hover:bg-rose-900/60 transition-all font-mono text-4xs font-bold px-2.5 py-1.5 rounded-md uppercase tracking-wider cursor-pointer"
-              >
-                Reset Module
-              </button>
-            </div>
-          )}
-          <span className="h-4 w-px bg-white/10 hidden sm:inline" />
-          <div className="bg-slate-900/60 border border-white/5 text-slate-300 px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-[10px]">
-            <Activity size={12} className="text-cyan-400 animate-pulse" />
-            <span>GRID DECK:</span>
-            <span className="text-cyan-400 font-bold block">STANDALONE</span>
-          </div>
-        </div>
-      </div>
 
       {/* SAVE TOAST POPUP */}
       <AnimatePresence>
@@ -6667,7 +6410,7 @@ export default function App() {
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed top-20 right-6 z-50 px-4 py-2.5 rounded-md border border-cyan-500/30 bg-slate-950/90 text-cyan-400 font-mono text-xs flex items-center gap-3 shadow-[0_0_15px_rgba(34,211,238,0.25)]"
+            className="fixed top-6 right-6 z-50 px-4 py-2.5 rounded-md border border-cyan-500/30 bg-slate-950/90 text-cyan-400 font-mono text-xs flex items-center gap-3 shadow-[0_0_15px_rgba(34,211,238,0.25)]"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
             <span>{saveToast}</span>
@@ -6675,7 +6418,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 md:p-5 flex flex-col gap-4 md:gap-5 z-10 transition-all justify-center">
+      <main className="w-full h-full p-2 sm:p-3 flex flex-col gap-2 z-10 transition-all flex-1 overflow-hidden min-h-0">
 
         <AnimatePresence mode="wait">
           
@@ -6683,969 +6426,45 @@ export default function App() {
               SCREEN 1: GAMEPLAY MAIN MENU
              ============================================== */}
           {currentScreen === "menu" && (
-            <motion.div
-              key="main-menu"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              className="max-w-xl mx-auto w-full glass-panel-heavy rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-8 text-center flex flex-col gap-8 box-glow-cyan"
-            >
-              <div>
-                <span className="font-mono text-xs uppercase tracking-[0.25em] text-cyan-400 font-bold glow-cyan block mb-2">
-                  CYBERNETIC COGNITIVE MODULE v3.3
-                </span>
-                <h2 className="font-display font-black text-4xl text-white tracking-widest uppercase">
-                  NEON <span className="text-rose-500">&amp;</span> ETHER
-                </h2>
-                <div className="w-24 h-0.5 bg-gradient-to-r from-cyan-500 via-rose-500 to-transparent mx-auto my-4" />
-                <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto font-sans">
-                  Navigate high-magic technomancy and client-authoritative offline loops underneath Megacity-9. Connect with specialized operatives, fulfill corporate hunting licenses, and secure digital ley cores.
-                </p>
-              </div>
-
-              {/* ACTION COMMAND DECKS */}
-              <div className="flex flex-col gap-3 max-w-xs w-full mx-auto font-mono text-xs">
-                <button
-                  onClick={() => {
-                    setCharSelectStep(1);
-                    setSelectedPerks([]);
-                    setStatPointsPool(10);
-                    setAddedStats({ str: 0, dex: 0, int: 0, will: 0, eth: 0 });
-                    setCurrentScreen("character_select");
-                  }}
-                  className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-extrabold uppercase py-3 rounded-md transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)]"
-                >
-                  <Plus size={15} /> Deploy New Agent
-                </button>
-
-                <button
-                  onClick={handleLoadGame}
-                  disabled={!hasSave}
-                  className={`w-full border py-3 rounded-md transition-all flex items-center justify-center gap-2 uppercase font-semibold ${
-                    hasSave
-                      ? "bg-slate-900/60 hover:bg-slate-800/80 border-cyan-500/20 text-cyan-300 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.05)]"
-                      : "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
-                  }`}
-                >
-                  <Terminal size={14} /> Restore Session State
-                </button>
-
-                {hasSave && (
-                  <button
-                    onClick={handleRestartFull}
-                    className="w-full bg-slate-950/30 hover:bg-rose-950/20 border border-rose-500/10 hover:border-rose-500/30 text-rose-400 font-medium py-3.5 rounded-md transition-all cursor-pointer uppercase text-2xs tracking-widest block"
-                  >
-                    Wipe Stored Save Matrix
-                  </button>
-                )}
-              </div>
-
-              {/* Lower visual metadata indicators */}
-              <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-6 text-[10px] font-mono text-slate-500">
-                <div className="text-left">
-                  <p className="font-bold text-slate-400 uppercase">LOCAL CLIENT STORAGE:</p>
-                  <p>{hasSave ? "✓ RESTORATION SECTOR LOCKED" : "∅ VACANT MODULE COMPONENT"}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-slate-400 uppercase">OFFLINE ENGINE STATED:</p>
-                  <p className="text-cyan-400">STATUS.STABLE_READY</p>
-                </div>
-              </div>
-            </motion.div>
+            <MainMenuScreen
+              hasSave={hasSave}
+              onNewGame={() => {
+                setCharSelectStep(1);
+                setSelectedPerks([]);
+                setStatPointsPool(10);
+                setAddedStats({ str: 0, dex: 0, int: 0, will: 0, eth: 0 });
+                setCurrentScreen("character_select");
+              }}
+              onLoadGame={handleLoadGame}
+              onWipeSave={handleWipeAllSaves}
+            />
           )}
 
-          {/* ==============================================
+                    {/* ==============================================
               SCREEN 2: CHARACTER CREATION WIZARD (3 STEPS)
              ============================================== */}
           {currentScreen === "character_select" && (
-            <motion.div
-              key="character-select"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="max-w-6xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-5"
-            >
-              {/* Back button to main menu */}
-              <button
-                onClick={() => {
-                  setCurrentScreen("menu");
-                }}
-                className="absolute top-4 left-4 text-slate-400 hover:text-white flex items-center gap-1 text-xs font-mono border border-white/5 px-2 py-1 rounded bg-slate-900/60 transition-all cursor-pointer z-10 animate-fade-in"
-              >
-                <ArrowLeft size={13} /> Back to Terminal
-              </button>
-
-              {/* Compact Title Header with Steps */}
-              <div className="flex flex-col md:flex-row md:justify-between md:items-center pt-2 pb-4 border-b border-white/5 gap-3">
-                <div className="text-left">
-                  <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-cyan-400 font-bold block mb-0.5">
-                    [ COGNITIVE REGISTRATION ]
-                  </span>
-                  <h2 className="font-display font-extrabold text-lg text-white uppercase tracking-wider leading-none">
-                    OPERATIVE CONFIGURATION
-                  </h2>
-                  <p className="text-[10px] text-slate-500 font-mono mt-0.5 uppercase">
-                    INITIALIZE BIOMETRICS &amp; SYNAPSE INTEGRATION
-                  </p>
-                </div>
-                
-                {/* Visual Step Tracker */}
-                <div className="flex items-center gap-2 font-mono text-xs">
-                  <button 
-                    onClick={() => charSelectStep > 1 && setCharSelectStep(1)}
-                    disabled={charSelectStep === 1}
-                    className={`px-3 py-1.5 rounded border transition-all ${
-                      charSelectStep === 1 
-                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
-                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200 cursor-pointer"
-                    }`}
-                  >
-                    1. IDENTITY
-                  </button>
-                  <div className="w-4 h-[1px] bg-white/10" />
-                  <button 
-                    onClick={() => charSelectStep > 2 && setCharSelectStep(2)}
-                    disabled={charSelectStep <= 2}
-                    className={`px-3 py-1.5 rounded border transition-all ${
-                      charSelectStep === 2 
-                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
-                        : charSelectStep > 2 
-                          ? "bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200 cursor-pointer"
-                          : "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
-                    }`}
-                  >
-                    2. MATRIX
-                  </button>
-                  <div className="w-4 h-[1px] bg-white/10" />
-                  <button 
-                    disabled
-                    className={`px-3 py-1.5 rounded border transition-all ${
-                      charSelectStep === 3 
-                        ? "bg-cyan-950/40 border-cyan-500/40 text-cyan-400 font-black shadow-[0_0_8px_rgba(6,182,212,0.15)]" 
-                        : "bg-slate-950/40 border-white/5 text-slate-600 cursor-not-allowed"
-                    }`}
-                  >
-                    3. PERKS
-                  </button>
-                </div>
-              </div>
-
-              {/* Real-time calculated statistics for preview */}
-              {(() => {
-                const selectedBaseStats = {
-                  str: selectedArchetype.name === "Cyber-Blade" ? 14 : selectedArchetype.name === "Techno-Mage" ? 9 : 10,
-                  dex: selectedArchetype.name === "Cyber-Blade" ? 15 : selectedArchetype.name === "Techno-Mage" ? 11 : 13,
-                  int: selectedArchetype.name === "Cyber-Blade" ? 10 : selectedArchetype.name === "Techno-Mage" ? 14 : 15,
-                  will: selectedArchetype.name === "Cyber-Blade" ? 11 : selectedArchetype.name === "Techno-Mage" ? 12 : 11,
-                  eth: selectedArchetype.name === "Cyber-Blade" ? 10 : selectedArchetype.name === "Techno-Mage" ? 15 : 11,
-                };
-
-                const selectedRaceMods = { str: 0, dex: 0, int: 0, will: 0, eth: 0 };
-                if (customRace === "Human") {
-                  selectedRaceMods.str += 1;
-                  selectedRaceMods.dex += 1;
-                } else if (customRace === "Cyborg") {
-                  selectedRaceMods.dex += 2;
-                  selectedRaceMods.int += 1;
-                  selectedRaceMods.will -= 1;
-                } else if (customRace === "Mutant") {
-                  selectedRaceMods.str += 2;
-                  selectedRaceMods.eth += 2;
-                  selectedRaceMods.int -= 2;
-                } else if (customRace === "Neuro-Elf") {
-                  selectedRaceMods.int += 2;
-                  selectedRaceMods.will += 2;
-                  selectedRaceMods.str -= 1;
-                } else if (customRace === "Chrome-Dwarf") {
-                  selectedRaceMods.str += 2;
-                  selectedRaceMods.will += 2;
-                  selectedRaceMods.dex -= 1;
-                }
-
-                const selectedBgMods = { str: 0, dex: 0, int: 0, will: 0, eth: 0 };
-                if (customBackground === "Street Rat") {
-                  selectedBgMods.dex += 1;
-                } else if (customBackground === "Ex-Corp Agent") {
-                  selectedBgMods.int += 1;
-                } else if (customBackground === "Glitched Specimen") {
-                  selectedBgMods.str += 1;
-                  selectedBgMods.eth += 1;
-                } else if (customBackground === "Grid Drifter") {
-                  selectedBgMods.str += 1;
-                  selectedBgMods.will += 1;
-                }
-
-                const previewStr = selectedBaseStats.str + selectedRaceMods.str + selectedBgMods.str + addedStats.str;
-                const previewDex = selectedBaseStats.dex + selectedRaceMods.dex + selectedBgMods.dex + addedStats.dex;
-                const previewInt = selectedBaseStats.int + selectedRaceMods.int + selectedBgMods.int + addedStats.int;
-                const previewWill = selectedBaseStats.will + selectedRaceMods.will + selectedBgMods.will + addedStats.will;
-                const previewEth = selectedBaseStats.eth + selectedRaceMods.eth + selectedBgMods.eth + addedStats.eth;
-
-                let previewHp = selectedArchetype.maxHp;
-                if (customBackground === "Ex-Corp Agent") previewHp -= 10;
-                if (customBackground === "Glitched Specimen") previewHp += 20;
-
-                let previewCredits = selectedArchetype.credits;
-                if (customBackground === "Street Rat") previewCredits += 20;
-                if (customBackground === "Ex-Corp Agent") previewCredits += 50;
-                if (customBackground === "Glitched Specimen") previewCredits -= 30;
-
-                const portraitChoices = [
-                  { name: "Blade", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200" },
-                  { name: "Mage", url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" },
-                  { name: "Hacker", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200" },
-                  { name: "Rebel", url: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=200" },
-                  { name: "Mercenary", url: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200" }
-                ];
-
-                const raceOptions = [
-                  { name: "Human", bonus: "+1 Str, +1 Dex", desc: "Adaptable biological genome." },
-                  { name: "Cyborg", bonus: "+2 Dex, +1 Int, -1 Will", desc: "Refined mechanoid micro-coils." },
-                  { name: "Mutant", bonus: "+2 Str, +2 Eth, -2 Int", desc: "Radiation-infused chemical muscle." },
-                  { name: "Neuro-Elf", bonus: "+2 Int, +2 Will, -1 Str", desc: "Ether-sensitive neuron networks." },
-                  { name: "Chrome-Dwarf", bonus: "+2 Will, +2 Str, -1 Dex", desc: "Reinforced titanium skeletal plates." }
-                ];
-
-                const backgroundOptions = [
-                  { name: "Street Rat", bonus: "+20 Credits, +1 Dex", desc: "Scavenging courier inside level 1 slums." },
-                  { name: "Ex-Corp Agent", bonus: "+50 Credits, -10 HP, +1 Int", desc: "Former security analyst fleeing Biotech Tower." },
-                  { name: "Glitched Specimen", bonus: "+20 Max HP, -30 Credits", desc: "Illicit mind-bender subject breakouts." },
-                  { name: "Grid Drifter", bonus: "+1 Str, +1 Will", desc: "Hardened wanderer mapping outer deserts." }
-                ];
-
-                const ALL_12_PERKS = [
-                  { id: "Genius", name: "Genius", icon: "🧠", desc: "+2 Intelligence. Makes systems hacking and INT checks significantly easier." },
-                  { id: "Iron Will", name: "Iron Will", icon: "🛡️", desc: "+2 Willpower. Prevents flatlining, reviving you at 25% HP once per combat encounter." },
-                  { id: "Street Smart", name: "Street Smart", icon: "💸", desc: "+30 starting Credits. Unlocks illegal back-alley street negotiations." },
-                  { id: "Adrenaline Rush", name: "Adrenaline Rush", icon: "⚡", desc: "Gain +15% overall physical and elemental damage when HP is below 40%." },
-                  { id: "Cybernetic Optimizer", name: "Cybernetic Optimizer", icon: "🔋", desc: "Start every combat encounter with +15 active energy Shields." },
-                  { id: "Ether Conduit", name: "Ether Conduit", icon: "🔮", desc: "Siphon ambient ley lines to regenerate +2 MP at the start of every combat turn." },
-                  { id: "Hardened Chassis", name: "Hardened Chassis", icon: "🦾", desc: "+30 Max HP permanent health boost to organic carbon-plates." },
-                  { id: "Shadow Operative", name: "Shadow Operative", icon: "👤", desc: "+1 Dexterity. Enhances digital and manual evasion checks by +20%." },
-                  { id: "Heavy Hitter", name: "Heavy Hitter", icon: "⚔️", desc: "+1 Strength. Melee kinetic blows deal +10% additional physical damage." },
-                  { id: "Apex Reflexes", name: "Apex Reflexes", icon: "🏃", desc: "+2 Dexterity. Increases active combat critical hit chance by +10%." },
-                  { id: "Technomancer Catalyst", name: "Technomancer Catalyst", icon: "🌪️", desc: "+1 Ether. Focuses technomancy relays, dealing +15% spell-slash damage." },
-                  { id: "Surprise Tactics", name: "Surprise Tactics", icon: "🎯", desc: "Unleash rapid fire, starting the first combat turn of a battle with +1 AP." },
-                ];
-
-                const skillTrees: Record<string, { name: string; cost: string; desc: string; icon: string }[]> = {
-                  "Cyber-Blade": [
-                    { name: "Viper Strike (Tier 1)", cost: "10 MP", desc: "Melee blow dealing +150% physical damage with a chemical armor-dissolving corrosion debuff.", icon: "⚔️" },
-                    { name: "Adrenaline Surge (Tier 2)", cost: "15 MP", desc: "Inject fast combat-stimulants, granting +2 AP and +15% Critical Hit Chance for 2 turns.", icon: "⚡" },
-                    { name: "Phantom Dash (Tier 3)", cost: "20 MP", desc: "Bypass defensive fields to blink behind a target, performing a guaranteed 300% backstab crit.", icon: "👤" },
-                    { name: "Razor Tempest (Tier 4)", cost: "25 MP", desc: "Unleash a whirlwind of molecular edge sweeps, dealing 30 Physical damage to all targets and bleeding them.", icon: "🌪️" },
-                    { name: "Cyber-Celerity (Tier 5)", cost: "18 MP", desc: "Accelerate neural clock-rate, dodging the next 2 physical attacks completely.", icon: "🏃" },
-                    { name: "Executioner's Wake (Tier 6)", cost: "35 MP", desc: "Ultimate single-target execution, dealing massive 55 damage. If the target dies, immediately refunds 50% mana.", icon: "☠️" }
-                  ],
-                  "Techno-Mage": [
-                    { name: "Ether Spark (Tier 1)", cost: "8 MP", desc: "Bends ambient ley structures to fire a direct energy bolt, dealing 18 Ether damage.", icon: "🔮" },
-                    { name: "Net Shield (Tier 2)", cost: "12 MP", desc: "Materialize an active firewall barrier over your neural interface, granting +15 Shields.", icon: "🛡️" },
-                    { name: "Feedback Burn (Tier 3)", cost: "22 MP", desc: "Overload target cerebral deck terminals, causing a spell explosion for 35 damage and 1 turn Silence.", icon: "💥" },
-                    { name: "Quantum Singularity (Tier 4)", cost: "28 MP", desc: "Force-collapse local gravity, pulling all hostiles together, dealing 25 void damage, and pinning them down (Stun).", icon: "🌌" },
-                    { name: "Bio-Electric Surge (Tier 5)", cost: "20 MP", desc: "Chain cyber-organic lightning through up to 3 hostiles, inflicting 30 shock damage and disabling robotic components.", icon: "⚡" },
-                    { name: "Absolute Zero Code (Tier 6)", cost: "40 MP", desc: "Freeze target CPU units entirely, dealing 50 frost-code damage and completely incapacitating them for 2 turns.", icon: "❄️" }
-                  ],
-                  "Outlaw Hacker": [
-                    { name: "ICE Disruption (Tier 1)", cost: "10 MP", desc: "Inject corrupted software into enemy combat sub-routines, lowering accuracy by 30%.", icon: "💻" },
-                    { name: "Targeting Link (Tier 2)", cost: "12 MP", desc: "Paint the target with an orbital micro-laser, boosting all ranged damage they take by +25%.", icon: "🎯" },
-                    { name: "Systems Overload (Tier 3)", cost: "25 MP", desc: "Trigger remote battery/munition discharges, inflicting 28 range damage and stun.", icon: "🔋" },
-                    { name: "Glitch Protocol (Tier 4)", cost: "18 MP", desc: "Siphon active shield energy from hostiles, turning their own protective grids into a massive defensive shield (+20 Shields).", icon: "🛰️" },
-                    { name: "Nano-Swarm Hack (Tier 5)", cost: "22 MP", desc: "Reprogram nanite aerosol injectors to eat away enemy components, dealing 12 corrosion damage per turn for 3 turns.", icon: "🐜" },
-                    { name: "Satellite Guillotine (Tier 6)", cost: "35 MP", desc: "Command a decommissioned spy satellite to fire a high-orbit kinetic rod on the grid, dealing 55 heavy impact damage.", icon: "☄️" }
-                  ],
-                  "Mindmancer": [
-                    { name: "Mind Hack (Tier 1)", cost: "15 MP", desc: "Direct synaptic rewrite, hacking target motor functions and forcing them to attack allies.", icon: "👁️" },
-                    { name: "Neural Overload (Tier 2)", cost: "20 MP", desc: "Psychic cortex shock inflicting 25 damage, completely ignoring physical armor layers.", icon: "🧠" },
-                    { name: "Synaptic Cascade (Tier 3)", cost: "30 MP", desc: "Meltdown blast on all nearby targets dealing 40 psychic damage, locking brains in vegetative sleep.", icon: "🌀" },
-                    { name: "Ether Shroud (Tier 4)", cost: "18 MP", desc: "Banish yourself to the digital ether plane, becoming completely untargetable and immune to damage for 1 turn.", icon: "🌫️" },
-                    { name: "Hallucinatory Echo (Tier 5)", cost: "24 MP", desc: "Clone your neural signature, creating 2 holograms that absorb incoming single-target spells.", icon: "👥" },
-                    { name: "Cerebro-Collapse (Tier 6)", cost: "45 MP", desc: "Total psychic execution. Obliterates target neural paths for 60 psychic damage, transferring 50% of the damage dealt as active health to yourself.", icon: "🥀" }
-                  ]
-                };
-
-                const handleStatChange = (stat: "str" | "dex" | "int" | "will" | "eth", amount: number) => {
-                  if (amount > 0 && statPointsPool > 0) {
-                    setAddedStats(prev => ({ ...prev, [stat]: prev[stat] + 1 }));
-                    setStatPointsPool(prev => prev - 1);
-                  } else if (amount < 0 && addedStats[stat] > 0) {
-                    setAddedStats(prev => ({ ...prev, [stat]: prev[stat] - 1 }));
-                    setStatPointsPool(prev => prev + 1);
-                  }
-                };
-
-                const randomizeName = () => {
-                  const names = ["Kaelen_X", "Valerie_Dex", "Cipher_09", "Vance_Street", "Zero_Net", "Specter_V", "Rogue_Prime", "Echo_Chrome", "Rift_Blade", "Viper_T"];
-                  const selected = names[Math.floor(Math.random() * names.length)];
-                  setCustomName(selected);
-                };
-
-                return (
-                  <div>
-                    {/* STEP 1: IDENTITY COGNITION */}
-                    {charSelectStep === 1 && (
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
-                        {/* COLUMN 1: PORTRAIT SELECTOR & BIO */}
-                        <div className="lg:col-span-5 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
-                          <div className="space-y-4">
-                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-                              👤 COGNITIVE BIOMETRICS
-                            </span>
-                            
-                            {/* Name input */}
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] text-slate-400 uppercase font-bold block">OPERATIVE CODENAME</label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={customName}
-                                  onChange={(e) => setCustomName(e.target.value.slice(0, 18))}
-                                  className="flex-1 bg-slate-900 border border-white/10 rounded px-3 py-2 text-sm text-white uppercase focus:border-cyan-400 outline-none font-semibold"
-                                  placeholder="Enter Name..."
-                                />
-                                <button
-                                  onClick={randomizeName}
-                                  title="Randomize Name"
-                                  className="bg-slate-900 border border-cyan-500/20 text-cyan-400 text-sm px-3.5 py-2 rounded hover:bg-cyan-950/40 cursor-pointer flex items-center justify-center transition-all"
-                                >
-                                  🎲
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Age selection */}
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between items-center text-[10px] text-slate-400 uppercase font-bold">
-                                <span>COGNITIVE CYCLE AGE</span>
-                                <span className="text-cyan-400 font-extrabold text-sm">{customAge} YEARS</span>
-                              </div>
-                              <input
-                                type="range"
-                                min="18"
-                                max="70"
-                                value={customAge}
-                                onChange={(e) => setCustomAge(parseInt(e.target.value))}
-                                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-                              />
-                            </div>
-
-                            {/* Portrait thumbnail selection list */}
-                            <div className="space-y-2 pt-1">
-                              <label className="text-[10px] text-slate-400 uppercase font-bold block">UPLINK PORTRAIT CHROME</label>
-                              <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900/85 p-3 rounded-lg border border-white/10">
-                                <img
-                                  src={customAvatarUrl}
-                                  alt="Selected custom portrait"
-                                  referrerPolicy="no-referrer"
-                                  className="w-20 h-20 object-cover rounded-lg border-2 border-cyan-400 grayscale-0 shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0"
-                                />
-                                <div className="grid grid-cols-5 gap-1.5 flex-1 w-full">
-                                  {portraitChoices.map((p, idx) => (
-                                    <button
-                                      key={idx}
-                                      onClick={() => setCustomAvatarUrl(p.url)}
-                                      className={`w-10 h-10 rounded-lg overflow-hidden border transition-all cursor-pointer relative ${
-                                        customAvatarUrl === p.url ? "border-cyan-400 ring-2 ring-cyan-400/40 grayscale-0 opacity-100" : "border-white/5 grayscale hover:grayscale-0 opacity-70 hover:opacity-100"
-                                      }`}
-                                    >
-                                      <img src={p.url} alt="option" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="text-[10px] text-slate-500 bg-slate-900/30 p-2.5 rounded border border-white/5 leading-relaxed">
-                            💡 <em>Advisory:</em> Chromatic integration is client-authoritative. Choosing your biometrics establishes initial synaptic offsets.
-                          </div>
-                        </div>
-
-                        {/* COLUMN 2: SPECIES SELECTION */}
-                        <div className="lg:col-span-7 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
-                          <div className="space-y-4">
-                            <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-                              🧬 SELECT GENETIC SPECIES SPECIFICATION
-                            </span>
-                            
-                            <div className="grid grid-cols-1 gap-2 max-h-[360px] overflow-y-auto pr-1">
-                              {raceOptions.map((r) => (
-                                <button
-                                  key={r.name}
-                                  onClick={() => setCustomRace(r.name)}
-                                  className={`text-left p-3 rounded-xl border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
-                                    customRace === r.name
-                                      ? "bg-cyan-950/40 border-cyan-400 text-white shadow-[0_0_15px_rgba(6,182,212,0.1)]"
-                                      : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                                  }`}
-                                >
-                                  <div className="max-w-[70%]">
-                                    <p className="font-extrabold text-xs uppercase tracking-wide text-slate-200 flex items-center gap-2">
-                                      <span className={customRace === r.name ? "text-cyan-400" : "text-slate-500"}>◈</span>
-                                      {r.name}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">{r.desc}</p>
-                                  </div>
-                                  <span className="text-[10px] font-black text-rose-400 bg-slate-950/90 px-2.5 py-1 rounded border border-white/10 shrink-0">
-                                    {r.bonus}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Step 1 Control Bar */}
-                          <div className="flex justify-end pt-2 border-t border-white/5">
-                            <button
-                              onClick={() => setCharSelectStep(2)}
-                              className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg px-6 py-2.5 text-xs tracking-wider transition-all cursor-pointer flex items-center gap-1.5 uppercase shadow-[0_0_10px_rgba(6,182,212,0.2)]"
-                            >
-                              Next: Class &amp; Stats <ArrowRight size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* STEP 2: PICKING ATTRIBUTES, CLASS & BACKGROUND */}
-                    {charSelectStep === 2 && (
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
-                        {/* LEFT COLUMN: CLASS & BACKGROUND */}
-                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-5 font-mono text-left">
-                          <div className="space-y-4">
-                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5">
-                              🛠️ ARCHETYPE CLASS &amp; CHRONOLOGY
-                            </span>
-
-                            {/* Class Selection */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] text-slate-400 uppercase font-bold block">SELECT COGNITIVE ARCHETYPE</label>
-                              <div className="grid grid-cols-3 gap-1.5">
-                                {ARCHETYPES.map((arch) => (
-                                  <button
-                                    key={arch.name}
-                                    onClick={() => {
-                                      setSelectedArchetype(arch);
-                                      setPreviewSkillTreeClass(arch.name);
-                                    }}
-                                    className={`py-2 px-1 rounded-lg text-center border font-extrabold transition-all cursor-pointer flex flex-col items-center justify-center gap-0.5 ${
-                                      selectedArchetype.name === arch.name
-                                        ? "bg-gradient-to-b from-cyan-950/50 to-slate-900 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                                    }`}
-                                  >
-                                    <span className="text-[10px] uppercase font-black truncate max-w-full block">{arch.name.replace("Cyber-", "").replace("Techno-", "").replace("Outlaw ", "")}</span>
-                                    <span className="text-[8px] text-rose-400 bg-slate-950 px-1 py-0.5 rounded border border-white/5 font-black uppercase tracking-wider">
-                                      {arch.name === "Cyber-Blade" ? "Blade" : arch.name === "Techno-Mage" ? "Spell" : "Hacks"}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Background selection */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] text-slate-400 uppercase font-bold block">OPERATIVE BACKGROUND</label>
-                              <div className="grid grid-cols-1 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
-                                {backgroundOptions.map((bg) => (
-                                  <button
-                                    key={bg.name}
-                                    onClick={() => setCustomBackground(bg.name)}
-                                    className={`text-left p-2 rounded border text-xs leading-normal transition-all flex justify-between items-center cursor-pointer ${
-                                      customBackground === bg.name
-                                        ? "bg-cyan-950/40 border-cyan-400 text-white"
-                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900"
-                                    }`}
-                                  >
-                                    <div className="max-w-[70%]">
-                                      <p className="font-extrabold text-[11px] uppercase tracking-wide text-slate-200">{bg.name}</p>
-                                      <p className="text-[9px] text-slate-400 font-sans mt-0.5">{bg.desc}</p>
-                                    </div>
-                                    <span className="text-[9px] font-black text-amber-400 bg-slate-950/80 px-1.5 py-0.5 rounded border border-white/10 shrink-0">{bg.bonus}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setCharSelectStep(1)}
-                              className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider border border-white/10 cursor-pointer flex items-center justify-center gap-1.5 uppercase"
-                            >
-                              <ArrowLeft size={13} /> Back
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* MIDDLE COLUMN: STAT ALLOCATION */}
-                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                              <span className="text-xs uppercase font-black text-slate-300">🧬 ATTRIBUTE MATRICES</span>
-                              <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
-                                {statPointsPool} POINTS POOL
-                              </span>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              {[
-                                { key: "str", name: "STR (STRENGTH)", desc: "Physical armor, physical damage scaling." },
-                                { key: "dex", name: "DEX (DEXTERITY)", desc: "Reflex speed, blade skills & dodge rate." },
-                                { key: "int", name: "INT (INTELLIGENCE)", desc: "Cyberware compatibility, deck bypass speed." },
-                                { key: "will", name: "WILL (WILLPOWER)", desc: "Cognitive ether defenses, spell shielding." },
-                                { key: "eth", name: "ETH (ETHER COGNITION)", desc: "Raw mental energy pools, spell potency." }
-                              ].map((s) => {
-                                const currentVal = s.key === "str" ? previewStr : s.key === "dex" ? previewDex : s.key === "int" ? previewInt : s.key === "will" ? previewWill : previewEth;
-                                const addedCount = addedStats[s.key as "str" | "dex" | "int" | "will" | "eth"];
-                                
-                                return (
-                                  <div key={s.key} className="flex justify-between items-center text-xs p-1.5 bg-slate-950/50 rounded-lg border border-white/5 leading-normal">
-                                    <div className="text-left max-w-[65%]">
-                                      <p className="font-extrabold text-[10px] text-slate-200">{s.name}</p>
-                                      <p className="text-[9px] text-slate-400 leading-tight font-sans mt-0.5">{s.desc}</p>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        onClick={() => handleStatChange(s.key as any, -1)}
-                                        disabled={addedCount === 0}
-                                        className={`w-5 h-5 rounded-md text-center font-black text-xs transition-all border flex items-center justify-center cursor-pointer ${
-                                          addedCount > 0
-                                            ? "bg-slate-900 border-white/10 text-rose-400 hover:bg-slate-800"
-                                            : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
-                                        }`}
-                                      >
-                                        -
-                                      </button>
-                                      <span className="text-xs text-white font-extrabold w-4 text-center">
-                                        {currentVal}
-                                      </span>
-                                      <button
-                                        onClick={() => handleStatChange(s.key as any, 1)}
-                                        disabled={statPointsPool === 0}
-                                        className={`w-5 h-5 rounded-md text-center font-black text-xs transition-all border flex items-center justify-center cursor-pointer ${
-                                          statPointsPool > 0
-                                            ? "bg-cyan-950 border-cyan-500/40 text-cyan-400 hover:bg-cyan-900"
-                                            : "bg-slate-950 border-white/5 text-slate-700 cursor-not-allowed"
-                                        }`}
-                                      >
-                                        +
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-900/60 p-2.5 rounded border border-white/5">
-                            <div className="flex justify-between items-center text-[9px] text-slate-400 uppercase font-bold mb-1">
-                              <span>Derived Baseline</span>
-                              <span>Preview values</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
-                              <div className="bg-slate-950/50 p-1 rounded">
-                                <span className="text-slate-500 block">HP</span>
-                                <span className="text-white font-bold">{previewHp}</span>
-                              </div>
-                              <div className="bg-slate-950/50 p-1 rounded">
-                                <span className="text-slate-500 block">ETHER</span>
-                                <span className="text-cyan-400 font-bold">{selectedArchetype.maxMana}</span>
-                              </div>
-                              <div className="bg-slate-950/50 p-1 rounded">
-                                <span className="text-slate-500 block">CREDITS</span>
-                                <span className="text-amber-400 font-bold">{previewCredits}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* RIGHT COLUMN: SKILL TREE PREVIEWS */}
-                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
-                          <div className="space-y-3 flex-1 flex flex-col">
-                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1">
-                              🔮 ACTIVE CLASS PREVIEW
-                            </span>
-
-                            <div className="grid grid-cols-3 gap-1">
-                              {["Cyber-Blade", "Techno-Mage", "Outlaw Hacker"].map((clName) => (
-                                <button
-                                  key={clName}
-                                  onClick={() => setPreviewSkillTreeClass(clName)}
-                                  className={`py-1 rounded text-center border font-extrabold transition-all cursor-pointer text-[9px] uppercase ${
-                                    previewSkillTreeClass === clName
-                                      ? "bg-cyan-950/50 border-cyan-500/50 text-cyan-400"
-                                      : "bg-slate-900/40 border-white/5 text-slate-500 hover:text-slate-300"
-                                  }`}
-                                >
-                                  {clName === "Cyber-Blade" ? "Blade" : clName === "Techno-Mage" ? "Mage" : "Hacker"}
-                                </button>
-                              ))}
-                            </div>
-
-                            <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[190px] pr-1 flex-1">
-                              {skillTrees[previewSkillTreeClass === "Mindmancer" ? "Cyber-Blade" : previewSkillTreeClass]?.slice(0, 4).map((sk, idx) => (
-                                <div key={idx} className="bg-slate-950/60 border border-white/5 p-1.5 rounded text-[10px] leading-normal animate-fade-in">
-                                  <div className="flex justify-between items-center font-bold text-slate-200">
-                                    <span className="flex items-center gap-1 uppercase truncate">
-                                      <span>{sk.icon}</span> {sk.name.split(" ")[0]}
-                                    </span>
-                                    <span className="text-cyan-400 text-[8px] bg-slate-900 border border-white/10 px-1 py-0.2 rounded font-bold">{sk.cost}</span>
-                                  </div>
-                                  <p className="text-[9px] text-slate-400 mt-0.5 leading-snug font-sans truncate">{sk.desc}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              if (statPointsPool > 0) {
-                                triggerToast("💡 TIP: You have unspent attribute points, but you may proceed!");
-                              }
-                              setCharSelectStep(3);
-                            }}
-                            className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-2.5 text-xs tracking-wider transition-all cursor-pointer uppercase flex items-center justify-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                          >
-                            Next: Choose Perks <ArrowRight size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* STEP 3: COGNITIVE PERKS & DEPLOYMENT */}
-                    {charSelectStep === 3 && (
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch animate-fade-in">
-                        {/* LEFT COLUMN: 12 PERKS SELECTION GRID (col-span-8) */}
-                        <div className="lg:col-span-8 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
-                              <span className="text-xs uppercase tracking-wider text-rose-500 font-bold block flex items-center gap-1">
-                                🧠 COGNITIVE STARTING PERKS
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-slate-400 font-semibold uppercase">POINTS REMAINING:</span>
-                                <span className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded font-black animate-pulse">
-                                  {3 - selectedPerks.length} / 3
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[340px] overflow-y-auto pr-1">
-                              {ALL_12_PERKS.map((perk) => {
-                                const isSelected = selectedPerks.includes(perk.id);
-                                return (
-                                  <button
-                                    key={perk.id}
-                                    onClick={() => {
-                                      if (isSelected) {
-                                        setSelectedPerks(prev => prev.filter(p => p !== perk.id));
-                                      } else {
-                                        if (selectedPerks.length < 3) {
-                                          setSelectedPerks(prev => [...prev, perk.id]);
-                                        } else {
-                                          triggerToast("⚠️ MAXIMUM SELECTED: You may only activate up to 3 starting perks!");
-                                        }
-                                      }
-                                    }}
-                                    className={`text-left p-2.5 rounded-xl border text-xs leading-normal transition-all flex items-start gap-2.5 cursor-pointer relative ${
-                                      isSelected
-                                        ? "bg-cyan-950/40 border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.08)] animate-pulse-subtle"
-                                        : "bg-slate-900/60 border-white/5 text-slate-400 hover:border-white/15 hover:bg-slate-900/80"
-                                    }`}
-                                  >
-                                    <div className="w-8 h-8 rounded-lg bg-slate-950/80 flex items-center justify-center border border-white/10 text-base flex-shrink-0">
-                                      {perk.icon}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="font-extrabold text-[11px] uppercase text-slate-200 tracking-wide flex items-center justify-between">
-                                        <span>{perk.name}</span>
-                                        {isSelected && (
-                                          <span className="text-[8px] uppercase bg-cyan-950 text-cyan-400 border border-cyan-400/30 px-1.5 py-0.2 rounded font-black">
-                                            Active
-                                          </span>
-                                        )}
-                                      </p>
-                                      <p className="text-[10px] text-slate-400 leading-tight font-sans mt-0.5">{perk.desc}</p>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          <div className="flex justify-between pt-2 border-t border-white/5">
-                            <button
-                              onClick={() => setCharSelectStep(2)}
-                              className="bg-slate-900 hover:bg-slate-800 text-slate-300 text-center font-display font-extrabold rounded-lg px-5 py-2.5 text-xs tracking-wider border border-white/10 cursor-pointer flex items-center gap-1.5 uppercase"
-                            >
-                              <ArrowLeft size={13} /> Back to Stats
-                            </button>
-                            <div className="text-[10px] text-slate-500 italic self-center hidden sm:block">
-                              Active starting perks grant immediate gameplay benefits in standard checks and tactical combat.
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* RIGHT COLUMN: SUMMARY REGISTRY & FINAL DEPLOY (col-span-4) */}
-                        <div className="lg:col-span-4 bg-slate-950/70 border border-white/10 p-5 rounded-xl flex flex-col justify-between gap-4 font-mono text-left">
-                          <div className="space-y-4">
-                            <span className="text-xs uppercase tracking-wider text-cyan-400 font-bold block border-b border-white/5 pb-1.5 flex items-center gap-1">
-                              📋 SUMMARY REGISTRY
-                            </span>
-
-                            {/* Info lines */}
-                            <div className="space-y-2 text-xs">
-                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                                <span className="text-slate-500">OPERATIVE:</span>
-                                <span className="text-white font-extrabold uppercase truncate max-w-[150px]">{customName}</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                                <span className="text-slate-500">SPECIES:</span>
-                                <span className="text-rose-400 font-extrabold uppercase">{customRace}</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                                <span className="text-slate-500">CLASS:</span>
-                                <span className="text-cyan-400 font-extrabold uppercase">{selectedArchetype.name.replace("Cyber-", "").replace("Techno-", "")}</span>
-                              </div>
-                              <div className="flex justify-between items-center border-b border-white/5 pb-1">
-                                <span className="text-slate-500">BACKGROUND:</span>
-                                <span className="text-amber-400 font-extrabold uppercase">{customBackground}</span>
-                              </div>
-                            </div>
-
-                            {/* Selected perks tokens */}
-                            <div className="space-y-2">
-                              <label className="text-[10px] text-slate-500 uppercase font-black block">ACTIVE PERKS ({selectedPerks.length}/3)</label>
-                              {selectedPerks.length === 0 ? (
-                                <div className="text-center py-4 bg-slate-900/40 rounded border border-dashed border-white/5 text-slate-600 text-[10px] uppercase">
-                                  No perks active
-                                </div>
-                              ) : (
-                                <div className="flex flex-col gap-1.5">
-                                  {selectedPerks.map(perkId => {
-                                    const p = ALL_12_PERKS.find(pk => pk.id === perkId);
-                                    return (
-                                      <div key={perkId} className="flex items-center gap-2 bg-cyan-950/20 border border-cyan-500/10 p-1.5 rounded-lg text-xs">
-                                        <span className="text-sm">{p?.icon}</span>
-                                        <span className="text-cyan-300 font-bold uppercase truncate">{p?.name}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Calculated derived stats preview card */}
-                          <div className="space-y-3">
-                            <div className="bg-slate-900/60 p-3 rounded-lg border border-white/5 space-y-1.5">
-                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
-                                <span>DERIVED HP:</span>
-                                <span className="text-white font-extrabold">{previewHp + (selectedPerks.includes("Hardened Chassis") ? 30 : 0)} HP</span>
-                              </div>
-                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
-                                <span>DERIVED MP:</span>
-                                <span className="text-cyan-400 font-extrabold">{selectedArchetype.maxMana} MP</span>
-                              </div>
-                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
-                                <span>STARTING CREDITS:</span>
-                                <span className="text-amber-400 font-extrabold">
-                                  {previewCredits + (selectedPerks.includes("Street Smart") ? 30 : 0) + (selectedPerks.includes("Lucky Jack") ? 40 : 0)}¤
-                                </span>
-                              </div>
-                              <div className="flex justify-between items-center text-[10px] text-slate-500 font-bold">
-                                <span>STARTING SHIELDS:</span>
-                                <span className="text-cyan-400 font-extrabold">{selectedPerks.includes("Cybernetic Optimizer") ? 15 : 0}</span>
-                              </div>
-                            </div>
-
-                            {/* Final Confirm and Deploy */}
-                            <button
-                              onClick={handleDeployAgent}
-                              className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-slate-950 text-center font-display font-extrabold rounded-lg py-3 text-xs tracking-wider transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.25)] hover:shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-[0.99] uppercase flex items-center justify-center gap-2"
-                            >
-                              <Play size={12} fill="currentColor" /> Deploy Operative
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </motion.div>
+            <CharacterSelectScreen />
           )}
 
           {/* ==============================================
               SCREEN 2.5: INTRO STORY & CONTROLS GUIDE
              ============================================== */}
           {currentScreen === "intro_story" && gameState && (
-            <motion.div
-              key="intro-story"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              className="max-w-5xl mx-auto w-full glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl relative p-6 md:p-8 flex flex-col gap-6 box-glow-cyan text-left font-mono"
-            >
-              {/* Top tag */}
-              <div className="flex justify-between items-center border-b border-white/5 pb-3">
-                <div className="flex items-center gap-2">
-                  <Terminal size={14} className="text-cyan-400 animate-pulse" />
-                  <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-cyan-400 font-extrabold">
-                    NEURAL UPLINK STABLE // SECTOR 4 SECURE CONDUIT
-                  </span>
-                </div>
-                <span className="font-mono text-3xs text-rose-500 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded font-black tracking-widest uppercase">
-                  HEIST PRIORITY: ALPHA
-                </span>
-              </div>
-
-              {/* Grid content */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                
-                {/* Visual Banner column (col-span-5) */}
-                <div className="lg:col-span-5 flex flex-col gap-4">
-                  <div className="relative rounded-xl border border-white/10 overflow-hidden shadow-2xl group h-48 md:h-64">
-                    {/* Widescreen visual banner */}
-                    <img
-                      src="https://images.unsplash.com/photo-1515621061946-eff1c2a352bd?auto=format&fit=crop&q=80&w=800"
-                      alt="Cyberpunk megacity night keyart"
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
-                    <div className="absolute bottom-4 left-4 right-4">
-                      <span className="font-mono text-[8px] uppercase tracking-widest text-cyan-400 bg-slate-950/80 px-2 py-0.5 rounded border border-white/5 inline-block mb-1.5 font-bold">
-                        [ LOCALITY PROFILE // MEGACITY-9 ]
-                      </span>
-                      <h3 className="font-display font-black text-lg text-white uppercase tracking-wider leading-none">
-                        SECTOR 4 SLUMS
-                      </h3>
-                      <p className="text-[10px] text-slate-400 font-mono mt-1">THE UNDERBELLY OF THE EMPIRE</p>
-                    </div>
-                  </div>
-
-                  {/* Operational parameters overlay */}
-                  <div className="bg-slate-950/70 border border-white/10 p-4 rounded-xl flex flex-col gap-3 font-mono text-left">
-                    <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-black border-b border-white/5 pb-1">
-                      OPERATIVE BIO-CACHE
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
-                        <span className="text-[9px] text-slate-500 block font-bold">CODENAME</span>
-                        <span className="text-white font-extrabold uppercase">{gameState.playerName}</span>
-                      </div>
-                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
-                        <span className="text-[9px] text-slate-500 block font-bold">SPECIES SPEC</span>
-                        <span className="text-rose-400 font-extrabold uppercase">{gameState.playerRace}</span>
-                      </div>
-                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
-                        <span className="text-[9px] text-slate-500 block font-bold">ARCHETYPE</span>
-                        <span className="text-cyan-400 font-extrabold uppercase">{selectedArchetype.name.replace("Cyber-", "").replace("Techno-", "")}</span>
-                      </div>
-                      <div className="bg-slate-900/60 p-2 rounded border border-white/5">
-                        <span className="text-[9px] text-slate-500 block font-bold">BACKGROUND</span>
-                        <span className="text-amber-400 font-extrabold uppercase">{gameState.playerBackground}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Narrative prose & Controls Guide (col-span-7) */}
-                <div className="lg:col-span-7 flex flex-col gap-5 text-left">
-                  
-                  {/* Part 1: Lore and narrative */}
-                  <div className="bg-slate-950/40 border border-white/10 p-5 rounded-xl space-y-3.5">
-                    <div className="flex items-center gap-1.5">
-                      <BookOpen size={14} className="text-rose-500" />
-                      <h4 className="font-display font-black text-sm text-white uppercase tracking-wider">THE BRIEFING // THE SOL-PRIME GIG</h4>
-                    </div>
-                    
-                    <div className="space-y-3 text-xs text-slate-300 font-sans leading-relaxed">
-                      <p>
-                        Welcome to <strong className="text-white">Megacity-9</strong>—a high-tech, low-life septic tank where corporate skyscrapers pierce the stratosphere like black chrome needles, and the remaining 99% choke on the radioactive sulfur-fog of Sector 4. Here, your neural cyberware is just leased property, your blood has a barcoded value, and human lives are traded in underground slave ledger books.
-                      </p>
-                      <p>
-                        Your crew leader, <strong className="text-rose-400 font-semibold">Vice</strong>—a heavy-metal smuggler and former Ares Biotech defector—has orchestrated the ultimate suicide heist. You are breaching the <strong className="text-cyan-400 font-semibold">Ares Biotech Deep Data Vault</strong> to steal the <em className="text-white not-italic font-bold">Sol-Prime Ley Core</em>. This relic isn't just data: it's a glowing, hyper-dense technomantic battery capable of merging raw psychic ether-waves with cold carbon-grid processors. If you extract it, you'll power your safehouse, feed your squad, and sever the corporate tracking collar forever.
-                      </p>
-                      <p className="border-l-2 border-red-500 pl-3 bg-red-950/20 py-2 rounded-r font-mono text-[11px] text-red-300">
-                        "Vice's voice crackles over your sub-dermal audio relay: 'No second chances, kid. Ares tactical enforcers are already sweeping the upper vents. Boot your deck, clear your buffers, and grab that core.'"
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Part 2: Controls and Guide panel */}
-                  <div className="bg-slate-950/70 border border-white/10 p-5 rounded-xl space-y-4">
-                    <div className="flex items-center gap-1.5">
-                      <Cpu size={14} className="text-cyan-400" />
-                      <h4 className="font-display font-black text-sm text-white uppercase tracking-wider">TACTICAL GAMEPLAY INTERFACE INSTRUCTIONS</h4>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
-                      {/* Left: General controls */}
-                      <div className="space-y-2 border-r border-white/5 pr-2">
-                        <span className="font-mono text-[10px] text-cyan-400 font-black tracking-widest uppercase block mb-1">[ 🗺️ EXPLORATION ]</span>
-                        <ul className="space-y-1.5 list-disc pl-3 text-slate-400 leading-tight">
-                          <li>
-                            <strong className="text-slate-200">Regional map:</strong> Scan sectors and travel between 4 active regions.
-                          </li>
-                          <li>
-                            <strong className="text-slate-200">Interact:</strong> Click on Points of Interest (POIs) to trigger events, unlock lockboxes, and start missions.
-                          </li>
-                          <li>
-                            <strong className="text-slate-200">Gear up:</strong> Check your character database tab to manage weaponry, implants, and companion skills.
-                          </li>
-                        </ul>
-                      </div>
-
-                      {/* Right: Combat controls */}
-                      <div className="space-y-2">
-                        <span className="font-mono text-[10px] text-rose-500 font-black tracking-widest uppercase block mb-1">[ ⚔️ TURN-BASED COMBAT ]</span>
-                        <ul className="space-y-1.5 list-disc pl-3 text-slate-400 leading-tight">
-                          <li>
-                            <strong className="text-slate-200">Grid system:</strong> Move your token on a tactical tile grid. Movement costs 1 Action Point (AP) per grid tile.
-                          </li>
-                          <li>
-                            <strong className="text-slate-200">Combat actions:</strong> Spend AP to perform melee strikes, ranged shots, or reload your weapons.
-                          </li>
-                          <li>
-                            <strong className="text-slate-200">Mana (MP) spells:</strong> Unleash tactical spells and abilities to shield yourself or bypass enemy physical armors!
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Action row */}
-                  <div className="flex gap-4 items-center justify-between border-t border-white/5 pt-4">
-                    <button
-                      onClick={() => {
-                        setCurrentScreen("character_select");
-                      }}
-                      className="text-slate-400 hover:text-white font-mono text-xs border border-white/10 px-4 py-2.5 rounded bg-slate-900/40 hover:bg-slate-900 transition-all cursor-pointer flex items-center gap-1"
-                    >
-                      <ArrowLeft size={13} /> Adjust Biometrics
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setCurrentScreen("game");
-                        triggerToast("NEURAL INTERFACE LOCKED. WELCOME BACK, RUNNER.");
-                      }}
-                      className="bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-slate-950 font-display font-black text-xs uppercase py-2.5 px-6 rounded-lg tracking-widest transition-all cursor-pointer shadow-[0_0_20px_rgba(6,182,212,0.35)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)] active:scale-[0.98] flex items-center gap-2"
-                    >
-                      <Play size={12} fill="currentColor" /> Commence Infiltration Routine <ArrowRight size={13} />
-                    </button>
-                  </div>
-
-                </div>
-
-              </div>
-
-            </motion.div>
+            <IntroStoryScreen
+              gameState={gameState}
+              selectedArchetype={selectedArchetype}
+              onAdjustBiometrics={() => {
+                setCurrentScreen("character_select");
+              }}
+              onCommenceInfiltration={() => {
+                setCurrentScreen("game");
+                triggerToast("NEURAL INTERFACE LOCKED. WELCOME BACK, RUNNER.");
+              }}
+            />
           )}
 
-          {/* ==============================================
+                    {/* ==============================================
               SCREEN 3: ACTIVE GAMEPLAY GRID
              ============================================== */}
           {currentScreen === "game" && gameState && (
@@ -7654,22 +6473,22 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col gap-4 w-full animate-fadeIn relative"
+              className="flex flex-col gap-2 w-full h-full flex-1 min-h-0 overflow-hidden relative"
             >
               <WeatherOverlay weather={gameState.weather || "clear"} />
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-stretch h-full flex-1 min-h-0 overflow-hidden">
               
-              {/* LEFT COLUMN (9/12): MAIN CORE CONSOLE FEED, DETAILED SCENERY OR INTERACTION DECKS */}
+              {/* MAIN EXPANDED EXPLORATION VIEW (MAP & SCANNER) */}
               {gameTab === "exploration" && (
                 <>
-                <div className={`${gameState.combatState?.isActive ? "lg:col-span-12" : "lg:col-span-9"} flex flex-col gap-4`}>
+                <div className="lg:col-span-12 flex flex-col gap-2 h-full flex-1 min-h-0 overflow-hidden">
 
                 {/* THE HIGHEST CRAFTED CENTRAL SCREEN MAP OR POI BLUEPRINT SCENE */}
                 {!gameState.combatState?.isActive && (
-                  <div className="glass-panel rounded-xl p-3 md:p-3.5 shadow-2xl text-slate-100 flex flex-col gap-3 box-glow-cyan">
+                  <div className="glass-panel rounded-xl p-2.5 shadow-2xl text-slate-100 flex flex-col gap-2 box-glow-cyan h-full flex-1 min-h-0 overflow-hidden">
                   
                   {/* Header Selector Switch for holographic routing */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-white/10 pb-1.5 shrink-0">
                     <div className="flex items-center gap-2">
                       <Compass size={14} className="text-cyan-400" />
                       <span className="font-display font-extrabold text-[11px] uppercase tracking-wider text-slate-100">
@@ -7695,7 +6514,7 @@ export default function App() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="relative bg-slate-950 border border-white/10 rounded-xl h-[320px] md:h-[380px] overflow-hidden shadow-inner flex flex-col items-center justify-center p-3 group"
+                        className="relative bg-slate-950 border border-white/10 rounded-xl h-[calc(100vh-200px)] min-h-[300px] overflow-hidden shadow-inner flex flex-col items-center justify-center p-3 group"
                         id="holographic-tactical-map"
                       >
                         {/* Selected Region Background Map Imagery with Cyberpunk tint */}
@@ -7713,8 +6532,8 @@ export default function App() {
                         </div>
 
                         {/* Interactive District Pins Map Grid */}
-                        <div className="absolute inset-x-0 h-full w-full max-w-2xl mx-auto z-10">
-                          {MAP_POIS.filter(poi => poi.district === activeRegionId).map((p) => {
+                        <div className="absolute inset-x-0 h-full w-full max-w-4xl mx-auto z-10">
+                          {MAP_POIS.filter(poi => poi.district === activeRegionId).map((p, idx) => {
                             const isCurrentlyHere = gameState.poi === p.name;
                             
                             // Determine type details for better icons and indicators
@@ -7727,7 +6546,7 @@ export default function App() {
                             let nodeBlinkerColor = "bg-slate-400";
 
                             if (isCurrentlyHere) {
-                              nodeColorClasses = "bg-cyan-500 border-cyan-200 text-cyan-950 shadow-[0_0_15px_rgba(34,211,238,0.95)]";
+                              nodeColorClasses = "bg-cyan-500 border-cyan-200 text-cyan-950 shadow-[0_0_18px_rgba(34,211,238,0.95)]";
                               nodeBlinkerColor = "bg-cyan-400";
                             } else if (isClinic) {
                               nodeColorClasses = "bg-emerald-600 border-emerald-950 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.7)] group-hover/pin:bg-emerald-500 group-hover/pin:scale-110";
@@ -7771,8 +6590,19 @@ export default function App() {
                             }
 
                             return (
-                              <button
-                                key={p.id}
+                              <motion.button
+                                key={`${p.id}-${activeRegionId}`}
+                                initial={{ scale: 0, opacity: 0, y: -15 }}
+                                animate={{
+                                  scale: isCurrentlyHere ? [0, 1.38, 0.92, 1.12, 1] : [0, 1.25, 0.95, 1],
+                                  opacity: 1,
+                                  y: 0
+                                }}
+                                transition={{
+                                  duration: 0.55,
+                                  delay: idx * 0.07,
+                                  ease: [0.34, 1.56, 0.64, 1]
+                                }}
                                 onClick={() => {
                                   if (activeDialogue || gameState?.activeBranchingDialogue || squadDialogue) {
                                     triggerToast("⚠️ ACTIVE DIALOGUE: Complete your conversation before traveling!");
@@ -7828,38 +6658,40 @@ export default function App() {
                                   let nextState = { ...gameState };
                                   nextState.poi = p.name;
                                   nextState.district = p.district;
-                                  
                                   const travelResult = handleStaminaAndWeatherOnTravel(nextState, false, p.name);
                                   nextState = travelResult.nextState;
                                   setGameState(nextState);
-
-                                  // Enter local POI Detailed View automatically!
                                   setActivePOIView(p.id);
-                                  
-                                  // Print log
-                                  setLogs(prev => [
-                                    ...prev,
+                                  const newLogs = [
+                                    ...logs,
                                     {
                                       id: crypto.randomUUID(),
-                                      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                                       text: `[TRANSIT COMMITTED]: Safe arrival coordinates established at "${p.name}". Initialized local area detail blueprint.`,
-                                      type: "system",
+                                      type: "system" as const,
                                       district: p.district,
                                       poi: p.name
                                     },
                                     ...travelResult.logs
-                                  ]);
-
+                                  ];
+                                  setLogs(newLogs);
+                                  triggerAutosave(nextState, newLogs);
                                   if (travelResult.warningText) {
                                     triggerToast(travelResult.warningText);
                                   }
                                 }}
-                                className="absolute transition-all transform -translate-x-1/2 -translate-y-1/2 cursor-pointer p-1 rounded-lg group/pin"
+                                className="absolute transition-all transform -translate-x-1/2 -translate-y-1/2 cursor-pointer p-1 rounded-lg group/pin z-20"
                                 style={{ left: `${p.x}%`, top: `${p.y}%` }}
                               >
-                                {/* Blinker Node */}
+                                {/* Blinker Node - Only the active pin (isCurrentlyHere) pulses subtly */}
                                 <div className="relative flex items-center justify-center">
-                                  <span className={`animate-ping absolute inline-flex h-7 w-7 rounded-full opacity-45 duration-1000 ${nodeBlinkerColor}`} />
+                                  {isCurrentlyHere && (
+                                    <motion.span
+                                      animate={{ scale: [1, 1.35, 1], opacity: [0.45, 0.1, 0.45] }}
+                                      transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+                                      className="absolute inline-flex h-8 w-8 rounded-full border border-cyan-400/60 bg-cyan-400/20 shadow-[0_0_8px_rgba(34,211,238,0.3)] pointer-events-none"
+                                    />
+                                  )}
                                   <div
                                     className={`relative inline-flex items-center justify-center rounded-full h-6.5 w-6.5 border-2 shadow-lg transition-all transform group-hover/pin:scale-125 ${nodeColorClasses}`}
                                   >
@@ -7878,12 +6710,12 @@ export default function App() {
                                     {isCurrentlyHere && <p className="text-[8.5px] text-cyan-400 mt-0.5">✓ CURRENT COORDINATE</p>}
                                   </div>
                                 </div>
-                              </button>
+                              </motion.button>
                             );
                           })}
 
                           {/* Transit / Edge travel connections */}
-                          {REGION_CONNECTIONS[activeRegionId]?.map((conn) => {
+                          {REGION_CONNECTIONS[activeRegionId]?.map((conn, connIdx) => {
                             const targetReg = REGIONS.find(r => r.id === conn.targetRegionId);
                             if (!targetReg) return null;
                             
@@ -7895,8 +6727,15 @@ export default function App() {
                             if (currentIsPrologue !== targetIsPrologue) return null;
 
                             return (
-                              <button
-                                key={conn.targetRegionId}
+                              <motion.button
+                                key={`${conn.targetRegionId}-${activeRegionId}`}
+                                initial={{ scale: 0, opacity: 0, y: -12 }}
+                                animate={{ scale: [0, 1.28, 0.95, 1], opacity: 1, y: 0 }}
+                                transition={{
+                                  duration: 0.5,
+                                  delay: (MAP_POIS.filter(poi => poi.district === activeRegionId).length * 0.06) + (connIdx * 0.08),
+                                  ease: [0.34, 1.56, 0.64, 1]
+                                }}
                                 onClick={() => {
                                   if (activeDialogue || gameState?.activeBranchingDialogue || squadDialogue) {
                                     triggerToast("⚠️ ACTIVE DIALOGUE: Complete your conversation before traveling!");
@@ -7908,8 +6747,8 @@ export default function App() {
                                 style={{ left: `${conn.x}%`, top: `${conn.y}%` }}
                               >
                                 <div className="relative flex items-center justify-center">
-                                  {/* Pulsing ring */}
-                                  <span className="animate-ping absolute inline-flex h-8 w-8 rounded-full opacity-50 bg-amber-400 duration-1000" />
+                                  {/* Static subtle halo ring */}
+                                  <span className="absolute inline-flex h-7 w-7 rounded-full bg-amber-500/20 border border-amber-500/30 pointer-events-none" />
                                   <div className="relative inline-flex items-center justify-center rounded-full h-5.5 w-5.5 border-2 border-amber-400 bg-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.6)] group-hover/transit:scale-125 transition-all text-amber-400">
                                     <Compass size={11} className="animate-spin-slow text-amber-400" />
                                   </div>
@@ -7924,7 +6763,7 @@ export default function App() {
                                     <p className="text-[8px] text-amber-400/80 mt-0.5 font-sans uppercase tracking-wider">⚡ REQUIRES STAMINA</p>
                                   </div>
                                 </div>
-                              </button>
+                              </motion.button>
                             );
                           })}
                         </div>
@@ -7937,10 +6776,10 @@ export default function App() {
                         initial={{ opacity: 0, scale: 0.99 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.99 }}
-                        className="grid grid-cols-1 lg:grid-cols-12 gap-4 bg-slate-950/95 border border-cyan-500/30 rounded-xl p-4 md:p-5 shadow-[0_0_25px_rgba(6,182,212,0.05),inset_0_0_20px_rgba(34,211,238,0.02)]"
+                        className="grid grid-cols-1 lg:grid-cols-12 gap-3 bg-slate-950/95 border border-cyan-500/30 rounded-xl p-3 md:p-4 shadow-[0_0_25px_rgba(6,182,212,0.05)] h-[calc(100vh-200px)] min-h-[300px] overflow-y-auto"
                       >
                         {/* Left half: POI scenery illustration frame */}
-                        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[160px] lg:min-h-[250px]">
+                        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[220px] lg:min-h-[340px]">
                           {/* Main Close-up Illustrated Photo of local environment */}
                           <img
                             src={MAP_POIS.find(p => p.id === activePOIView)?.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400"}
@@ -8010,15 +6849,17 @@ export default function App() {
                                       </div>
                                       
                                       <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
-                                        <div className="relative flex-shrink-0">
-                                          <img
-                                            src={node.portrait}
-                                            alt={node.speakerName}
-                                            referrerPolicy="no-referrer"
-                                            className="w-16 h-16 object-cover rounded-xl border-2 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]"
-                                          />
-                                          <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950" />
-                                        </div>
+                                        {node.portrait && (
+                                          <div className="relative flex-shrink-0">
+                                            <img
+                                              src={node.portrait}
+                                              alt={node.speakerName}
+                                              referrerPolicy="no-referrer"
+                                              className="w-16 h-16 object-cover rounded-xl border-2 border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                                            />
+                                            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-950" />
+                                          </div>
+                                        )}
                                         <div className="flex-1 space-y-2">
                                           <div>
                                             <h4 className="text-sm font-extrabold text-cyan-300">{node.speakerName}</h4>
@@ -8246,109 +7087,450 @@ export default function App() {
                                   transition={{ duration: 0.25, ease: "easeOut" }}
                                   className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink"
                                 >
+                                  {/* Step-based header */}
                                   <div className="flex justify-between items-center border-b border-purple-500/20 pb-2">
                                     <span className="text-purple-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                      <Zap size={14} className="text-purple-500" /> NEURAL SYSTEM SHOCKWAVE
+                                      <Zap size={14} className="text-purple-500" /> ANOMALY SEQUENCE: OBSIDIAN ALTAR
                                     </span>
-                                    <span className="text-3xs text-purple-500 font-bold bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 uppercase">MINDMANCER TRANSFORMATION</span>
-                                  </div>
-                                  
-                                  <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left">
-                                    <div className="relative">
-                                      <div className="w-16 h-16 rounded-full bg-purple-500/20 absolute inset-0 animate-ping" />
-                                      <img
-                                        src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=200"
-                                        alt="Relic portrait"
-                                        referrerPolicy="no-referrer"
-                                        className="w-16 h-16 object-cover rounded-xl border-2 border-purple-500/60 shadow-[0_0_15px_rgba(168,85,247,0.5)] flex-shrink-0"
-                                      />
-                                    </div>
-                                    <div className="text-[11px] space-y-2 text-slate-300 flex-1">
-                                      <p className="text-purple-300 font-black uppercase text-xs">MINDMANCER UNLOCK SEQUENCE</p>
-                                      <p className="text-slate-100 font-sans text-xs leading-relaxed">
-                                        The moment your fingers brush against the warm, floating golden relic, a massive, brilliant pulse of purple light flashes!
-                                        <br /><br />
-                                        A psychic feedback shockwave rips into your neural pathways, rewriting your cortex cells. Your vision turns deep violet as the <span className="text-purple-400 font-bold">MINDMANCER powers awaken</span>!
-                                      </p>
-                                    </div>
+                                    <span className="text-3xs text-purple-500 font-bold bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 uppercase">
+                                      {relicStep === "awakening" || relicStep === "awakened_fury" ? "SYNAPTIC CONVULSION" : "ACTIVE CONSOLE FIELD"}
+                                    </span>
                                   </div>
 
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {/* Vice dialog */}
-                                    <div className="bg-rose-950/20 border border-rose-500/30 p-3 rounded-lg flex gap-2.5">
-                                      <span className="text-xl">🔫</span>
-                                      <div className="text-[10px] text-left">
-                                        <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                        <span className="text-4xs text-slate-500 block mt-0.5 uppercase">Companion</span>
-                                        <p className="text-slate-300 font-sans text-3xs leading-normal italic mt-1">
-                                          "Whoa, kid! Your eyes... they are glowing purple! Mind your levels, something is breaching the containment walls!"
-                                        </p>
+                                  {/* Beautiful landscape-aspect cinematic viewport box */}
+                                  {(() => {
+                                    const RELIC_CINEMATICS: Record<string, { image: string; title: string; narrative: string; alertType?: string }> = {
+                                      intro: {
+                                        image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800",
+                                        title: "A Floating Relic of Unknown Origins",
+                                        narrative: "The golden, multi-faceted device hovers three inches above the heavy obsidian altar. It radiates a heartbeat-like pulse of violet energy. It bypasses your cyberdeck's firewall indicators, humming in the back of your skull."
+                                      },
+                                      examine: {
+                                        image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+                                        title: "[CYBERDECK SCAN] High-Ether Frequency",
+                                        narrative: "You sync your deck to perform a non-contact resonance analysis. The readout spikes into warning thresholds. The energy signature is cognitive, resembling an ancient neural network's architecture. It operates directly on mental bio-electricity."
+                                      },
+                                      discuss_vice: {
+                                        image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800",
+                                        title: "[CONSULTING VICE] Technical Concerns",
+                                        narrative: "Vice stands close with his particle rifle raised, his tactical eye keeping a watchful lock on the exit corridor. He shakes his head, his face grim. He warns that pre-collapse neural code could permanently fry your cortex."
+                                      },
+                                      discuss_tracker: {
+                                        image: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=800",
+                                        title: "[CONSULTING TRACKER] Tactical Risk Assessment",
+                                        narrative: "Tracker leans against a pillar, checking his weapon's ammo counter. He has a tight, cold smile on his scarred face, his gaze locked on the golden energy pulse. He encourages you to reach out and seize the advantage."
+                                      },
+                                      awakening: {
+                                        image: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?auto=format&fit=crop&q=80&w=800",
+                                        title: "SYNAPTIC MERGE AWAKENING",
+                                        narrative: "You extend your hand and brush your fingers against the warm, gold-etched casing of the relic.\n\nInstantly, your vision is blown out by a blinding flash of violet light! A terrifying psychic shockwave rips into your temples, rearranging your synaptic cells. Your mind burns as ancient mental protocols fuse directly with your neural framework.",
+                                        alertType: "empowered"
+                                      },
+                                      breach: {
+                                        image: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800",
+                                        title: "⚠ IMMINENT THREAT DETECTED: PERIMETER BREACH",
+                                        narrative: "Before the neural code can even settle, a massive rumble shakes the stone chamber! The heavy outer blast door is violently blown inward in a cascade of metal shards and plaster dust.\n\nThrough the smoke, a heavily armed tactical squad of Ares Corporate Enforcers advances, their automatic laser rifles painting the room with lethal red targeting beams!",
+                                        alertType: "breach"
+                                      },
+                                      sacrifice: {
+                                        image: "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&q=80&w=800",
+                                        title: "🩸 CRITICAL CASUALTY: TRACKER DOWN",
+                                        narrative: "You are still paralyzed by the high-frequency synaptic merging, helpless as an Ares elite sniper aligns a laser beam directly onto your temples.\n\nSensing the threat, Tracker lunges in front of your neural deck! The superheated plasma shot rips straight through his central processor core. Metal shreds, sparks cascade, and with a terrible mechanical shriek, Tracker collapses onto the stone floor, his vitals flatlining.",
+                                        alertType: "casualty"
+                                      },
+                                      awakened_fury: {
+                                        image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800",
+                                        title: "🔮 HYPER-CONSCIOUS UNLEASHED: MINDMANCER",
+                                        narrative: "Tracker's chassis lies silent, venting smoking radioactive coolant. Vice is pinned behind a metal terminal block, return-firing desperately:\n\n'Tracker is down! His power core is completely flatlined! Rookie, whatever that gold relic did to your mind, you have to unleash it now! SQUEEZE THEIR CHIPS! BURST THEIR BRAINS!'\n\nYou stand up, your temples pulsing with raw purple energy. The neural block is gone. You are ready.",
+                                        alertType: "empowered"
+                                      }
+                                    };
+
+                                    const currentStep = RELIC_CINEMATICS[relicStep] || RELIC_CINEMATICS.intro;
+
+                                    return (
+                                      <div id="relic-cinematic-view" className="flex flex-col gap-4 w-full">
+                                        {/* Cinematic Widescreen Viewport */}
+                                        <div id="cinematic-viewport" className="w-full h-48 rounded-xl overflow-hidden border border-purple-500/30 relative flex items-end justify-start shadow-inner bg-slate-950">
+                                          <img
+                                            src={currentStep.image}
+                                            alt="Cinematic Screen"
+                                            referrerPolicy="no-referrer"
+                                            className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-75 transition-all duration-700"
+                                          />
+                                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/25 to-transparent z-10" />
+                                          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
+                                          <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-purple-500/40 to-transparent" />
+                                          
+                                          <div className="p-4 z-20 text-left font-mono relative">
+                                            <span className={`text-[8px] font-bold tracking-widest uppercase px-2 py-0.5 rounded border ${
+                                              currentStep.alertType === "breach" ? "bg-red-950/80 text-red-400 border-red-500/30 animate-pulse" :
+                                              currentStep.alertType === "casualty" ? "bg-amber-950/80 text-amber-500 border-amber-500/30 animate-pulse" :
+                                              currentStep.alertType === "empowered" ? "bg-purple-950/80 text-purple-400 border-purple-500/30 animate-pulse" :
+                                              "bg-slate-900/80 text-cyan-400 border-cyan-500/30"
+                                            }`}>
+                                              {relicStep === "intro" ? "ANOMALY SEQUENCE INITIALIZED" :
+                                               relicStep === "examine" ? "SCANNING GRID SPECTRUM" :
+                                               relicStep === "discuss_vice" ? "SQUAD LOGS: ADVISORY" :
+                                               relicStep === "discuss_tracker" ? "SQUAD LOGS: ADVISORY" :
+                                               relicStep === "awakening" ? "BIOMASS SYNAPSE ENGAGEMENT" :
+                                               relicStep === "breach" ? "TACTICAL CRISIS: ENGAGED" :
+                                               relicStep === "sacrifice" ? "SQUAD CASUALTY DETECTED" :
+                                               "COGNITIVE PROTOCOL ACTIVE"}
+                                            </span>
+                                            <h3 className="text-white text-[11px] font-black uppercase mt-1.5 tracking-wider drop-shadow-md">
+                                              {currentStep.title}
+                                            </h3>
+                                          </div>
+                                        </div>
+
+                                        {/* Cinematic Narrative Text */}
+                                        <div id="cinematic-narrative" className="text-[10px] leading-relaxed text-slate-300 bg-slate-950/50 border border-purple-500/15 rounded-lg p-3.5 text-left font-sans">
+                                          {currentStep.narrative.split("\n\n").map((para, pIdx) => (
+                                            <p key={pIdx} className={pIdx > 0 ? "mt-2" : ""}>
+                                              {para}
+                                            </p>
+                                          ))}
+                                        </div>
                                       </div>
-                                    </div>
+                                    );
+                                  })()}
 
-                                    {/* Tracker dialog */}
-                                    <div className="bg-amber-950/20 border border-amber-500/30 p-3 rounded-lg flex gap-2.5">
-                                      <span className="text-xl">📟</span>
-                                      <div className="text-[10px] text-left">
-                                        <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                        <span className="text-4xs text-slate-500 block mt-0.5 uppercase">Companion</span>
-                                        <p className="text-slate-300 font-sans text-3xs leading-normal italic mt-1">
-                                          "Multiple corporate signatures dropping in from the ventilation ducts! Ares Enforcers have found us! Settle your brain and draw your steel!"
-                                        </p>
+                                  {/* Dialog boxes matching steps */}
+                                  <div className="grid grid-cols-1 gap-3">
+                                    {relicStep === "intro" && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* Vice */}
+                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">🔫</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                            <span className="text-[7px] text-slate-500 block mt-0.5 uppercase">Companion</span>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "Careful, rookie. Those thermal readings are off the charts. It's radiating an unshielded cerebral broadcaster field. We came here for corporate databases, not to get our brains fried by ancient hardware. Leave it alone."
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {/* Tracker */}
+                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">📟</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                            <span className="text-[7px] text-slate-500 block mt-0.5 uppercase">Companion</span>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "We are in an active black-site, Vice. The blast doors are sealing, and corporate hit squads are coming. If that device can bypass firewall decrypters, we need it. Reach out, kid. Desperate times demand desperate weapons."
+                                            </p>
+                                          </div>
+                                        </div>
                                       </div>
-                                    </div>
+                                    )}
+
+                                    {relicStep === "examine" && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* Vice */}
+                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">🔫</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "See that? Your ocular indicators are flickering already. Step back before that mental hum triggers a total cerebral bleed!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {/* Tracker */}
+                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">📟</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "It's already syncing with your bio-signature. It wants a host, kid. Grab it. Stop hesitating before we get cornered like rats."
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "discuss_vice" && (
+                                      <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
+                                        <span className="text-xl">🔫</span>
+                                        <div className="text-[10px] text-left">
+                                          <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                            "There is no safe way to load pre-collapse neural code. If you touch that, it'll dump raw, unfiltered cognitive files straight into your cerebral deck. Best case, you get a severe skull migraine. Worst case, your cortex turns into charcoal."
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "discuss_tracker" && (
+                                      <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
+                                        <span className="text-xl">📟</span>
+                                        <div className="text-[10px] text-left">
+                                          <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                            "We're low-life runners, rookie. Every step in Megacity-9 is a gamble. Playing it safe gets you a shallow grave in the sewers. I'd rather take a direct psychic spike and have a fighting chance than sit here waiting for Ares executioners to hollow us out."
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "awakening" && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
+                                        {/* Vice */}
+                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">🔫</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "Whoa! Kid! Your eyes... they are glowing purple! Settle your heartbeat! We've got massive sound reports breaching the outer perimeter!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                        {/* Tracker */}
+                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">📟</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "The ventilation shaft covers are blowing open! Ares Biotech Enforcers have arrived! Ready your weapons, recruit! It's do or die!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "breach" && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5 animate-pulse">
+                                          <span className="text-xl">🔫</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "They're inside! Sector lockdown has initiated! Guard your flanks! Don't let them pin us down in this altar room!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">📟</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "I see high-caliber lasers painting the altar! They are targeting the recruit while they're syncing with the database crystal! Get behind cover!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "sacrifice" && (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
+                                          <span className="text-xl">👩‍🎤</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
+                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                              "NO! Tracker! You absolute idiot... why did you do that?! His central energy matrix is ruptured... he's leaking direct reactor plasma!"
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="bg-slate-900/40 border border-amber-500/20 p-3 rounded-lg flex gap-2.5 opacity-75">
+                                          <span className="text-xl">📟</span>
+                                          <div className="text-[10px] text-left">
+                                            <p className="font-bold text-amber-500 uppercase leading-none">Tracker (Dying)</p>
+                                            <p className="text-slate-400 font-sans text-[9px] leading-normal italic mt-1 animate-pulse">
+                                              "*Glitch static*... Rook... don't let... them take the crystal... Vice... escape..."
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {relicStep === "awakened_fury" && (
+                                      <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5 animate-pulse">
+                                        <span className="text-xl">👩‍🎤</span>
+                                        <div className="text-[10px] text-left">
+                                          <p className="font-bold text-rose-400 uppercase leading-none">Vice (Furious)</p>
+                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
+                                            "His spark is gone, rookie... completely flatlined. I'm pinned down behind this backup console. Squeeze their neural chips! Burn them to the ground with that mindmancy!"
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="bg-slate-900/60 border border-red-500/20 p-2.5 rounded text-3xs text-slate-400 font-sans leading-relaxed text-left">
-                                    ⚠️ <span className="text-red-400 font-bold">AMBUSH ALERT:</span> Ares Corporate Enforcers have blown the security barrier and are surrounding the altar with weapons drawn. Wield your new Mindmancer powers of <span className="text-purple-400 font-bold">Mind Hack</span> and <span className="text-purple-400 font-bold">Neural Overload</span> to defend your squad!
-                                  </div>
+                                  {/* Interactive choices and branch buttons */}
+                                  <div className="flex flex-wrap justify-center gap-2 border-t border-white/5 pt-3">
+                                    {relicStep === "intro" && (
+                                      <>
+                                        <button
+                                          id="relic-btn-examine"
+                                          onClick={() => setRelicStep("examine")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-cyan-500/30 text-cyan-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          🔎 [Examine Relic Frequencies]
+                                        </button>
+                                        <button
+                                          id="relic-btn-discuss-vice"
+                                          onClick={() => setRelicStep("discuss_vice")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          💬 "Vice, is there any way to analyze this safely?"
+                                        </button>
+                                        <button
+                                          id="relic-btn-discuss-tracker"
+                                          onClick={() => setRelicStep("discuss_tracker")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          💬 "Tracker, you seem awfully eager to risk my life here."
+                                        </button>
+                                        <button
+                                          id="relic-btn-touch"
+                                          onClick={() => setRelicStep("awakening")}
+                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)] animate-pulse"
+                                        >
+                                          ⚡ [Reach out and touch the Relic]
+                                        </button>
+                                      </>
+                                    )}
 
-                                  <div className="flex justify-center pt-1.5">
-                                    <button
-                                      onClick={() => {
-                                        if (!gameState) return;
-                                        let nextState = { ...gameState };
-                                        
-                                        // Debuff player: reduce max HP by 25, set mana to highly unstable
-                                        nextState.maxHp = Math.max(50, nextState.maxHp - 25);
-                                        nextState.hp = Math.min(nextState.hp, nextState.maxHp);
-                                        
-                                        // Mid-Battle Ability Unlock: Grant the player 2 absolute Mindmancer spells
-                                        if (nextState.skills) {
-                                          nextState.skills.mindmancer = 1; // Unlock Mindmancer spells
-                                        }
-                                        
-                                        // Spawn Ambush Encounter: Ares Corporate Enforcers
-                                        nextState.combatState = {
-                                          enemyName: "Ares Corporate Enforcers (Ambush)",
-                                          enemyHp: 160,
-                                          enemyMaxHp: 160,
-                                          enemyShields: 20,
-                                          enemyMaxShields: 20,
-                                          isActive: true,
-                                          turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
-                                        };
-                                        
-                                        setActiveDialogue(null);
-                                        setGameState(nextState);
-                                        
-                                        setLogs(prev => [
-                                          ...prev,
-                                          {
-                                            id: crypto.randomUUID(),
-                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: `💥 NEURAL AWAKENING & AMBUSH: Your neural structures are rewritten with raw psychic energy! Mindmancer spells unlocked: Mind Hack & Neural Overload.\n\nAres Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
-                                            type: "combat",
-                                            district: nextState.district,
-                                            poi: nextState.poi
+                                    {relicStep === "examine" && (
+                                      <>
+                                        <button
+                                          id="relic-btn-examine-vice"
+                                          onClick={() => setRelicStep("discuss_vice")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          💬 "Is there any way to insulate the connection, Vice?"
+                                        </button>
+                                        <button
+                                          id="relic-btn-examine-touch"
+                                          onClick={() => setRelicStep("awakening")}
+                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
+                                        >
+                                          ⚡ [Touch the pulsing gold alloy]
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {relicStep === "discuss_vice" && (
+                                      <>
+                                        <button
+                                          id="relic-btn-vice-tracker"
+                                          onClick={() => setRelicStep("discuss_tracker")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          💬 "What do you think, Tracker?"
+                                        </button>
+                                        <button
+                                          id="relic-btn-vice-touch"
+                                          onClick={() => setRelicStep("awakening")}
+                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
+                                        >
+                                          ⚡ [Take the risk. Touch the Relic]
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {relicStep === "discuss_tracker" && (
+                                      <>
+                                        <button
+                                          id="relic-btn-tracker-vice"
+                                          onClick={() => setRelicStep("discuss_vice")}
+                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
+                                        >
+                                          💬 "Vice, do we have any alternative escape gear?"
+                                        </button>
+                                        <button
+                                          id="relic-btn-tracker-touch"
+                                          onClick={() => setRelicStep("awakening")}
+                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
+                                        >
+                                          ⚡ [Grab the Relic] "Let's do this."
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {relicStep === "awakening" && (
+                                      <button
+                                        id="relic-btn-awakening-next"
+                                        onClick={() => setRelicStep("breach")}
+                                        className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                                      >
+                                        ⚡ [The Code Floods Your Mind] Hear the Static...
+                                      </button>
+                                    )}
+
+                                    {relicStep === "breach" && (
+                                      <button
+                                        id="relic-btn-breach-next"
+                                        onClick={() => setRelicStep("sacrifice")}
+                                        className="bg-red-600 hover:bg-red-500 hover:scale-105 border border-red-500 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]"
+                                      >
+                                        🔥 [Dive for Cover] "Vice, watch the doors!"
+                                      </button>
+                                    )}
+
+                                    {relicStep === "sacrifice" && (
+                                      <button
+                                        id="relic-btn-sacrifice-next"
+                                        onClick={() => setRelicStep("awakened_fury")}
+                                        className="bg-amber-600 hover:bg-amber-500 hover:scale-105 border border-amber-500 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.4)]"
+                                      >
+                                        🩸 [Catch Tracker as He Falls] "NO! Tracker!"
+                                      </button>
+                                    )}
+
+                                    {relicStep === "awakened_fury" && (
+                                      <button
+                                        id="relic-btn-fury-combat"
+                                        onClick={() => {
+                                          if (!gameState) return;
+                                          let nextState = { ...gameState };
+                                          
+                                          // Debuff player: reduce max HP by 25, set mana to highly unstable
+                                          nextState.maxHp = Math.max(50, nextState.maxHp - 25);
+                                          nextState.hp = Math.min(nextState.hp, nextState.maxHp);
+                                          
+                                          // Dual Class Unlock: Grant both the skills entry AND the unlocked flag
+                                          if (nextState.skills) {
+                                            nextState.skills.mindmancer = 1; // Unlock Mindmancer skills on sheets
                                           }
-                                        ]);
-                                        triggerToast("COMBAT START: AWAKENING AMBUSH");
-                                      }}
-                                      className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                                    >
-                                      ⚡ [Brace for Impact] Fight Ares Enforcers
-                                    </button>
+                                          nextState.mindmancerUnlocked = true; // Unlock Mindmancer dual-class powers in combat!
+                                          
+                                          // Spawn Ambush Encounter: Ares Corporate Enforcers
+                                          nextState.combatState = {
+                                            enemyName: "Ares Corporate Enforcers (Ambush)",
+                                            enemyHp: 160,
+                                            enemyMaxHp: 160,
+                                            enemyShields: 20,
+                                            enemyMaxShields: 20,
+                                            isActive: true,
+                                            turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
+                                          };
+                                          
+                                          setActiveDialogue(null);
+                                          setGameState(nextState);
+                                          
+                                          const finalLogs = [
+                                            ...logs,
+                                            {
+                                              id: crypto.randomUUID(),
+                                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                              text: `💥 NEURAL AWAKENING & AMBUSH: A surge of strange mental frequencies fuses with your cortex! Your temples burn, and you realize you can channel bizarre, cognitive attacks in combat.\n\nAres Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
+                                              type: "combat" as const,
+                                              district: nextState.district,
+                                              poi: nextState.poi
+                                            }
+                                          ];
+                                          setLogs(finalLogs);
+                                          triggerAutosave(nextState, finalLogs);
+                                          triggerToast("COMBAT START: AWAKENING AMBUSH");
+                                        }}
+                                        className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                                      >
+                                        🔮 [Wield the Relic's Mindmancy] Engage Ambushers
+                                      </button>
+                                    )}
                                   </div>
                                 </motion.div>
                               ) : activeDialogue === "post_combat_tracker" ? (
@@ -10073,76 +9255,90 @@ export default function App() {
                                       if (gameState) {
                                         const activeQ = gameState.activeQuests || [];
                                         const completedActions = gameState.completedPOIActions || [];
-                                        const inv = gameState.inventory || [];
-                                        const skills = gameState.skills || {};
+                                         const inv = gameState.inventory || [];
+                                         const skills = gameState.skills || {};
+                                         const isMindmancer = gameState.mindmancerUnlocked || (skills.mindmancer && skills.mindmancer >= 1);
 
-                                        // 1. Rescue Vice Main Quest at Corporate Plaza
-                                        if (activePOIView === "corporate_plaza" && activeQ.some(q => q.includes("Rescue Vice"))) {
-                                          if (completedActions.includes("corporate_plaza:security_bypassed")) {
-                                            if (completedActions.includes("corporate_plaza:detention_floor")) {
-                                              btns.push("💪 Force emergency cryo-release valve (STR Check)");
-                                              btns.push("💻 Override cryogenic suspension program (INT Check)");
-                                              btns.push("⚡ Short-circuit power grid coupling (Costs 30 Mana)");
-                                            } else {
-                                              btns.push("🔓 Breach Cryo-Detention Unit (Extract Vice)");
-                                            }
-                                          } else {
-                                            btns.push("⚔️ Assault Plaza Guards (Open Combat)");
-                                            btns.push("💾 Hack Security Mainframe (INT Check)");
-                                            if (inv.includes("Decrypted Ares Transit Token") || (skills.mindmancer && skills.mindmancer >= 1)) {
-                                              btns.push("🔑 Forge Clearance Credentials (Easy)");
-                                            }
-                                          }
-                                        }
+                                         // 1. Rescue Vice Main Quest at Corporate Plaza
+                                         if (activePOIView === "corporate_plaza" && activeQ.some(q => q.includes("Rescue Vice"))) {
+                                           if (completedActions.includes("corporate_plaza:security_bypassed")) {
+                                             if (completedActions.includes("corporate_plaza:detention_floor")) {
+                                               btns.push("💪 Force emergency cryo-release valve (STR Check)");
+                                               btns.push("💻 Override cryogenic suspension program (INT Check)");
+                                               btns.push("⚡ Short-circuit power grid coupling (Costs 30 Mana)");
+                                               if (isMindmancer) {
+                                                 btns.push("🔮 [Mindmancer Skill] Neural Shock the Valve Glands (Bypass STR Check)");
+                                               }
+                                             } else {
+                                               btns.push("🔓 Breach Cryo-Detention Unit (Extract Vice)");
+                                             }
+                                           } else {
+                                             btns.push("⚔️ Assault Plaza Guards (Open Combat)");
+                                             btns.push("💾 Hack Security Mainframe (INT Check)");
+                                             if (isMindmancer) {
+                                               btns.push("🔮 [Mind Control - Mindmancer Level 1] Mind Control Plaza Gate Sentinel");
+                                             }
+                                             if (inv.includes("Decrypted Ares Transit Token") || isMindmancer) {
+                                               btns.push("🔑 Forge Clearance Credentials (Easy)");
+                                             }
+                                           }
+                                         }
 
-                                        // 0. Non-linear MQ1 (The Hunt for Vice) options at freight_hub
-                                        if (activePOIView === "freight_hub" && activeQ.some(q => q.includes("Hunt for Vice"))) {
-                                          btns.push("🤝 Buy Decryption Cipher from Corrupt Clerk (-150¤)");
-                                          btns.push("💪 Intimidate Freight Supervisor (STR Check)");
-                                          btns.push("⚡ Pickpocket Patrol Officer (DEX Check)");
-                                        }
+                                         // 0. Non-linear MQ1 (The Hunt for Vice) options at freight_hub
+                                         if (activePOIView === "freight_hub" && activeQ.some(q => q.includes("Hunt for Vice"))) {
+                                           btns.push("🤝 Buy Decryption Cipher from Corrupt Clerk (-150¤)");
+                                           btns.push("💪 Intimidate Freight Supervisor (STR Check)");
+                                           btns.push("⚡ Pickpocket Patrol Officer (DEX Check)");
+                                           if (isMindmancer) {
+                                             btns.push("🔮 [Mind Control - Mindmancer Level 1] Command Supervisor to Upload Token Data");
+                                             btns.push("🧠 [Memory Wipe - Mindmancer Level 2] Wipe Patrol Officer's Brain Record");
+                                           }
+                                         }
 
-                                        // 2. Drone Schematic Side Quest at Shatter Ridge & Bar
-                                        if (activePOIView === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
-                                          if (!inv.includes("Experimental Drone Chip")) {
-                                            btns.push("Hunt Rust-Claw Orcs for Drone Chip (Side Quest)");
-                                          } else {
-                                            btns.push("Install Chip in Base Security Grid");
-                                          }
-                                        }
-                                        if (activePOIView === "bar" && activeQ.some(q => q.includes("Drone Schematic")) && inv.includes("Experimental Drone Chip")) {
-                                          btns.push("Deliver Drone Chip to Jax");
-                                        }
+                                         // 2. Drone Schematic Side Quest at Shatter Ridge & Bar
+                                         if (activePOIView === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
+                                           if (!inv.includes("Experimental Drone Chip")) {
+                                             btns.push("Hunt Rust-Claw Orcs for Drone Chip (Side Quest)");
+                                           } else {
+                                             btns.push("Install Chip in Base Security Grid");
+                                           }
+                                         }
+                                         if (activePOIView === "bar" && activeQ.some(q => q.includes("Drone Schematic")) && inv.includes("Experimental Drone Chip")) {
+                                           btns.push("Deliver Drone Chip to Jax");
+                                         }
 
-                                        // 3. Chem-Weaver's Request Side Quest at Sludge Conduits & Temple
-                                        if (activePOIView === "sludge_conduits" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-                                          const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-                                          if (slimesCount < 3) {
-                                            btns.push("Harvest Glowing Slime pool (Side Quest)");
-                                          }
-                                        }
-                                        if (activePOIView === "temple" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-                                          const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-                                          if (slimesCount >= 3) {
-                                            btns.push("Deliver 3x Slimes to Priestess Morgana");
-                                          }
-                                        }
+                                         // 3. Chem-Weaver's Request Side Quest at Sludge Conduits & Temple
+                                         if (activePOIView === "sludge_conduits" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
+                                           const slimesCount = inv.filter(i => i === "Glowing Slime").length;
+                                           if (slimesCount < 3) {
+                                             btns.push("Harvest Glowing Slime pool (Side Quest)");
+                                           }
+                                         }
+                                         if (activePOIView === "temple" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
+                                           const slimesCount = inv.filter(i => i === "Glowing Slime").length;
+                                           if (slimesCount >= 3) {
+                                             btns.push("Deliver 3x Slimes to Priestess Morgana");
+                                           }
+                                         }
 
-                                        // 8. Vice's Retribution (Legendary Companion Quest)
-                                        const hasLedger = inv.includes("Encrypted Ares Ledger");
-                                        const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
-                                        if (isViceQuestActive) {
-                                          if (activePOIView === "shatter_ridge") {
-                                            if (!hasLedger) {
-                                              btns.push("💻 Hack Ares Secure Server Farm (INT Check)");
-                                            } else {
-                                              btns.push("🔒 Encrypted Ares Ledger already secured");
-                                            }
-                                          }
-                                          if (activePOIView === "hideout" && hasLedger) {
-                                            btns.push("🤝 Deliver Encrypted Ledger directly to Vice");
-                                          }
-                                        }
+                                         // 8. Vice's Retribution (Legendary Companion Quest)
+                                         const hasLedger = inv.includes("Encrypted Ares Ledger");
+                                         const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
+                                         if (isViceQuestActive) {
+                                           if (activePOIView === "shatter_ridge") {
+                                             if (!hasLedger) {
+                                               btns.push("💻 Hack Ares Secure Server Farm (INT Check)");
+                                               if (isMindmancer) {
+                                                 btns.push("🔮 [Mindmancer Skill] Psychic Tunnel through Security Firewall");
+                                               }
+                                             } else {
+                                               btns.push("🔒 Encrypted Ares Ledger already secured");
+                                             }
+                                           }
+                                           if (activePOIView === "hideout" && hasLedger) {
+                                             btns.push("🤝 Deliver Encrypted Ledger directly to Vice");
+                                           }
+                                         }
                                       }
                                       
                                       if (gameState && gameState.stamina <= 35) {
@@ -10229,12 +9425,12 @@ export default function App() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      className="glass-panel-heavy border-red-500/40 rounded-2xl p-3 md:p-4 shadow-2xl flex flex-col gap-3 md:gap-4 box-glow-pink overflow-hidden"
+                      className="glass-panel-heavy border-red-500/40 rounded-2xl p-2 md:p-2.5 shadow-2xl flex flex-col gap-2 box-glow-pink h-[96vh] max-h-[96vh] overflow-hidden justify-between"
                     >
                       {/* Header */}
-                      <div className="flex justify-between items-center border-b border-rose-500/20 pb-1.5 gap-2">
+                      <div className="flex justify-between items-center border-b border-rose-500/20 pb-1 gap-2 shrink-0">
                         <div className="flex items-center gap-1.5">
-                          <Sword size={15} className="text-rose-500 animate-pulse" />
+                          <Sword size={14} className="text-rose-500 animate-pulse" />
                           <h2 className="font-display font-black text-xs md:text-sm text-rose-400 uppercase tracking-wider leading-none">
                             Combat Grid
                           </h2>
@@ -10247,15 +9443,15 @@ export default function App() {
                       </div>
 
                       {/* Initiative Queue Timeline */}
-                      <div className="bg-slate-950/80 border border-rose-500/10 p-2 rounded-xl flex items-center gap-3">
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div className="bg-slate-950/80 border border-rose-500/10 p-1 rounded-xl flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <span className="relative flex h-2 w-2">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
                           </span>
-                          <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-black">TURN ORDER:</span>
+                          <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-widest font-black">TURN ORDER:</span>
                         </div>
-                        <div className="flex items-center gap-2 overflow-x-auto py-1 py-0.5 scrollbar-none flex-1">
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none flex-1">
                           {gridCombat.turnOrder.map((id, index) => {
                             const unit = gridCombat.combatants.find(c => c.id === id);
                             if (!unit || unit.isDead) return null;
@@ -10268,9 +9464,9 @@ export default function App() {
                             
                             return (
                               <React.Fragment key={id}>
-                                {index > 0 && <span className="text-slate-700 font-mono text-xs select-none">→</span>}
+                                {index > 0 && <span className="text-slate-700 font-mono text-[10px] select-none">→</span>}
                                 <div
-                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono transition-all duration-300 flex-shrink-0 ${
+                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9px] font-mono transition-all duration-300 flex-shrink-0 ${
                                     isActive
                                       ? "bg-cyan-950/90 border-cyan-400 text-cyan-200 ring-2 ring-cyan-500/30 animate-pulse scale-105 font-black shadow-[0_0_12px_rgba(6,182,212,0.3)]"
                                       : unit.team === "player"
@@ -10278,7 +9474,7 @@ export default function App() {
                                         : "bg-red-950/40 border-red-950/80 text-rose-300 hover:border-red-900/40"
                                   }`}
                                 >
-                                  <span className="text-xs select-none">{unit.avatar}</span>
+                                  <span className="text-[10px] select-none">{unit.avatar}</span>
                                   <div className="flex flex-col leading-none">
                                     <span className="font-bold truncate max-w-[65px] uppercase tracking-wide">{unit.name.split(" ")[0]}</span>
                                     <span className={`text-[6px] font-extrabold ${isActive ? "text-cyan-400 animate-pulse" : "text-slate-500"}`}>[{roleLabel}]</span>
@@ -10290,17 +9486,17 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Responsive Split Container for Grid on Left, Controls on Right */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start w-full">
+                      {/* Responsive Split Container for Grid on Left, Controls & Info on Right */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-stretch w-full flex-1 min-h-0 overflow-hidden">
                         
-                        {/* LEFT COLUMN: Map & Log */}
-                        <div className="lg:col-span-8 flex flex-col gap-3 w-full">
+                        {/* LEFT COLUMN: Map Only */}
+                        <div className="lg:col-span-8 flex flex-col gap-1 w-full h-full min-h-0 justify-between">
                           
                           {/* Tactical Grid Map & Action Status Bar */}
-                          <div className="w-full flex flex-col gap-2">
-                        <div className="flex flex-wrap justify-between items-center gap-2 text-[10px] font-mono text-slate-400 px-1 border-b border-white/5 pb-1">
+                          <div className="w-full flex flex-col gap-1 h-full min-h-0 items-center justify-center">
+                        <div className="flex flex-wrap justify-between items-center gap-2 text-[9px] font-mono text-slate-400 px-1 border-b border-white/5 pb-0.5 shrink-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-cyan-400 uppercase font-black tracking-wider flex items-center gap-1 animate-pulse">
+                            <span className="text-[9px] text-cyan-400 uppercase font-black tracking-wider flex items-center gap-1 animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                               Acting: {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.name.split(" ")[0].toUpperCase()}
                             </span>
@@ -10319,12 +9515,12 @@ export default function App() {
                               ))}
                             </div>
                           </div>
-                          <span className="text-[9px] text-slate-500 uppercase tracking-wider">TAP CELLS TO MOVE/ATTACK • ARRAY [8x6]</span>
+                          <span className="text-[8px] text-slate-500 uppercase tracking-wider">TAP CELLS TO MOVE/ATTACK • ARRAY [8x6]</span>
                         </div>
 
                         {/* Render the Grid */}
                         <div 
-                          className="grid grid-cols-8 gap-1 p-1 sm:p-1.5 border border-slate-800/80 rounded-xl relative overflow-hidden box-glow-cyan select-none aspect-[4/3] w-full"
+                          className="grid grid-cols-8 grid-rows-6 gap-1 p-1 border border-slate-800/80 rounded-xl relative box-glow-cyan select-none aspect-[8/6] max-h-[calc(96vh-115px)] max-w-full w-auto mx-auto flex-1 min-h-0 overflow-hidden"
                           style={{
                             backgroundImage: "url('https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800')",
                             backgroundSize: "cover",
@@ -10999,7 +10195,7 @@ export default function App() {
                                       triggerToast("STRIKE REGISTERED");
                                     }
                                   }}
-                                  className={`relative z-10 rounded border aspect-square flex items-center justify-center transition-all ${
+                                  className={`relative z-10 rounded border w-full h-full flex items-center justify-center transition-all ${
                                     isObstacle 
                                       ? "bg-stripes-warning border-slate-900 bg-slate-900/40 text-slate-600"
                                       : reachable
@@ -11067,7 +10263,11 @@ export default function App() {
                                           <img
                                             src={unit.image}
                                             alt={unit.name}
-                                            className={`w-full h-full object-cover object-top filter contrast-[1.05] brightness-[1.02] ${
+                                            className={`w-full h-full filter contrast-[1.05] brightness-[1.02] ${
+                                              unit.image.includes("body")
+                                                ? "object-contain object-bottom p-0.5 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                                                : "object-cover object-top"
+                                            } ${
                                               (unit.glitchTurns !== undefined && unit.glitchTurns > 0) || (unit.statuses?.includes("Glitched")) ? "animate-glitch opacity-85" : ""
                                             }`}
                                             referrerPolicy="no-referrer"
@@ -11158,63 +10358,21 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Hovered Entity Detailed Scanner Panel */}
-                      {hoveredEntity ? (
-                        <div className="bg-slate-950/95 border border-cyan-500/30 p-2.5 rounded-xl text-xs flex items-center gap-3 shadow-[0_0_10px_rgba(6,182,212,0.15)] animate-fadeIn shrink-0">
-                          <span className="text-xl shrink-0 p-1 bg-slate-900 border border-white/10 rounded-md select-none">{hoveredEntity.avatar}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-center">
-                              <span className="font-mono font-black text-cyan-400 uppercase tracking-wide flex items-center gap-1.5">
-                                {hoveredEntity.name}
-                                {hoveredEntity.type === "object" && (
-                                  <span className={`text-[8px] px-1 py-0.5 rounded leading-none ${hoveredEntity.isHacked ? "bg-slate-900 text-slate-500 border border-white/5" : "bg-cyan-950/50 text-cyan-400 border border-cyan-500/30 font-black"}`}>
-                                    {hoveredEntity.isHacked ? "HACKED" : "INTERACTIVE"}
-                                  </span>
-                                )}
-                              </span>
-                              {hoveredEntity.hp && (
-                                <span className="font-mono font-bold text-[10px] text-rose-300 shrink-0">
-                                  INTEGRITY: {hoveredEntity.hp} HP
-                                  {hoveredEntity.shields > 0 && ` | SHIELD: +${hoveredEntity.shields}`}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-slate-400 font-sans mt-0.5 leading-relaxed">{hoveredEntity.desc}</p>
-                            {hoveredEntity.statuses && hoveredEntity.statuses.length > 0 && (
-                              <div className="flex items-center gap-1 mt-1 flex-wrap">
-                                <span className="text-[8px] font-mono font-black text-slate-500">STATUSES:</span>
-                                {hoveredEntity.statuses.map((st: string) => (
-                                  <span key={st} className="text-[8px] font-mono font-black bg-amber-950/50 text-amber-400 border border-amber-500/30 px-1 py-0.5 rounded leading-none uppercase animate-pulse">{st}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-slate-950/40 border border-white/[0.02] p-2 rounded-xl text-center text-[10px] text-slate-500 font-mono tracking-wide shrink-0">
-                          🔍 HOVER OVER ANY UNIT, BATTERY, COVER, OR MAINBOARD TO SCAN FIELDS
-                        </div>
-                      )}
-
-                      {/* Combat Status Feed Log */}
-                      <div className="bg-slate-950/95 border border-rose-500/30 p-2 rounded-xl text-amber-200 font-mono text-2xs md:text-xs text-center font-semibold tracking-wide shadow-[0_0_8px_rgba(239,68,68,0.08)] leading-normal animate-pulse">
-                        <span className="text-rose-500 font-black mr-1.5">SYS LOG:</span>
-                        {gridCombat.turnLog}
-                      </div>
-
                     </div>
 
-                    {/* RIGHT COLUMN: Controls Panel */}
-                    <div className="lg:col-span-4 flex flex-col gap-3 w-full bg-slate-950/60 border border-white/5 p-3 rounded-xl shadow-xl">
-                      <div className="border-b border-white/10 pb-1.5 flex justify-between items-center">
-                        <span className="text-3xs font-mono font-black text-slate-400 uppercase tracking-widest">TACTICAL INTERFACE</span>
-                        <span className="text-[8px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono font-black animate-pulse">READY</span>
-                      </div>
+                    {/* RIGHT COLUMN: Controls Panel + Scanner + Log */}
+                    <div className="lg:col-span-4 flex flex-col justify-between gap-1.5 w-full h-full min-h-0 overflow-y-auto pr-0.5">
+                      {/* Controls Box */}
+                      <div className="bg-slate-950/60 border border-white/5 p-2 rounded-xl shadow-xl flex flex-col gap-1.5 shrink-0">
+                        <div className="border-b border-white/10 pb-1 flex justify-between items-center">
+                          <span className="text-3xs font-mono font-black text-slate-400 uppercase tracking-widest">TACTICAL INTERFACE</span>
+                          <span className="text-[8px] bg-cyan-950 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30 font-mono font-black animate-pulse">READY</span>
+                        </div>
 
                       {/* Controls Area */}
-                      <div className="w-full flex flex-col gap-2">
+                      <div className="w-full flex flex-col gap-1.5">
                         {selectedSkill && (
-                          <div className="bg-purple-950/50 border border-purple-500/40 p-2 rounded-lg flex justify-between items-center text-3xs font-mono animate-pulse shrink-0">
+                          <div className="bg-purple-950/50 border border-purple-500/40 p-1.5 rounded-lg flex justify-between items-center text-3xs font-mono animate-pulse shrink-0">
                             <div className="flex items-center gap-1.5 text-purple-300">
                               <span>{selectedSkill.icon}</span>
                               <span className="font-extrabold uppercase">{selectedSkill.name.split(" (")[0]}</span>
@@ -11230,12 +10388,12 @@ export default function App() {
                         )}
                         {/* Player / Companion Turn Controls */}
                         {gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx])?.team === "player" ? (
-                          <div className="flex flex-col gap-3 w-full animate-fadeIn">
+                          <div className="flex flex-col gap-1.5 w-full animate-fadeIn">
                             {/* Tab Switching Headers */}
-                            <div className="flex border-b border-white/10 pb-2 gap-1 overflow-x-auto scrollbar-none">
+                            <div className="flex border-b border-white/10 pb-1 gap-1 overflow-x-auto scrollbar-none">
                               <button
                                 onClick={() => setCombatActionTab("attacks")}
-                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
                                   combatActionTab === "attacks"
                                     ? "bg-red-500/15 text-red-400 border border-red-500/30"
                                     : "text-slate-400 hover:text-white"
@@ -11245,7 +10403,7 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => setCombatActionTab("skills")}
-                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
                                   combatActionTab === "skills"
                                     ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
                                     : "text-slate-400 hover:text-white"
@@ -11255,7 +10413,7 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => setCombatActionTab("support")}
-                                className={`px-2.5 py-1 rounded-lg font-mono text-3xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                                className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
                                   combatActionTab === "support"
                                     ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
                                     : "text-slate-400 hover:text-white"
@@ -11266,9 +10424,9 @@ export default function App() {
                             </div>
 
                             {/* Tab Contents + Persistent End Turn Button */}
-                            <div className="flex flex-col gap-3 bg-slate-950/40 p-2.5 rounded-xl border border-white/5">
+                            <div className="flex flex-col gap-2 bg-slate-950/40 p-2 rounded-lg border border-white/5">
                               {/* Current Active Tab Content Action Buttons */}
-                              <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 w-full">
+                              <div className="grid grid-cols-2 lg:grid-cols-1 gap-1.5 w-full">
                                 {combatActionTab === "support" && (
                                   <button
                                     onClick={() => {
@@ -11276,7 +10434,7 @@ export default function App() {
                                     }}
                                     onMouseEnter={() => setHoveredAction("move")}
                                     onMouseLeave={() => setHoveredAction(null)}
-                                    className={`flex-1 sm:flex-initial font-mono font-black text-3xs px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                                    className={`flex-1 font-mono font-black text-[10px] px-2 py-1 rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
                                       gridCombat.selectedAction === "move"
                                         ? "bg-cyan-500 text-slate-950 border-cyan-400 font-extrabold shadow-[0_0_10px_rgba(34,211,238,0.3)]"
                                         : "bg-slate-900 border-white/5 text-cyan-400 hover:bg-slate-800"
@@ -11288,13 +10446,13 @@ export default function App() {
                                 {combatActionTab === "skills" && (
                                   <div className="col-span-2 flex flex-col gap-2 w-full">
                                     <div className="flex justify-between items-center text-[10px] font-mono border-b border-white/5 pb-1 text-slate-400">
-                                      <span className="uppercase tracking-wider font-extrabold text-purple-400">⚡ CLASS: {gameState?.archetype || "CYBER-BLADE"}</span>
+                                      <span className="uppercase tracking-wider font-extrabold text-purple-400">⚡ CLASS: {gameState?.archetype || "CYBER-BLADE"}{gameState?.mindmancerUnlocked ? " + MINDMANCER" : ""}</span>
                                       <span className="bg-slate-900 border border-white/5 px-2 py-0.5 rounded text-slate-300 font-extrabold">LEVEL: {gameState?.level || 1}</span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
                                       {(() => {
                                         const playerArchetype = gameState?.archetype || "Cyber-Blade";
-                                        const archetypeSkillNames = {
+                                        let archetypeSkillNames = {
                                           "Cyber-Blade": [
                                             "Viper Strike (Tier 1)",
                                             "Adrenaline Surge (Tier 2)",
@@ -11329,9 +10487,25 @@ export default function App() {
                                           ]
                                         }[playerArchetype] || [];
 
+                                        const mindmancerSpells = [
+                                          "Mind Hack (Tier 1)",
+                                          "Neural Overload (Tier 2)",
+                                          "Synaptic Cascade (Tier 3)",
+                                          "Ether Shroud (Tier 4)",
+                                          "Hallucinatory Echo (Tier 5)",
+                                          "Cerebro-Collapse (Tier 6)"
+                                        ];
+
+                                        if ((gameState?.mindmancerUnlocked || (gameState?.skills?.mindmancer && gameState.skills.mindmancer > 0)) && playerArchetype !== "Mindmancer") {
+                                          archetypeSkillNames = [...archetypeSkillNames, ...mindmancerSpells];
+                                        }
+
                                         return archetypeSkillNames.map((skillName, idx) => {
-                                          const skillReqLevel = idx + 1;
+                                          const match = skillName.match(/\(Tier (\d+)\)/);
+                                          const skillReqLevel = match ? parseInt(match[1], 10) : (idx + 1);
                                           const isUnlocked = (gameState?.level || 1) >= skillReqLevel;
+                                          if (!isUnlocked) return null; // Hide locked skills in the combat panel
+
                                           const skillDetail = COMBAT_SKILL_DETAILS[skillName];
                                           const isSelected = selectedSkill?.name === skillName;
 
@@ -11340,7 +10514,6 @@ export default function App() {
                                           return (
                                             <button
                                               key={skillName}
-                                              disabled={!isUnlocked}
                                               onClick={() => {
                                                 const activeActor = gridCombat.combatants.find(c => c.id === gridCombat.turnOrder[gridCombat.currentTurnIdx]);
                                                 if (!activeActor || activeActor.ap < 1) {
@@ -11363,38 +10536,26 @@ export default function App() {
                                                 setGridCombat(prev => prev ? { ...prev, selectedAction: "spell" } : null);
                                                 triggerToast("SKILL ARMED: CLICK TARGET CELLS ON THE MAP GRID!");
                                               }}
-                                              className={`p-2 rounded-lg border text-left flex flex-col justify-between transition-all font-mono leading-normal select-none relative overflow-hidden group ${
-                                                isUnlocked
-                                                  ? isSelected
-                                                    ? "bg-purple-950 text-purple-200 border-purple-400 ring-2 ring-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)] animate-pulse"
-                                                    : "bg-slate-900/60 border-white/5 text-slate-300 hover:border-purple-500/50 hover:bg-slate-800 hover:text-white cursor-pointer"
-                                                  : "bg-slate-950/80 border-white/[0.02] text-slate-600 opacity-60 cursor-not-allowed"
+                                              className={`p-1.5 sm:p-2 rounded-lg border text-left flex flex-col justify-between transition-all font-mono leading-tight select-none relative overflow-hidden group ${
+                                                isSelected
+                                                  ? "bg-purple-950 text-purple-200 border-purple-400 ring-2 ring-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)] animate-pulse"
+                                                  : "bg-slate-900/60 border-white/5 text-slate-300 hover:border-purple-500/50 hover:bg-slate-800 hover:text-white cursor-pointer"
                                               }`}
                                             >
                                               {/* Skill title & icon */}
-                                              <div className="flex justify-between items-start gap-1 w-full">
-                                                <span className={`text-2xs font-extrabold uppercase tracking-wide flex items-center gap-1 ${isUnlocked ? (isSelected ? "text-purple-300" : "text-slate-200 group-hover:text-purple-400") : "text-slate-500"}`}>
+                                              <div className="flex justify-between items-start gap-1 w-full flex-wrap sm:flex-nowrap">
+                                                <span className={`text-2xs font-extrabold uppercase tracking-wide flex items-center gap-1 flex-wrap ${isSelected ? "text-purple-300" : "text-slate-200 group-hover:text-purple-400"}`}>
                                                   <span>{skillDetail.icon}</span> {skillDetail.name.split(" (")[0]}
                                                 </span>
-                                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded leading-none shrink-0 border ${
-                                                  isUnlocked
-                                                    ? "bg-slate-950 border-white/5 text-purple-400"
-                                                    : "bg-slate-950/20 border-white/[0.02] text-slate-600"
-                                                }`}>
-                                                  {isUnlocked ? `${skillDetail.cost} ${skillDetail.costType}` : `LVL ${skillReqLevel}`}
+                                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded leading-none shrink-0 border bg-slate-950 border-white/5 text-purple-400">
+                                                  {skillDetail.cost} {skillDetail.costType}
                                                 </span>
                                               </div>
 
                                               {/* Skill description */}
-                                              <p className={`text-[9px] mt-1.5 font-sans leading-relaxed ${isUnlocked ? "text-slate-400 group-hover:text-slate-300" : "text-slate-600"}`}>
-                                                {isUnlocked ? skillDetail.desc : `Unlock this high-tier action block by raising your character level to ${skillReqLevel}.`}
+                                              <p className="text-3xs mt-1 font-sans leading-normal text-slate-400 group-hover:text-slate-300">
+                                                {skillDetail.desc}
                                               </p>
-
-                                              {!isUnlocked && (
-                                                <div className="absolute right-1 bottom-1 text-[8px] text-rose-500/80 font-black tracking-widest bg-rose-950/30 border border-rose-900/40 px-1 py-0.5 rounded uppercase leading-none">
-                                                  LOCKED
-                                                </div>
-                                              )}
                                             </button>
                                           );
                                         });
@@ -12107,7 +11268,7 @@ export default function App() {
                               triggerToast("FLEE FAILED");
                             }
                           }}
-                          className="w-full bg-slate-900 border border-white/10 hover:bg-slate-850 text-slate-300 font-mono font-black text-xs py-2 rounded-lg transition-all cursor-pointer uppercase tracking-wider text-center flex items-center justify-center gap-1 mt-3"
+                          className="w-full bg-slate-900 border border-white/10 hover:bg-slate-850 text-slate-300 font-mono font-black text-3xs py-1.5 rounded-lg transition-all cursor-pointer uppercase tracking-wider text-center flex items-center justify-center gap-1 mt-1.5"
                         >
                           🏃 Attempt Flee
                         </button>
@@ -12115,7 +11276,51 @@ export default function App() {
 
                     </div>
 
+                    {/* Hovered Entity Detailed Scanner Panel */}
+                    {hoveredEntity ? (
+                      <div className="bg-slate-950/95 border border-cyan-500/30 p-2 rounded-xl text-xs flex items-center gap-2.5 shadow-[0_0_10px_rgba(6,182,212,0.15)] animate-fadeIn shrink-0">
+                        <span className="text-lg shrink-0 p-1 bg-slate-900 border border-white/10 rounded-md select-none">{hoveredEntity.avatar}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center">
+                            <span className="font-mono font-black text-cyan-400 uppercase tracking-wide flex items-center gap-1 text-[10px]">
+                              {hoveredEntity.name}
+                              {hoveredEntity.type === "object" && (
+                                <span className={`text-[7px] px-1 py-0.5 rounded leading-none ${hoveredEntity.isHacked ? "bg-slate-900 text-slate-500 border border-white/5" : "bg-cyan-950/50 text-cyan-400 border border-cyan-500/30 font-black"}`}>
+                                  {hoveredEntity.isHacked ? "HACKED" : "INTERACTIVE"}
+                                </span>
+                              )}
+                            </span>
+                            {hoveredEntity.hp && (
+                              <span className="font-mono font-bold text-[9px] text-rose-300 shrink-0">
+                                {hoveredEntity.hp} HP {hoveredEntity.shields > 0 && `(+${hoveredEntity.shields} SH)`}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[9px] text-slate-400 font-sans mt-0.5 leading-tight line-clamp-2">{hoveredEntity.desc}</p>
+                          {hoveredEntity.statuses && hoveredEntity.statuses.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              <span className="text-[7px] font-mono font-black text-slate-500">STATUSES:</span>
+                              {hoveredEntity.statuses.map((st: string) => (
+                                <span key={st} className="text-[7px] font-mono font-black bg-amber-950/50 text-amber-400 border border-amber-500/30 px-1 py-0.5 rounded leading-none uppercase animate-pulse">{st}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-950/40 border border-white/[0.02] p-1.5 rounded-xl text-center text-[9px] text-slate-500 font-mono tracking-wide shrink-0">
+                        🔍 HOVER OVER ANY UNIT, COVER, OR MAINBOARD
+                      </div>
+                    )}
+
+                    {/* Combat Status Feed Log */}
+                    <div className="bg-slate-950/95 border border-rose-500/30 p-1.5 rounded-xl text-amber-200 font-mono text-[9px] text-center font-semibold tracking-wide shadow-[0_0_8px_rgba(239,68,68,0.08)] leading-snug animate-pulse shrink-0">
+                      <span className="text-rose-500 font-black mr-1">SYS LOG:</span>
+                      {gridCombat.turnLog}
+                    </div>
+
                   </div>
+                </div>
 
                       {/* Tactical overlays: Defeat / Victory Check screens */}
                       {/* Player dead overlay */}
@@ -12237,19 +11442,21 @@ export default function App() {
                               }
 
                               nextState.combatState = null;
-                              setGameState(nextState);
-                              setGridCombat(null);
-                              setLogs(prev => [
-                                ...prev,
+                              const updatedLogs = [
+                                ...logs,
                                 {
                                   id: crypto.randomUUID(),
-                                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                  timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                                   text: narrative,
-                                  type: "system",
+                                  type: "system" as const,
                                   district: nextState.district,
                                   poi: nextState.poi
                                 }
-                              ]);
+                              ];
+                              setGameState(nextState);
+                              setGridCombat(null);
+                              setLogs(updatedLogs);
+                              triggerAutosave(nextState, updatedLogs);
                               triggerToast("BATTLE CLEAR: VICTORY!");
                             }}
                             className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3 rounded-lg text-xs uppercase cursor-pointer transition-all shadow-[0_0_15px_rgba(16,185,129,0.5)]"
@@ -12262,495 +11469,472 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
-                {/* THE HISTORIC RPG NARRATIVE CORE TERMINAL (LOGS CONSOLE) */}
-                {/* DE-CLUTTERED COLLAPSIBLE CYBERDECK TRANSMISSION FEED */}
+                {/* BOTTOM STATUS & DECK CONTROLS (MOVED BELOW MAP/SCANNER) */}
                 {!gameState.combatState?.isActive && (
-                  <div className="glass-panel rounded-2xl p-4 md:p-5 shadow-2xl flex flex-col gap-3">
-                    <div className="flex justify-between items-center border-b border-white/10 pb-2">
-                      <span className="font-mono text-[10.5px] uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                        <Terminal size={14} className="text-cyan-400 animate-pulse" />
-                        Cyberdeck Console Transmission Feed
-                      </span>
-                      <button
-                        onClick={() => setExpandLogs(!expandLogs)}
-                        className="text-[9.5px] font-mono text-cyan-400 hover:text-cyan-300 border border-cyan-500/20 px-2 py-1 rounded bg-slate-950/40 cursor-pointer transition-all hover:bg-slate-900 font-black uppercase"
-                      >
-                        {expandLogs ? "[-] COLLAPSE BACKLOG" : "[+] EXPAND HISTORY"}
-                      </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-1 text-left">
+                    {/* ATMOSPHERE CARD */}
+                    <div className="bg-slate-950/60 border border-white/10 p-3 rounded-xl flex items-center gap-2.5">
+                      <div className="p-1.5 bg-gradient-to-br from-amber-950/50 to-slate-900 border border-amber-500/30 text-amber-400 rounded-md flex-shrink-0">
+                        <CloudLightning size={14} />
+                      </div>
+                      <div className="overflow-hidden font-mono">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ATMOSPHERE</span>
+                        <p className="text-[11px] font-bold text-white uppercase truncate mt-1 leading-none">
+                          {gameState.weather === "clear" && "Clear Skies ☀️"}
+                          {gameState.weather === "rain" && "Acid Rain 🌧️"}
+                          {gameState.weather === "snow" && "Neon Frost ❄️"}
+                          {gameState.weather === "storm" && "Electro Storm ⚡"}
+                          {gameState.weather === "heat" && "Thermal wave 🥵"}
+                          {gameState.weather === "smog" && "Toxic Smog 😷"}
+                          {(!gameState.weather || gameState.weather === "clear") && "Optimal skies ☀️"}
+                        </p>
+                        <span className="text-[7px] text-amber-500 block uppercase truncate font-semibold mt-1 leading-none">
+                          {gameState.weather === "clear" && "Normal Stamina Rate"}
+                          {gameState.weather === "rain" && "+2 Stamina Drain"}
+                          {gameState.weather === "snow" && "+3 Stamina / -2 Ether"}
+                          {gameState.weather === "storm" && "+5 Stamina / Static"}
+                          {gameState.weather === "heat" && "+5 Stamina / Damage"}
+                          {gameState.weather === "smog" && "+4 Stamina / HP Drain"}
+                          {(!gameState.weather || gameState.weather === "clear") && "Optimal Skies"}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Narrative Scroll panel block with Immersive CRT Screen overlay */}
-                    <div className="relative overflow-hidden rounded-xl border border-white/10 group shadow-[inset_0_0_15px_rgba(34,211,238,0.1)]">
-                      {/* Static monitor phosphor grid lines */}
-                      <div className="crt-screen-overlay pointer-events-none rounded-xl" />
-                      {/* Moving cathode ray scanner beam */}
-                      <div className="crt-scanline animate-scanline pointer-events-none rounded-xl" />
-                      {/* Dark frame vignette shading */}
-                      <div className="crt-vignette pointer-events-none rounded-xl" />
-                      {/* Warm screen green/cyan subtle ambient glow */}
-                      <div className="crt-flicker absolute inset-0 pointer-events-none z-[4] bg-cyan-400/[0.015] mix-blend-screen" />
-
-                      <div 
-                        className={`bg-slate-950/75 p-3 overflow-y-auto font-mono text-[11px] leading-relaxed space-y-3.5 relative transition-all duration-300 ${
-                          expandLogs ? "h-[260px]" : "h-[90px]"
-                        }`}
-                      >
-                        {(expandLogs ? logs : logs.slice(-2)).map((log) => (
-                          <div key={log.id} className="text-left transition-all">
-                            <div className="flex items-center gap-2 text-[9px] text-slate-500 tracking-wider mb-0.5 leading-none font-bold">
-                              <span>[{log.timestamp}]</span>
-                              {log.poi && <span className="text-cyan-500/75 uppercase">@{log.poi.replace("Main Headquarters ", "")}</span>}
-                              
-                              {log.type === "action" && <span className="bg-cyan-950 text-cyan-400 border border-cyan-500/10 px-1 py-0.2 rounded text-[8px] uppercase">OPERATIVE</span>}
-                              {log.type === "combat" && <span className="bg-rose-950 text-rose-400 border border-rose-500/10 px-1 py-0.2 rounded text-[8px] uppercase">TACTICAL</span>}
-                              {log.type === "system" && <span className="bg-slate-900 text-slate-300 border border-white/10 px-1 py-0.2 rounded text-[8px] uppercase">SYSTEM</span>}
-                            </div>
-                            <p
-                              className={`whitespace-pre-line text-xs tracking-wide leading-relaxed pl-1 pl-1 ${
-                                log.type === "action"
-                                  ? "text-cyan-300 font-bold"
-                                  : log.type === "combat"
-                                    ? "text-rose-400"
-                                    : log.type === "system"
-                                      ? "text-amber-200"
-                                      : "text-slate-300 font-sans leading-relaxed text-2xs"
-                              }`}
-                            >
-                              {log.text}
-                            </p>
-                          </div>
-                        ))}
-                        <div ref={logsEndRef} />
+                    {/* HP CARD */}
+                    <div className={`bg-slate-950/60 border p-3 rounded-xl flex flex-col justify-between transition-all duration-300 ${
+                      gameState.hp < derived.maxHp * 0.35
+                        ? "border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse"
+                        : "border-white/10"
+                    }`}>
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                        <span className="font-bold text-rose-400 flex items-center gap-1 uppercase text-[9px]">
+                          <Heart size={10} className={`text-rose-500 ${gameState.hp < derived.maxHp * 0.35 ? "animate-bounce" : ""}`} /> HP
+                        </span>
+                        <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.hp} / {derived.maxHp}</span>
                       </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                        <motion.div
+                          className="bg-rose-500 h-full rounded-full shadow-[0_0_8px_rgba(239,68,68,0.7)]"
+                          animate={{ width: `${Math.max(0, Math.min(100, (gameState.hp / derived.maxHp) * 100))}%` }}
+                          transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                        />
+                      </div>
+                      <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
+                        {gameState.hp < derived.maxHp * 0.35 ? (
+                          <span className="text-rose-400 font-extrabold tracking-widest animate-pulse">⚠️ CRITICAL</span>
+                        ) : (
+                          <span className="text-slate-500">CORES: OPTIMAL</span>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* ETH CARD */}
+                    <div className={`bg-slate-950/60 border p-3 rounded-xl flex flex-col justify-between transition-all duration-300 ${
+                      gameState.mana === derived.maxMana
+                        ? "border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.2)]"
+                        : "border-white/10"
+                    }`}>
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                        <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase text-[9px]">
+                          <Zap size={10} className={`text-cyan-400 ${gameState.mana === derived.maxMana ? "animate-pulse" : ""}`} /> ETH
+                        </span>
+                        <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.mana} / {derived.maxMana}</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                        <motion.div
+                          className="bg-cyan-500 h-full rounded-full shadow-[0_0_8px_rgba(6,182,212,0.7)]"
+                          animate={{ width: `${Math.max(0, Math.min(100, (gameState.mana / derived.maxMana) * 100))}%` }}
+                          transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                        />
+                      </div>
+                      <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
+                        {gameState.mana === derived.maxMana ? (
+                          <span className="text-cyan-400 font-extrabold tracking-widest animate-pulse">⚡ MAX ETHER</span>
+                        ) : gameState.mana === 0 ? (
+                          <span className="text-rose-400/80 font-semibold">DRAINED</span>
+                        ) : (
+                          <span className="text-slate-500">CALIBRATED</span>
+                        )}
+                      </span>
+                    </div>
+
+                    {/* STAMINA CARD */}
+                    <div className="bg-slate-950/60 border border-white/10 p-3 rounded-xl flex flex-col justify-between">
+                      <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
+                        <span className="font-bold text-amber-500 flex items-center gap-1 uppercase text-[9px]">
+                          <Activity size={10} className="text-amber-500 animate-pulse" /> STAMINA
+                        </span>
+                        <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.stamina ?? 100} / 100</span>
+                      </div>
+                      
+                      <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
+                        <motion.div
+                          className="bg-amber-500 h-full rounded-full shadow-[0_0_8px_rgba(245,158,11,0.7)]"
+                          animate={{ width: `${Math.max(0, Math.min(100, (gameState.stamina ?? 100)))}%` }}
+                          transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                        />
+                      </div>
+                      <span className="text-[7.5px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
+                        {gameState.stamina === 0 ? "⚠️ EXHAUSTED" : "OPERATIONAL"}
+                      </span>
+                    </div>
+
+                    {/* BALANCE & ACTIVE SECTOR */}
+                    <div className="bg-slate-950/60 border border-white/10 p-3 rounded-xl flex justify-between items-center">
+                      <div className="text-left font-mono">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">BALANCE</span>
+                        <p className="text-xs font-black text-amber-400 mt-1 leading-none">
+                          {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
+                        </p>
+                      </div>
+                      <div className="text-right font-mono">
+                        <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ACTIVE SECTOR</span>
+                        <span className="text-[9px] font-bold text-cyan-400 mt-1 block uppercase leading-none truncate max-w-[90px]">
+                          {REGIONS.find(r => r.id === activeRegionId)?.name.split(" ")[0] || "Slums"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* CHARACTER STATS & MENU BUTTONS */}
+                    <div className="flex flex-col gap-1.5 justify-center">
+                      <button
+                        onClick={() => setGameTab("database")}
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-950/80 to-slate-900 border border-rose-500/30 hover:border-rose-400 text-rose-400 hover:text-white py-2 px-3 rounded-lg font-mono text-[11px] uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95"
+                      >
+                        <Database size={13} />
+                        <span>Character Stats</span>
+                      </button>
+
+                      <button
+                        onClick={() => setIsGameMenuOpen(true)}
+                        className="w-full flex items-center justify-center gap-2 bg-slate-900 border border-cyan-500/30 hover:border-cyan-400 text-cyan-300 hover:text-white py-2 px-3 rounded-lg font-mono text-[11px] uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95"
+                      >
+                        <Menu size={13} />
+                        <span>Menu</span>
+                      </button>
                     </div>
                   </div>
                 )}
 
-              </div>
-              
-              {/* RIGHT SIDEBAR COLUMN FOR EXPLORATION (STATS & GAUGES) */}
-              {!gameState.combatState?.isActive && (
-                <div className="lg:col-span-3 flex flex-col gap-3.5 h-full justify-start text-left">
-                  {/* ATMOSPHERE CARD */}
-                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex items-center gap-2.5">
-                    <div className="p-1.5 bg-gradient-to-br from-amber-950/50 to-slate-900 border border-amber-500/30 text-amber-400 rounded-md flex-shrink-0">
-                      <CloudLightning size={14} />
-                    </div>
-                    <div className="overflow-hidden font-mono">
-                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ATMOSPHERE</span>
-                      <p className="text-[11px] font-bold text-white uppercase truncate mt-1 leading-none">
-                        {gameState.weather === "clear" && "Clear Skies ☀️"}
-                        {gameState.weather === "rain" && "Acid Rain 🌧️"}
-                        {gameState.weather === "snow" && "Neon Frost ❄️"}
-                        {gameState.weather === "storm" && "Electro Storm ⚡"}
-                        {gameState.weather === "heat" && "Thermal wave 🥵"}
-                        {gameState.weather === "smog" && "Toxic Smog 😷"}
-                        {(!gameState.weather || gameState.weather === "clear") && "Optimal skies ☀️"}
-                      </p>
-                      <span className="text-[7px] text-amber-500 block uppercase truncate font-semibold mt-1 leading-none">
-                        {gameState.weather === "clear" && "Normal Stamina Rate"}
-                        {gameState.weather === "rain" && "+2 Stamina Drain / Wet"}
-                        {gameState.weather === "snow" && "+3 Stamina / -2 Ether"}
-                        {gameState.weather === "storm" && "+5 Stamina / Static Risk"}
-                        {gameState.weather === "heat" && "+5 Stamina / Damage Risk"}
-                        {gameState.weather === "smog" && "+4 Stamina / HP & MP Drain"}
-                        {(!gameState.weather || gameState.weather === "clear") && "No Active Debuffs"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* HP CARD */}
-                  <div className={`bg-slate-950/60 border p-3.5 rounded-xl flex flex-col justify-between transition-all duration-300 ${
-                    gameState.hp < derived.maxHp * 0.35
-                      ? "border-rose-500/60 shadow-[0_0_15px_rgba(244,63,94,0.3)] animate-pulse"
-                      : "border-white/10"
-                  }`}>
-                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
-                      <span className="font-bold text-rose-400 flex items-center gap-1 uppercase text-[9px]">
-                        <Heart size={10} className={`text-rose-500 ${gameState.hp < derived.maxHp * 0.35 ? "animate-bounce" : ""}`} /> HP
-                      </span>
-                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.hp} / {derived.maxHp}</span>
-                    </div>
-                    
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
-                      <motion.div
-                        className="bg-rose-500 h-full rounded-full shadow-[0_0_8px_rgba(239,68,68,0.7)]"
-                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.hp / derived.maxHp) * 100))}%` }}
-                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                      />
-                    </div>
-                    <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
-                      {gameState.hp < derived.maxHp * 0.35 ? (
-                        <span className="text-rose-400 font-extrabold tracking-widest animate-pulse">⚠️ CORES CRITICAL: HEAL NOW</span>
-                      ) : (
-                        <span className="text-slate-500">CORES: OPTIMAL</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {/* ETH CARD */}
-                  <div className={`bg-slate-950/60 border p-3.5 rounded-xl flex flex-col justify-between transition-all duration-300 ${
-                    gameState.mana === derived.maxMana
-                      ? "border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.2)]"
-                      : "border-white/10"
-                  }`}>
-                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
-                      <span className="font-bold text-cyan-400 flex items-center gap-1 uppercase text-[9px]">
-                        <Zap size={10} className={`text-cyan-400 ${gameState.mana === derived.maxMana ? "animate-pulse" : ""}`} /> ETH
-                      </span>
-                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.mana} / {derived.maxMana}</span>
-                    </div>
-                    
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
-                      <motion.div
-                        className="bg-cyan-500 h-full rounded-full shadow-[0_0_8px_rgba(6,182,212,0.7)]"
-                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.mana / derived.maxMana) * 100))}%` }}
-                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                      />
-                    </div>
-                    <span className="text-[7.5px] font-mono mt-1 uppercase font-bold text-left leading-none">
-                      {gameState.mana === derived.maxMana ? (
-                        <span className="text-cyan-400 font-extrabold tracking-widest animate-pulse">⚡ MAX COGNITION DECKED</span>
-                      ) : gameState.mana === 0 ? (
-                        <span className="text-rose-400/80 font-semibold">DECK DRAINED: MEDITATE</span>
-                      ) : (
-                        <span className="text-slate-500">CHIP CALIBRATED</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {/* STAMINA CARD */}
-                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex flex-col justify-between">
-                    <div className="flex justify-between items-center text-[10px] font-mono leading-none mb-1.5">
-                      <span className="font-bold text-amber-500 flex items-center gap-1 uppercase text-[9px]">
-                        <Activity size={10} className="text-amber-500 animate-pulse" /> STAMINA
-                      </span>
-                      <span className="font-bold text-[#f5ebd5] text-[9px]">{gameState.stamina ?? 100} / 100</span>
-                    </div>
-                    
-                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden p-0 border border-white/5">
-                      <motion.div
-                        className="bg-amber-500 h-full rounded-full shadow-[0_0_8px_rgba(245,158,11,0.7)]"
-                        animate={{ width: `${Math.max(0, Math.min(100, (gameState.stamina ?? 100)))}%` }}
-                        transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                      />
-                    </div>
-                    <span className="text-[7.5px] font-mono text-slate-500 mt-1 uppercase font-bold text-left leading-none">
-                      {gameState.stamina === 0 ? "⚠️ EXHAUSTED: REST" : "ACTUATORS: OPERATIONAL"}
-                    </span>
-                  </div>
-
-                  {/* BALANCE & ACTIVE SECTOR */}
-                  <div className="bg-slate-950/60 border border-white/10 p-3.5 rounded-xl flex justify-between items-center">
-                    <div className="text-left font-mono">
-                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">BALANCE</span>
-                      <p className="text-xs font-black text-amber-400 mt-1 leading-none">
-                        {gameState.credits} <span className="text-[10px] font-normal text-slate-400">¤</span>
-                      </p>
-                    </div>
-                    <div className="text-right font-mono">
-                      <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider leading-none">ACTIVE SECTOR</span>
-                      <span className="text-[9px] font-bold text-cyan-400 mt-1 block uppercase leading-none truncate max-w-[100px]">
-                        {REGIONS.find(r => r.id === activeRegionId)?.name.split(" ")[0] || "Slums"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* CHARACTER STATS INTERACTION BUTTON WITH TOOLTIP */}
-                  <div className="relative group/db mt-2">
-                    <button
-                      onClick={() => setGameTab("database")}
-                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-950/80 to-slate-900 border border-rose-500/30 hover:border-rose-400 text-rose-400 hover:text-white py-3.5 px-4 rounded-lg font-mono text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg active:scale-95"
-                    >
-                      <Database size={15} />
-                      <span>Character Stats</span>
-                    </button>
-                    <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-rose-500/30 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/db:opacity-100 transition-all pointer-events-none scale-90 group-hover/db:scale-100 z-50 text-left font-mono">
-                      <p className="text-3xs font-extrabold text-rose-400 uppercase tracking-widest">ACCESS OPERATIVE DATABASE</p>
-                      <p className="text-[8px] text-slate-400 mt-0.5 leading-tight">VIEW PROFILE, INVENTORY, SKILLS & COMPANIONS</p>
-                    </div>
-                  </div>
                 </div>
+                </>
               )}
-              </>
-            )}
 
               {/* RIGHT COLUMN (12/12): PLAYER STATS DECK, INVENTORY, COMPANIONS AND ACTIVE TASKS */}
               {gameTab === "database" && (
-                <div className="lg:col-span-12 flex flex-col gap-4">
-                  {/* Return to Map bar */}
-                  <div className="flex justify-between items-center bg-slate-950/60 border border-white/10 rounded-xl p-3 shadow-md">
-                    <span className="font-mono text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                      OPERATIVE SYSTEM ACCESS SECURE
-                    </span>
-                    <button
-                      onClick={() => setGameTab("exploration")}
-                      className="flex items-center gap-2 bg-gradient-to-r from-cyan-950/80 to-slate-900 border border-cyan-500/30 hover:border-cyan-400 text-cyan-400 hover:text-white px-4 py-2 rounded-lg font-mono text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg active:scale-95"
-                    >
-                      <ArrowLeft size={14} className="text-cyan-400" /> Go Back to Map
-                    </button>
+                <div className="lg:col-span-12 flex flex-col gap-2.5 h-full flex-1 min-h-0 overflow-hidden">
+                  {/* Return to Map bar & Sub-Tab Navigation Header */}
+                  <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center bg-slate-950/80 border border-white/10 rounded-xl p-2.5 shadow-md gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setGameTab("exploration")}
+                        className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-950/80 to-slate-900 border border-cyan-500/30 hover:border-cyan-400 text-cyan-400 hover:text-white px-3 py-1.5 rounded-lg font-mono text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg active:scale-95 shrink-0"
+                      >
+                        <ArrowLeft size={13} className="text-cyan-400" /> Map
+                      </button>
+                      <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 hidden sm:flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        DATABASE
+                      </span>
+                    </div>
+
+                    {/* Modular Sub-Tab Buttons */}
+                    <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 font-mono text-3xs">
+                      <button
+                        onClick={() => setActiveTab("overview")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "overview" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <User size={12} /> Profile
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("inventory")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "inventory" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <Briefcase size={12} /> Stash
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("gear")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "gear" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <Shield size={12} /> Gear
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("companions")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "companions" ? "bg-rose-500/20 text-rose-300 border border-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <Users size={12} /> Mercs
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("quests")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "quests" ? "bg-amber-500/20 text-amber-300 border border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <Award size={12} /> Quests
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("factions")}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 uppercase font-bold shrink-0 ${
+                          activeTab === "factions" ? "bg-indigo-500/20 text-indigo-300 border border-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.2)]" : "bg-slate-900/60 text-slate-400 hover:text-white border border-white/5"
+                        }`}
+                      >
+                        <Shield size={12} /> Factions
+                      </button>
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                  
-                  {/* CHARACTER SHEET PROFILE CARD */}
-                  <div className="lg:col-span-4 flex flex-col gap-6 font-mono text-left animate-fadeIn">
-                    {/* Bio block */}
-                    <div className="glass-panel rounded-2xl p-5 shadow-2xl border border-cyan-500/10 flex flex-col gap-4 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl -mr-8 -mt-8" />
-                      
-                      <div className="flex items-center gap-3">
-                        {gameState.playerAvatarUrl ? (
-                          <img
-                            src={gameState.playerAvatarUrl}
-                            alt="Operative"
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 rounded-xl object-cover border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-950/80 to-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-extrabold text-lg shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0">
-                            {(gameState.playerName || gameState.archetype || "Cyber-Blade")[0]}
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-[9px] text-cyan-400 uppercase tracking-widest font-black leading-none block">GRID OPERATIVE IDENT</span>
-                          <h3 className="text-white font-black text-sm uppercase mt-1 leading-none">{gameState.playerName || gameState.archetype || "Rookie"}</h3>
-                          <div className="text-[10px] uppercase font-bold text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
-                            <span className="text-cyan-400">{gameState.playerRace || "Human"}</span>
-                            <span className="text-slate-600">•</span>
-                            <span className="text-rose-400">{gameState.archetype || "Cyber-Blade"}</span>
-                          </div>
-                          <p className="text-slate-500 text-[9px] uppercase tracking-wider mt-1 font-sans">
-                            Age: {gameState.playerAge || 24} • BG: {gameState.playerBackground || "Street Rat"}
-                          </p>
-                          <span className="text-slate-500 text-[9px] uppercase tracking-wider block mt-1">LVL {gameState.level ?? 1} • EXP {gameState.experience ?? 0}/100</span>
-                        </div>
-                      </div>
-
-                      {/* Customized Perks Section */}
-                      {gameState.playerPerks && gameState.playerPerks.length > 0 && (
-                        <div className="bg-slate-950/60 border border-white/5 p-2 rounded-lg text-left mt-1">
-                          <span className="text-[8px] text-cyan-400 font-extrabold uppercase tracking-widest block mb-1">🧠 INSTALLED PERKS</span>
-                          <div className="flex flex-col gap-1">
-                            {gameState.playerPerks.map((pKey) => {
-                              const perkNames: Record<string, string> = {
-                                "adrenaline_junkie": "Adrenaline Junkie (+15% Melee Low-HP)",
-                                "cyber_optimizer": "Cyber-Optimizer (+10 Starting Shields)",
-                                "ether_conduit": "Ether Conduit (+2 MP/Turn)",
-                                "hardened_chassis": "Hardened Chassis (+20 Max HP)",
-                                "lucky_jack": "Lucky Jack (+40 starting credits)"
-                              };
-                              return (
-                                <span key={pKey} className="text-[9px] text-slate-300 font-sans flex items-center gap-1">
-                                  <span className="text-cyan-500">◈</span> {perkNames[pKey] || pKey}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-3.5 border-t border-white/5 pt-4">
-                        {/* HP Gauge */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-3xs">
-                            <span className="text-rose-400 font-extrabold uppercase flex items-center gap-1"><Heart size={10} /> INTEGRITY STATUS (HP)</span>
-                            <span className="text-white font-bold">{gameState.hp} / {derived.maxHp}</span>
-                          </div>
-                          <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <motion.div 
-                              className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
-                              animate={{ width: `${Math.min(100, (gameState.hp / derived.maxHp) * 100)}%` }}
-                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* MP Gauge */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-3xs">
-                            <span className="text-cyan-400 font-extrabold uppercase flex items-center gap-1"><Zap size={10} /> ENERGY COGNITION (MP)</span>
-                            <span className="text-white font-bold">{gameState.mana} / {derived.maxMana}</span>
-                          </div>
-                          <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <motion.div 
-                              className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]"
-                              animate={{ width: `${Math.min(100, (gameState.mana / derived.maxMana) * 100)}%` }}
-                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* XP Bar */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-3xs">
-                            <span className="text-indigo-400 font-extrabold uppercase flex items-center gap-1"><Award size={10} /> NEURAL INTEGRATION (XP)</span>
-                            <span className="text-white font-bold">{gameState.experience ?? 0}%</span>
-                          </div>
-                          <div className="h-1.5 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
-                            <motion.div 
-                              className="h-full rounded-full bg-indigo-500"
-                              animate={{ width: `${gameState.experience ?? 0}%` }}
-                              transition={{ type: "spring", stiffness: 70, damping: 15 }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Level and Credits */}
-                        <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-3 text-3xs">
-                          <div className="bg-slate-950/60 p-2 rounded-lg border border-white/5">
-                            <span className="text-slate-500 uppercase block font-bold">LEDGER CASH</span>
-                            <p className="text-amber-400 font-black text-xs uppercase mt-0.5">{gameState.credits}¤</p>
-                          </div>
-                          <div className="bg-slate-950/60 p-2 rounded-lg border border-white/5">
-                            <span className="text-slate-500 uppercase block font-bold">TEAM PARTY SIZE</span>
-                            <p className="text-white font-black text-xs uppercase mt-0.5">{gameState.party.length + 1} SQUAD</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* CORE ATTRIBUTES & SKILL TREES */}
-                    <div className="glass-panel rounded-2xl p-5 shadow-2xl border border-white/10 flex flex-col gap-4 font-mono">
-                      <div className="border-b border-white/10 pb-2 flex justify-between items-center">
-                        <span className="text-slate-400 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
-                          🛡️ Core Attribute Matrices
-                        </span>
-                        <span className="text-[9px] text-cyan-400 font-extrabold uppercase">LEVEL UP FOR +PTS</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-5 gap-2 text-center">
-                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">STR</span>
-                          <span className="text-xs text-white font-black">{derived.str}</span>
-                        </div>
-                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">DEX</span>
-                          <span className="text-xs text-white font-black">{derived.dex}</span>
-                        </div>
-                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">INT</span>
-                          <span className="text-xs text-white font-black">{derived.int}</span>
-                        </div>
-                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">WILL</span>
-                          <span className="text-xs text-white font-black">{derived.will}</span>
-                        </div>
-                        <div className="bg-slate-950/60 p-1.5 rounded border border-white/5">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">ETH</span>
-                          <span className="text-xs text-cyan-400 font-black">{derived.eth}</span>
-                        </div>
-                      </div>
-
-                      <div className="border-b border-white/10 pb-1 mt-1 flex justify-between items-center">
-                        <span className="text-slate-400 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
-                          📶 ACTIVE SKILL TREES
-                        </span>
-                      </div>
-
-                      <div className="space-y-2 text-3xs font-mono">
-                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
-                          <span className="text-slate-300 font-bold uppercase">⚔️ Cyber-Blade (Melee)</span>
-                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.cyberBlade ?? 1}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
-                          <span className="text-slate-300 font-bold uppercase">💾 Net-Slicer (Hacking)</span>
-                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.netSlicer ?? 1}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
-                          <span className="text-slate-300 font-bold uppercase">🛡️ Heavy Chrome (Defense)</span>
-                          <span className="text-cyan-400 font-black">LVL {gameState.skills?.heavyChrome ?? 1}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-slate-950/40 rounded border border-white/5">
-                          <span className="text-slate-300 font-bold uppercase">🔮 MINDMANCER (Psychic)</span>
-                          <span className={`font-black ${gameState.skills?.mindmancer ? "text-purple-400" : "text-slate-600 animate-pulse"}`}>
-                            {gameState.skills?.mindmancer ? `LVL ${gameState.skills.mindmancer}` : "LOCKED [PROLOGUE]"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ACTIVE HARWARE & CHROME EQUIPMENT STATUS */}
-                    <div className="glass-panel rounded-2xl p-5 shadow-2xl border border-white/10 flex flex-col gap-3 font-mono">
-                      <span className="text-slate-400 text-3xs uppercase font-black tracking-widest border-b border-white/10 pb-2 flex items-center gap-1.5">
-                        <Shield size={12} className="text-cyan-400" /> Active Hardware Uplinks
-                      </span>
-                      <div className="space-y-2 text-3xs">
-                        {(["meleeWeapon", "rangedWeapon", "armor", "headpiece", "trinket"] as const).map((slot) => {
-                          const equippedItem = gameState.equipment?.[slot];
-                          const details = equippedItem ? ITEM_METADATA[equippedItem] : null;
-                          const slotLabel = slot === "meleeWeapon" ? "MELEE WEAPON" : slot === "rangedWeapon" ? "RANGED WEAPON" : slot;
-
-                          return (
-                            <div key={slot} className="p-2.5 bg-slate-950/60 border border-white/5 rounded-lg flex flex-col gap-1.5">
-                              <div className="flex justify-between items-center">
-                                <span className="text-slate-500 uppercase font-bold tracking-wider text-[9px]">{slotLabel.toUpperCase()} SLOT</span>
-                                {equippedItem && (
-                                  <button
-                                    onClick={() => handleUnequipItem(slot)}
-                                    className="bg-red-950/60 hover:bg-red-900/60 border border-red-500/30 text-red-400 text-4xs uppercase px-1.5 py-0.5 rounded cursor-pointer transition-all font-bold"
-                                  >
-                                    Unequip
-                                  </button>
-                                )}
+                  {/* MAIN SINGLE-SCREEN CONTENT VIEW CONTAINER */}
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3 bg-slate-950/70 border border-white/10 rounded-xl shadow-2xl">
+                    
+                    {/* TAB 1: PROFILE & CHARACTER OVERVIEW */}
+                    {activeTab === "overview" && (
+                      <motion.div
+                        key="overview-subtab"
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="grid grid-cols-1 lg:grid-cols-12 gap-4 font-mono text-left"
+                      >
+                        {/* Bio & Integrity gauges */}
+                        <div className="lg:col-span-5 flex flex-col gap-4">
+                          <div className="glass-panel rounded-xl p-4 shadow-xl border border-cyan-500/20 flex flex-col gap-3 relative overflow-hidden">
+                            <div className="flex items-center gap-3">
+                              {gameState.playerAvatarUrl ? (
+                                <img
+                                  src={gameState.playerAvatarUrl}
+                                  alt="Operative"
+                                  referrerPolicy="no-referrer"
+                                  className="w-14 h-14 rounded-xl object-cover border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-950/80 to-slate-900 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-extrabold text-lg shadow-[0_0_15px_rgba(6,182,212,0.15)] flex-shrink-0">
+                                  {(gameState.playerName || gameState.archetype || "Cyber-Blade")[0]}
+                                </div>
+                              )}
+                              <div>
+                                <span className="text-[9px] text-cyan-400 uppercase tracking-widest font-black leading-none block">GRID OPERATIVE IDENT</span>
+                                <h3 className="text-white font-black text-base uppercase mt-1 leading-none">{gameState.playerName || gameState.archetype || "Rookie"}</h3>
+                                <div className="text-[10px] uppercase font-bold text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-cyan-400">{gameState.playerRace || "Human"}</span>
+                                  <span className="text-slate-600">•</span>
+                                  <span className="text-rose-400">{gameState.archetype || "Cyber-Blade"}</span>
+                                </div>
+                                <p className="text-slate-500 text-[9px] uppercase tracking-wider mt-1 font-sans">
+                                  Age: {gameState.playerAge || 24} • BG: {gameState.playerBackground || "Street Rat"}
+                                </p>
+                                <span className="text-slate-400 text-[9px] uppercase tracking-wider block mt-1 font-bold">LVL {gameState.level ?? 1} • EXP {gameState.experience ?? 0}/100</span>
                               </div>
-                              {equippedItem ? (
-                                <div>
-                                  <p className="font-extrabold text-cyan-400 uppercase text-2xs leading-none">{equippedItem}</p>
-                                  {details?.desc && (
-                                    <p className="text-slate-400 text-[10px] font-sans leading-tight mt-1">{details.desc}</p>
+                            </div>
+
+                            {/* Customized Perks Section */}
+                            {gameState.playerPerks && gameState.playerPerks.length > 0 && (
+                              <div className="bg-slate-950/60 border border-white/5 p-2 rounded-lg text-left mt-1">
+                                <span className="text-[8px] text-cyan-400 font-extrabold uppercase tracking-widest block mb-1">🧠 INSTALLED PERKS</span>
+                                <div className="flex flex-col gap-1">
+                                  {gameState.playerPerks.map((pKey) => {
+                                    const perkNames: Record<string, string> = {
+                                      "adrenaline_junkie": "Adrenaline Junkie (+15% Melee Low-HP)",
+                                      "cyber_optimizer": "Cyber-Optimizer (+10 Starting Shields)",
+                                      "ether_conduit": "Ether Conduit (+2 MP/Turn)",
+                                      "hardened_chassis": "Hardened Chassis (+20 Max HP)",
+                                      "lucky_jack": "Lucky Jack (+40 starting credits)"
+                                    };
+                                    return (
+                                      <span key={pKey} className="text-[9px] text-slate-300 font-sans flex items-center gap-1">
+                                        <span className="text-cyan-500">◈</span> {perkNames[pKey] || pKey}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="space-y-2.5 border-t border-white/10 pt-3">
+                              {/* HP Gauge */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-3xs">
+                                  <span className="text-rose-400 font-extrabold uppercase flex items-center gap-1"><Heart size={10} /> INTEGRITY STATUS (HP)</span>
+                                  <span className="text-white font-bold">{gameState.hp} / {derived.maxHp}</span>
+                                </div>
+                                <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
+                                  <motion.div 
+                                    className="h-full rounded-full bg-gradient-to-r from-rose-600 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
+                                    animate={{ width: `${Math.min(100, (gameState.hp / derived.maxHp) * 100)}%` }}
+                                    transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* MP Gauge */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-3xs">
+                                  <span className="text-cyan-400 font-extrabold uppercase flex items-center gap-1"><Zap size={10} /> ENERGY COGNITION (MP)</span>
+                                  <span className="text-white font-bold">{gameState.mana} / {derived.maxMana}</span>
+                                </div>
+                                <div className="h-2 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
+                                  <motion.div 
+                                    className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]"
+                                    animate={{ width: `${Math.min(100, (gameState.mana / derived.maxMana) * 100)}%` }}
+                                    transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* XP Bar */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-3xs">
+                                  <span className="text-indigo-400 font-extrabold uppercase flex items-center gap-1"><Award size={10} /> NEURAL INTEGRATION (XP)</span>
+                                  <span className="text-white font-bold">{gameState.experience ?? 0}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-950/80 rounded-full border border-white/5 overflow-hidden p-0.5">
+                                  <motion.div 
+                                    className="h-full rounded-full bg-indigo-500"
+                                    animate={{ width: `${gameState.experience ?? 0}%` }}
+                                    transition={{ type: "spring", stiffness: 70, damping: 15 }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Level and Credits */}
+                              <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-2 text-3xs">
+                                <div className="bg-slate-950/60 p-2 rounded-lg border border-white/5">
+                                  <span className="text-slate-500 uppercase block font-bold">LEDGER CASH</span>
+                                  <p className="text-amber-400 font-black text-xs uppercase mt-0.5">{gameState.credits}¤</p>
+                                </div>
+                                <div className="bg-slate-950/60 p-2 rounded-lg border border-white/5">
+                                  <span className="text-slate-500 uppercase block font-bold">SQUAD SIZE</span>
+                                  <p className="text-white font-black text-xs uppercase mt-0.5">{gameState.party.length + 1} SQUAD</p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Core Attributes & Skill Tree matrices */}
+                        <div className="lg:col-span-7 flex flex-col gap-4">
+                          <div className="glass-panel rounded-xl p-4 shadow-xl border border-white/10 flex flex-col gap-3">
+                            <div className="border-b border-white/10 pb-1.5 flex justify-between items-center">
+                              <span className="text-slate-300 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
+                                🛡️ Core Attribute Matrices
+                              </span>
+                              <span className="text-[9px] text-cyan-400 font-extrabold uppercase">LEVEL UP FOR +PTS</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-5 gap-2 text-center">
+                              <div className="bg-slate-950/60 p-2 rounded border border-white/5">
+                                <span className="text-[8px] text-slate-500 block uppercase font-bold">STR</span>
+                                <span className="text-sm text-white font-black">{derived.str}</span>
+                              </div>
+                              <div className="bg-slate-950/60 p-2 rounded border border-white/5">
+                                <span className="text-[8px] text-slate-500 block uppercase font-bold">DEX</span>
+                                <span className="text-sm text-white font-black">{derived.dex}</span>
+                              </div>
+                              <div className="bg-slate-950/60 p-2 rounded border border-white/5">
+                                <span className="text-[8px] text-slate-500 block uppercase font-bold">INT</span>
+                                <span className="text-sm text-white font-black">{derived.int}</span>
+                              </div>
+                              <div className="bg-slate-950/60 p-2 rounded border border-white/5">
+                                <span className="text-[8px] text-slate-500 block uppercase font-bold">WILL</span>
+                                <span className="text-sm text-white font-black">{derived.will}</span>
+                              </div>
+                              <div className="bg-slate-950/60 p-2 rounded border border-white/5">
+                                <span className="text-[8px] text-slate-500 block uppercase font-bold">ETH</span>
+                                <span className="text-sm text-cyan-400 font-black">{derived.eth}</span>
+                              </div>
+                            </div>
+
+                            <div className="border-b border-white/10 pb-1 mt-1 flex justify-between items-center">
+                              <span className="text-slate-300 text-3xs uppercase font-black tracking-widest flex items-center gap-1.5">
+                                📶 ACTIVE SKILL TREES
+                              </span>
+                            </div>
+
+                            <div className="space-y-2 text-xs font-mono">
+                              <div className="flex justify-between items-center p-2 bg-slate-950/40 rounded border border-white/5">
+                                <span className="text-slate-300 font-bold uppercase">⚔️ Cyber-Blade (Melee)</span>
+                                <span className="text-cyan-400 font-black">LVL {gameState.skills?.cyberBlade ?? 1}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-2 bg-slate-950/40 rounded border border-white/5">
+                                <span className="text-slate-300 font-bold uppercase">💾 Net-Slicer (Hacking)</span>
+                                <span className="text-cyan-400 font-black">LVL {gameState.skills?.netSlicer ?? 1}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-2 bg-slate-950/40 rounded border border-white/5">
+                                <span className="text-slate-300 font-bold uppercase">🛡️ Heavy Chrome (Defense)</span>
+                                <span className="text-cyan-400 font-black">LVL {gameState.skills?.heavyChrome ?? 1}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-2 bg-slate-950/40 rounded border border-white/5">
+                                <span className="text-slate-300 font-bold uppercase">🔮 MINDMANCER (Psychic)</span>
+                                <span className={`font-black ${gameState.skills?.mindmancer ? "text-purple-400" : "text-slate-600 animate-pulse"}`}>
+                                  {gameState.skills?.mindmancer ? `LVL ${gameState.skills.mindmancer}` : "LOCKED [PROLOGUE]"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* TAB 2: HARDWARE & CHROME GEAR UPLINKS */}
+                    {activeTab === "gear" && (
+                      <motion.div
+                        key="gear-subtab"
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex flex-col gap-3 font-mono text-left"
+                      >
+                        <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                          <span className="text-slate-300 text-xs uppercase font-black tracking-widest flex items-center gap-1.5">
+                            <Shield size={14} className="text-cyan-400" /> Active Hardware Uplinks & Equipment Slots
+                          </span>
+                          <span className="text-[10px] text-cyan-400 font-bold">MANAGEMENT READY</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {(["meleeWeapon", "rangedWeapon", "armor", "headpiece", "trinket"] as const).map((slot) => {
+                            const equippedItem = gameState.equipment?.[slot];
+                            const details = equippedItem ? ITEM_METADATA[equippedItem] : null;
+                            const slotLabel = slot === "meleeWeapon" ? "MELEE WEAPON" : slot === "rangedWeapon" ? "RANGED WEAPON" : slot;
+
+                            return (
+                              <div key={slot} className="p-3 bg-slate-950/80 border border-white/10 rounded-xl flex flex-col justify-between gap-2 shadow-md">
+                                <div className="flex justify-between items-center border-b border-white/5 pb-1.5">
+                                  <span className="text-slate-400 uppercase font-black tracking-wider text-[10px]">{slotLabel.toUpperCase()} SLOT</span>
+                                  {equippedItem && (
+                                    <button
+                                      onClick={() => handleUnequipItem(slot)}
+                                      className="bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-300 text-3xs uppercase px-2 py-0.5 rounded cursor-pointer transition-all font-bold"
+                                    >
+                                      Unequip
+                                    </button>
                                   )}
                                 </div>
-                              ) : (
-                                <p className="text-slate-600 italic text-[10px]">No {slotLabel} equipped. Find and equip one from your inventory.</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* RIGHT COLUMN DATABASE HUD */}
-                    <div className="lg:col-span-8 flex flex-col gap-6 animate-fadeIn">
-
-                      {/* ADVANCED EQUIP DECK HUD */}
-                      <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl p-4 flex flex-col gap-4">
-                        <div className="flex border-b border-white/15 text-xs font-mono">
-                    <button
-                      onClick={() => setActiveTab("inventory")}
-                      className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
-                        activeTab === "inventory" ? "text-cyan-400 border-b-2 border-cyan-400" : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      <Briefcase size={12} /> Stash
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("companions")}
-                      className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
-                        activeTab === "companions" ? "text-rose-400 border-b-2 border-rose-400" : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      <Users size={12} /> Mercs
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("quests")}
-                      className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
-                        activeTab === "quests" ? "text-amber-400 border-b-2 border-amber-400" : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      <Award size={12} /> Quests
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("factions")}
-                      className={`flex-1 pb-2.5 text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 uppercase font-bold ${
-                        activeTab === "factions" ? "text-indigo-400 border-b-2 border-indigo-400" : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      <Shield size={12} /> Factions
-                    </button>
-                  </div>
+                                {equippedItem ? (
+                                  <div>
+                                    <p className="font-extrabold text-cyan-400 uppercase text-xs leading-none flex items-center gap-1.5">
+                                      {getItemIcon(equippedItem, details?.slot)}
+                                      <span>{equippedItem}</span>
+                                    </p>
+                                    {details?.desc && (
+                                      <p className="text-slate-400 text-[10px] font-sans leading-tight mt-1.5">{details.desc}</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-slate-600 italic text-[10px] py-2">No {slotLabel} equipped. Equip one from your Stash.</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
 
                   <AnimatePresence mode="wait">
                     
@@ -14007,10 +13191,7 @@ export default function App() {
                 </div>
 
               </div>
-
-            </div>
-          </div>
-          )}
+              )}
 
               </div>
             </motion.div>
@@ -14036,9 +13217,18 @@ export default function App() {
                 </button>
                 
                 <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-cyan-950 flex items-center justify-center border border-cyan-500/30 text-cyan-400 font-extrabold text-sm shadow-[0_0_10px_rgba(34,211,238,0.2)]">
-                    {companionOpinion.name[0]}
-                  </div>
+                  {companionOpinion.image ? (
+                    <img
+                      src={companionOpinion.image}
+                      alt={companionOpinion.name}
+                      referrerPolicy="no-referrer"
+                      className="w-12 h-12 rounded-xl object-cover border border-cyan-500/60 shadow-[0_0_12px_rgba(6,182,212,0.3)] flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-cyan-950 flex items-center justify-center border border-cyan-500/30 text-cyan-400 font-extrabold text-sm shadow-[0_0_10px_rgba(34,211,238,0.2)] flex-shrink-0">
+                      {companionOpinion.name[0]}
+                    </div>
+                  )}
                   <div>
                     <span className="text-[9px] text-cyan-400 uppercase tracking-widest block font-bold">OPERATIVE TRANS-COMM</span>
                     <h4 className="text-white font-extrabold text-sm uppercase">{companionOpinion.name}</h4>
@@ -15342,6 +14532,236 @@ export default function App() {
         )}
 
       </main>
+
+      {/* GAME CONTROL MENU POPUP */}
+      <AnimatePresence>
+        {isGameMenuOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              className="glass-panel max-w-xs sm:max-w-sm w-full rounded-2xl p-6 border border-cyan-500/30 shadow-[0_0_35px_rgba(0,0,0,0.85)] space-y-5 text-center font-mono relative overflow-hidden"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setIsGameMenuOpen(false);
+                  setShowMainMenuConfirm(false);
+                }}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-all cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              {/* Game Name & Logo Header */}
+              <div className="flex flex-col items-center gap-2.5 pt-2">
+                <div className="p-3 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                  <Flame size={28} />
+                </div>
+                <div>
+                  <h2 className="font-display font-black tracking-wider text-xl text-white uppercase leading-none">
+                    NEON <span className="text-rose-500 tracking-tight font-light">&amp;</span> ETHER
+                  </h2>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1.5 font-sans">Tactical RPG Deck</p>
+                </div>
+              </div>
+
+              {/* Menu Controls vs Confirmation Prompt */}
+              {showMainMenuConfirm ? (
+                <div className="space-y-3.5 pt-1 text-left animate-fadeIn">
+                  <div className="p-3.5 bg-rose-950/50 border border-rose-500/40 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-rose-400 font-extrabold text-xs uppercase tracking-wider">
+                      <AlertTriangle size={16} className="shrink-0" />
+                      <span>Confirm Exit to Main Menu</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] font-sans leading-relaxed">
+                      Are you sure you want to return to the Main Menu? Any unsaved progress in your current session will be lost.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        setShowMainMenuConfirm(false);
+                        setIsGameMenuOpen(false);
+                        setCurrentScreen("menu");
+                        triggerToast("SESSION ENDED: RETURNED TO MAIN MENU");
+                      }}
+                      className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-rose-700 to-red-600 hover:from-rose-600 hover:to-red-500 border border-rose-400 text-white py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-rose-950/50 active:scale-95"
+                    >
+                      <FolderOpen size={14} />
+                      <span>Yes, Return to Main Menu</span>
+                    </button>
+
+                    <button
+                      onClick={() => setShowMainMenuConfirm(false)}
+                      className="w-full py-2 bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5 pt-1">
+                  <button
+                    onClick={() => {
+                      setIsGameMenuOpen(false);
+                      setIsSaveDeckOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-cyan-950 to-slate-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95"
+                  >
+                    <Save size={15} />
+                    <span>Save / Load Game</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsGameMenuOpen(false);
+                      setIsDevStudioOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-950/80 to-purple-950/80 border border-violet-500/40 hover:border-violet-400 text-violet-300 hover:text-white py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95"
+                  >
+                    <Code size={15} />
+                    <span>RPG Dev Studio</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowMainMenuConfirm(true)}
+                    className="w-full flex items-center justify-center gap-2.5 bg-slate-900/90 border border-white/10 hover:border-rose-500/40 text-slate-300 hover:text-rose-400 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95"
+                  >
+                    <FolderOpen size={15} />
+                    <span>Main Menu</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsGameMenuOpen(false);
+                      setShowMainMenuConfirm(false);
+                    }}
+                    className="w-full py-2.5 bg-slate-950/60 border border-white/5 hover:border-white/20 text-slate-400 hover:text-white rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Resume Game
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Neural Save Deck Module */}
+      <SaveManager
+        isOpen={isSaveDeckOpen}
+        onClose={() => {
+          setIsSaveDeckOpen(false);
+          // Sync hasSave when closing Save Deck
+          const keys = [
+            "neon_ether_state",
+            "neon_ether_state_slot1",
+            "neon_ether_state_slot2",
+            "neon_ether_state_slot3",
+            "neon_ether_state_autosave"
+          ];
+          const found = keys.some(k => localStorage.getItem(k) !== null);
+          setHasSave(found);
+        }}
+        gameState={gameState}
+        logs={logs}
+        onLoadSave={(state, savedLogs) => {
+          handleRestoreStateAndLogs(state, savedLogs);
+        }}
+        triggerToast={triggerToast}
+      />
+
+      {/* Developer Studio Suite Modal */}
+      <DevStudioModal
+        isOpen={isDevStudioOpen}
+        onClose={() => setIsDevStudioOpen(false)}
+        gameState={gameState}
+        setGameState={setGameState}
+        onLaunchEncounterInGame={(enc) => {
+          if (currentScreen !== "game") {
+            setCurrentScreen("game");
+          }
+          setActivePOIView(null);
+          setActiveDialogue(null);
+          setGameTab("exploration");
+          
+          const enemies = (enc.combatants || []).filter(c => c.faction === "enemy");
+          const primaryEnemy = enemies[0] || {
+            name: enc.name,
+            hp: 120,
+            maxHp: 120,
+            shields: 20,
+            maxShields: 20
+          };
+          const totalEnemyHp = enemies.length > 0
+            ? enemies.reduce((sum, e) => sum + (e.hp || 50), 0)
+            : 120;
+          const totalEnemyMaxHp = enemies.length > 0
+            ? enemies.reduce((sum, e) => sum + (e.maxHp || 50), 0)
+            : 120;
+          const totalEnemyShields = enemies.length > 0
+            ? enemies.reduce((sum, e) => sum + (e.shields || 0), 0)
+            : 20;
+
+          setGameState(prev => {
+            const next = {
+              ...prev,
+              district: enc.district || prev.district || "conduit09",
+              combatState: {
+                enemyName: enc.name || primaryEnemy.name,
+                enemyHp: totalEnemyHp,
+                enemyMaxHp: totalEnemyMaxHp,
+                enemyShields: totalEnemyShields,
+                enemyMaxShields: totalEnemyShields,
+                isActive: true,
+                turnLog: `⚔️ CUSTOM ENCOUNTER INITIALIZED: ${enc.name}\n${enc.description || "Hostile forces detected on tactical grid."}`
+              }
+            };
+            return next;
+          });
+
+          setLogs(prev => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              text: `⚔️ CUSTOM TACTICAL ENCOUNTER: "${enc.name}" engaged in district [${enc.district || gameState.district || "conduit09"}].`,
+              type: "combat",
+              district: enc.district || gameState.district || "conduit09",
+              poi: enc.name
+            }
+          ]);
+          triggerToast(`COMBAT DEPLOYED: ${(enc.name || "Encounter").toUpperCase()}`);
+        }}
+        onTriggerLiveEvent={(evt) => {
+          if (currentScreen !== "game") {
+            setCurrentScreen("game");
+          }
+          const firstChoice = evt.choices?.[0];
+          if (firstChoice) {
+            setGameState(prev => {
+              const next = { ...prev };
+              if (firstChoice.rewardCredits) next.credits += firstChoice.rewardCredits;
+              if (firstChoice.rewardXP) next.experience += firstChoice.rewardXP;
+              if (firstChoice.rewardItem && !next.inventory.includes(firstChoice.rewardItem)) {
+                next.inventory = [firstChoice.rewardItem, ...next.inventory];
+              }
+              return next;
+            });
+          }
+          setActivePopup({
+            title: `⚡ ${evt.title.toUpperCase()}`,
+            subtitle: "DYNAMIC WORLD EVENT",
+            type: "check_success",
+            text: `${evt.narrativeText}\n\nOutcome: ${firstChoice?.successOutcomeText || "Event triggered successfully in world stream!"}`
+          });
+          triggerToast(`EVENT TRIGGERED: ${evt.title.toUpperCase()}`);
+        }}
+        triggerToast={triggerToast}
+      />
 
     </div>
   );

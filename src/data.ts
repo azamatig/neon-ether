@@ -1,4 +1,14 @@
 import { GameState, CompanionState, QuestState } from "./types";
+import vicePortrait from "./assets/characters/vice/vice_portrait.png";
+import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
+import ventilationBg from "./assets/images/ventilation_bg.png";
+import reactorWell from "./assets/images/reactor_well.png";
+import subTermBg from "./assets/images/sub-term.png";
+import heavyBlastDoorBg from "./assets/images/heavyblastdoor.png";
+import transitBg from "./assets/images/transit.png";
+import srScBg from "./assets/images/SR_SC.png";
+import scCaBg from "./assets/images/SC_CA.png";
+import aurusDistrictBg from "./assets/images/aurus-district.png";
 
 export interface Archetype {
   name: string;
@@ -471,7 +481,7 @@ export const REGIONS: Region[] = [
     id: "aurus",
     name: "Aurus District",
     description: "The gritty, neon-soaked rain corridors and crowded lower-level slums of Aurus District.",
-    bgImage: "/src/assets/images/aurus-district.png"
+    bgImage: aurusDistrictBg
   },
   {
     id: "docks",
@@ -573,7 +583,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Ventilation Shaft (Entry Point)",
     district: "conduit09",
     description: "A narrow, massive circular shaft with heavy metal fan blades spinning at high speed. Vice coordinates from his pocket interface: 'The fan rotors run on a variable frequency cycle. We can slip through during the 0.5-second lull. DEX will determine if you get sliced, rookie.' Tracker mutters: 'Move it. Patrol drones are scanning this sector.'",
-    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
+    image: ventilationBg,
     x: 15,
     y: 80,
     type: "quest",
@@ -589,7 +599,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Security Sub-Terminal",
     district: "conduit09",
     description: "A buzzing sub-grid terminal flashing corporate warning logs. Tracker gestures at the hardware: 'This sub-terminal bridges the outer perimeter alarm nodes. If you have the INT, you can bypass the firewall and scavenge some valuable copper Rusted Circuitry.' Vice laughs: 'I'll keep watch while you operate.'",
-    image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
+    image: subTermBg,
     x: 45,
     y: 55,
     type: "quest",
@@ -605,7 +615,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Heavy Blast Door",
     district: "conduit09",
     description: "A solid titanium bulkhead door blocking access to the core. Red security locks pulse defensively. Tracker spits: 'This thing is reinforced. You can either use pure physical force to pry open the auxiliary hydraulic valve, or find another way. What's your STR state looking like, rookie?'",
-    image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=600",
+    image: heavyBlastDoorBg,
     x: 75,
     y: 40,
     type: "quest",
@@ -621,7 +631,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Next Section Gate (Transit)",
     district: "conduit09",
     description: "A heavy transit hatch linking Conduit 09 directly to Shatter-Ridge Core. The digital terminal panel glows yellow. Tracker yells: 'The route is clear. Get inside! Once we seal this hatch, there is no returning back.' Vice nods solemnly: 'Get ready, the real array is just ahead.'",
-    image: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&q=80&w=600",
+    image: transitBg,
     x: 90,
     y: 20,
     type: "quest",
@@ -636,7 +646,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Shatter-Ridge Security Checkpoint",
     district: "shatter_ridge_core",
     description: "A fortified cyber-barrier flashing defensive warnings. Heavy steel lockers line the checkpoint walls. To advance deeper, you must find a way to disable the barrier or search the lockers. Vice keeps a steady hand on his weapon: 'Corporate security was here recently. Watch the tripwires.'",
-    image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=600",
+    image: srScBg,
     x: 20,
     y: 70,
     type: "quest",
@@ -652,7 +662,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Shatter-Ridge Reactor Well",
     district: "shatter_ridge_core",
     description: "A boiling pool of toxic bio-coolant fluid casting eerie turquoise shadows. A suspended hydraulic arm holds a locked cargo crate directly over the pool. Tracker points: 'That crate was scheduled for shipping to Ares Elite Headquarters. It has premium tech inside if we can lower it.'",
-    image: "https://images.unsplash.com/photo-1504608524841-42fe6f032b4b?auto=format&fit=crop&q=80&w=600",
+    image: reactorWell,
     x: 50,
     y: 45,
     type: "quest",
@@ -668,7 +678,7 @@ export const MAP_POIS: MapPOI[] = [
     name: "Core Array Shatter-Ridge",
     district: "shatter_ridge_core",
     description: "A majestic array of glowing blue power cells humming in vertical columns. As Tracker begins a manual security check bypass, his terminal flashes a critical red warning! Tracker yells: 'System fault! The corporate mainframe rejected my encryption key! Hostile drones are deploying!' Vice unsheathes his plasma pistol: 'Engage combat systems!'",
-    image: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=600",
+    image: scCaBg,
     x: 80,
     y: 30,
     type: "combat",
@@ -695,7 +705,7 @@ export const MAP_POIS: MapPOI[] = [
     id: "relic_altar",
     name: "Mysterious Relic Altar",
     district: "data_vault",
-    description: "Behind the hacked console, a heavy obsidian altar slides open, revealing a floating, golden relic device of unknown origin. It hums with a warm, terrifying psych-ether frequency. Vice looks tense: 'That's not corporate files. Don't touch it!' Tracker's eyes shine: 'Do it! Touch it... it represents infinite power.'",
+    description: "Behind the hacked console, a heavy obsidian altar slides open. A floating, golden relic device of unknown origin hums with a warm, terrifying psych-ether frequency. Shadows dance across the cracked concrete wall, reflecting the relic's heartbeat-like pulse.",
     image: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=600",
     x: 75,
     y: 40,
@@ -1214,7 +1224,7 @@ export function getInitialState(archetype: Archetype): GameState {
         role: "Tactical Leader",
         bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
         avatar: "👩‍🎤",
-        image: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&q=80&w=600",
+        image: vicePortrait,
         equipment: {
           meleeWeapon: "Vibroblade",
           rangedWeapon: "Battle Pistol BP132",
@@ -1231,7 +1241,7 @@ export function getInitialState(archetype: Archetype): GameState {
         role: "Vanguard Operator",
         bio: "Your squad's scout and electronic warfare specialist. Cynical, precise, and obsessed with tracing optimal infiltration vectors.",
         avatar: "📟",
-        image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&q=80&w=600",
+        image: trackerPortrait,
         equipment: {
           meleeWeapon: "Electric Baton",
           rangedWeapon: null,

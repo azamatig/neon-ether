@@ -117,6 +117,7 @@ export interface GameState {
     npcId: "jax" | "marv" | "cipher";
     nodeId: string;
   } | null;
+  mindmancerUnlocked?: boolean;
 }
 
 export interface BaseNPC {
@@ -183,4 +184,81 @@ export interface QuestState {
   log: string[]; // Progression/narrative log notes
   rewardClaimed?: boolean;
 }
+
+export interface GridCombatant {
+  id: string;
+  name: string;
+  team: 'player' | 'enemy';
+  hp: number;
+  maxHp: number;
+  shields: number;
+  maxShields: number;
+  x: number;
+  y: number;
+  avatar: string;
+  image?: string;
+  color: string;
+  range: number;
+  damage: number;
+  ap: number;
+  maxAp: number;
+  initiative: number;
+  isDead: boolean;
+  isCompanion?: boolean;
+  statuses?: string[];
+  overclockTurns?: number;
+  glitchTurns?: number;
+  corrodedTurns?: number;
+  panicTurns?: number;
+  stunnedTurns?: number;
+  silencedTurns?: number;
+  bleedTurns?: number;
+}
+
+export interface GridInteractiveObject {
+  id: string;
+  name: string;
+  type: 'terminal' | 'battery' | 'shield_cover';
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  isDestroyed: boolean;
+  isHacked: boolean;
+  avatar: string;
+  color: string;
+  description: string;
+}
+
+export interface GridCombatState {
+  combatants: GridCombatant[];
+  turnOrder: string[];
+  currentTurnIdx: number;
+  selectedAction: "move" | "attack" | "meleeAtk" | "rangedAtk" | "spell" | "item" | null;
+  turnLog: string;
+  interactiveObjects?: GridInteractiveObject[];
+}
+
+export interface HackingPuzzleState {
+  type: "sanctuary" | "cargo_logs" | "security_mainframe" | "cryo_bypass" | "nouveau_safe" | "rebel_courier" | "shatter_ridge_server";
+  status: "idle" | "playing" | "success" | "failure";
+  targets: string[];
+  buffer: string[];
+  maxBuffer: number;
+  grid: { hex: string; row: number; col: number; isClicked: boolean; isHighlighted: boolean }[][];
+  attemptsLeft: number;
+  maxAttempts: number;
+  activeLineType: "row" | "col";
+  activeLineIdx: number;
+  netSlicerLevel: number;
+  intelligence: number;
+  usedPerkBuffer: boolean;
+  usedPerkAttempts: boolean;
+}
+
+export type District = string;
+export type POI = any;
+export type Item = any;
+
+
 

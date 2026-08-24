@@ -6,6 +6,9 @@
   --font-display: "Montserrat", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
+  --font-size-2xs: 0.65rem;
+  --font-size-3xs: 0.55rem;
+
   /* Custom cyberpunk frosted glass color palette */
   --color-cyber-black: #020308;
   --color-cyber-gray-dark: rgba(255, 255, 255, 0.03);

@@ -36,7 +36,7 @@ export interface CustomCombatEncounter {
 export interface TacticalEncounterStudioProps {
   encounters: CustomCombatEncounter[];
   setEncounters: React.Dispatch<React.SetStateAction<CustomCombatEncounter[]>>;
-  gameState: GameState;
+  gameState?: GameState | null;
   onLaunchEncounterInGame: (encounter: CustomCombatEncounter) => void;
   triggerToast: (msg: string) => void;
 }
@@ -114,8 +114,8 @@ export const TacticalEncounterStudio: React.FC<TacticalEncounterStudioProps> = (
         id: "player",
         name: "You",
         team: "player",
-        hp: gameState.hp,
-        maxHp: gameState.maxHp,
+        hp: gameState?.hp ?? 100,
+        maxHp: gameState?.maxHp ?? 100,
         shields: 30,
         maxShields: 30,
         x: 1,
@@ -220,7 +220,7 @@ export const TacticalEncounterStudio: React.FC<TacticalEncounterStudioProps> = (
     const newEnc: CustomCombatEncounter = {
       id: newId,
       name: "Tactical Skirmish Arena",
-      district: gameState.district || "conduit09",
+      district: gameState?.district || "conduit09",
       description: "Custom encounter crafted in GM Grid Spawner.",
       backgroundUrl: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800",
       combatants: [
@@ -228,8 +228,8 @@ export const TacticalEncounterStudio: React.FC<TacticalEncounterStudioProps> = (
           id: "player",
           name: "You",
           team: "player",
-          hp: gameState.hp,
-          maxHp: gameState.maxHp,
+          hp: gameState?.hp ?? 100,
+          maxHp: gameState?.maxHp ?? 100,
           shields: 30,
           maxShields: 30,
           x: 1,

@@ -20,19 +20,24 @@ import {
   Award,
   BookOpen,
   Briefcase,
-  Wand2
+  Wand2,
+  Building2,
+  Home,
+  CheckCircle2,
+  Scroll
 } from "lucide-react";
 import { GameState, BaseNPC } from "../types";
+import { DEFAULT_CAMPAIGN_NPCS } from "../npcsData";
 
 interface NPCBaseManagementProps {
   isOpen: boolean;
   onClose: () => void;
-  gameState: GameState;
+  gameState: GameState | null;
   setGameState: React.Dispatch<React.SetStateAction<GameState | null>>;
   triggerToast: (msg: string) => void;
 }
 
-type SubTab = "talk" | "gifts" | "activities" | "job" | "romance" | "inventory" | "security" | "dojo" | "missions" | "upgrades";
+type SubTab = "talk" | "gifts" | "activities" | "job" | "romance" | "inventory" | "security" | "dojo" | "missions" | "upgrades" | "bases";
 
 export default function NPCBaseManagement({
   isOpen,
@@ -42,7 +47,7 @@ export default function NPCBaseManagement({
   triggerToast
 }: NPCBaseManagementProps) {
   // Currently selected Base NPC
-  const npcs = gameState.baseNPCs || [];
+  const npcs = gameState?.baseNPCs || [];
   const [selectedNPCId, setSelectedNPCId] = useState<string>(npcs[0]?.id || "aria");
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("talk");
   const [selectedMissionId, setSelectedMissionId] = useState<string>("matrix_decrypt");
@@ -54,7 +59,7 @@ export default function NPCBaseManagement({
     }
   }, [npcs, selectedNPCId]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !gameState) return null;
 
   if (npcs.length === 0) {
     return (
@@ -261,6 +266,77 @@ export default function NPCBaseManagement({
         dialogue: `"${speech}"`
       }), reaction);
     }
+  };
+
+  // Custom Studio / Campaign Choice Handler with Stat Checks
+  const handleCustomDialogueChoice = (choice: any) => {
+    // 1. Stat / Resource check validation
+    if (choice.checkType === "credits") {
+      const cost = choice.cost || 0;
+      if (gameState.credits < cost) {
+        triggerToast(`[FAILED] Insufficient Credits: Requires ${cost}¤, you have ${gameState.credits}¤`);
+        return;
+      }
+      payCredits(cost);
+    } else if (choice.checkType === "int") {
+      const playerInt = gameState.attributes?.int || 10;
+      const targetInt = choice.checkValue || 12;
+      if (playerInt < targetInt) {
+        updateNPC(n => ({
+          dialogue: `"Your technical calculations are flawed, runner. Try again when your neural cyberdeck is properly overclocked."`
+        }), `SYSTEM: [CHECK FAILED] Intelligence check failed! Required: ${targetInt}, Yours: ${playerInt}`);
+        return;
+      }
+    } else if (choice.checkType === "str") {
+      const playerStr = gameState.attributes?.str || 10;
+      const targetStr = choice.checkValue || 12;
+      if (playerStr < targetStr) {
+        updateNPC(n => ({
+          dialogue: `"You don't have the cybernetic muscle to enforce that tone with me."`
+        }), `SYSTEM: [CHECK FAILED] Strength check failed! Required: ${targetStr}, Yours: ${playerStr}`);
+        return;
+      }
+    } else if (choice.checkType === "dex") {
+      const playerDex = gameState.attributes?.dex || 10;
+      const targetDex = choice.checkValue || 12;
+      if (playerDex < targetDex) {
+        updateNPC(n => ({
+          dialogue: `"Too slow. My ocular targeters tracked your movement before you even drew."`
+        }), `SYSTEM: [CHECK FAILED] Dexterity check failed! Required: ${targetDex}, Yours: ${playerDex}`);
+        return;
+      }
+    } else if (choice.checkType === "mindmancer") {
+      const playerMindmancer = gameState.skills?.mindmancer || 0;
+      const targetLevel = choice.checkValue || 1;
+      if (playerMindmancer < targetLevel) {
+        updateNPC(n => ({
+          dialogue: `"Your Ether harmonics are too weak to penetrate my neural dampeners."`
+        }), `SYSTEM: [CHECK FAILED] Mindmancer check failed! Required Level: ${targetLevel}, Yours: ${playerMindmancer}`);
+        return;
+      }
+    }
+
+    // Check passed or free choice!
+    let reactionNote = `SYSTEM: [CHECK PASSED] "${choice.text}" executed!`;
+    if (choice.outcome === "recruit_party") {
+      setGameState(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          party: prev.party.includes(currentNPC.name) ? prev.party : [...prev.party, currentNPC.name]
+        };
+      });
+      reactionNote = `SYSTEM: SUCCESS! ${currentNPC.name} joined your active Combat Squad!`;
+    } else if (choice.outcome === "buy_slave" || choice.outcome === "recruit_base") {
+      reactionNote = `SYSTEM: SUCCESS! ${currentNPC.name} is liberated and fully dedicated to your Safehouse!`;
+    }
+
+    updateNPC(n => ({
+      happiness: Math.min(100, (n.happiness || 50) + 10),
+      affectionValue: Math.min(100, (n.affectionValue || 20) + 12),
+      defiance: Math.max(0, (n.defiance || 20) - 10),
+      dialogue: `"${choice.response}"`
+    }), reactionNote);
   };
 
   // 2. GIFTS
@@ -725,6 +801,207 @@ export default function NPCBaseManagement({
     triggerToast(`CHEMLAB SUCCESS: Spliced ${stimName}!`);
   };
 
+  const BASE_PROPERTIES = [
+    {
+      id: "hideout",
+      name: "The Aurus Safehouse",
+      region: "Aurus Slums",
+      districtId: "aurus",
+      price: 0,
+      securityLevel: 1,
+      perk: "+10 Base Stamina Regen, Standard Storage Vault",
+      description: "Your starter command bunker hidden behind the steam grates of Aurus Slums. Functional, gritty, and dependable.",
+      image: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      id: "docks_bunker",
+      name: "Subsurface Docks Bunker",
+      region: "The Rust Docks",
+      districtId: "slums",
+      price: 650,
+      securityLevel: 3,
+      perk: "+20 Max Stamina, Black-Market Smuggling Bay, +15% Scrap Yield",
+      description: "Reinforced submarine vault under the salt-water drainage pipes. Ideal for smuggling heavy cyberware and storing stolen tech.",
+      image: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      id: "satoshi_penthouse",
+      name: "Satoshi Cyber Penthouse",
+      region: "Downtown Megacity",
+      districtId: "downtown",
+      price: 1200,
+      securityLevel: 4,
+      perk: "+35 Max Stamina, High-Speed Matrix Satellite Uplink, +20% Credits on Missions",
+      description: "High-rise executive suite offering panoramic neon skyline views, corporate-grade encryption shields, and luxury crew chambers.",
+      image: "https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=600&q=80"
+    },
+    {
+      id: "hyperion_spire",
+      name: "Hyperion Cathedral Sanctum",
+      region: "Apex Spire",
+      districtId: "spire",
+      price: 2500,
+      securityLevel: 5,
+      perk: "+50 Max Stamina, Mindmancer Psychic Focus Ley-Core, +2 AP in Tactical Battles",
+      description: "Ancient technomancer cathedral overlooking the upper cloud layer. Channeled psychic current amplification matrix.",
+      image: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=600&q=80"
+    }
+  ];
+
+  const handlePurchaseOrSwitchBase = (baseId: string) => {
+    const base = BASE_PROPERTIES.find(b => b.id === baseId);
+    if (!base) return;
+
+    const unlocked = gameState.unlockedBases || ["hideout"];
+    const isOwned = unlocked.includes(baseId);
+
+    if (isOwned) {
+      setGameState(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          currentBaseId: baseId,
+          poi: base.name
+        };
+      });
+      triggerToast(`HEADQUARTERS RELOCATED: Active HQ is now "${base.name}"!`);
+      return;
+    }
+
+    if (gameState.credits < base.price) {
+      triggerToast(`PURCHASE FAILED: Need ${base.price}¤ (Current: ${gameState.credits}¤)`);
+      return;
+    }
+
+    setGameState(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        credits: prev.credits - base.price,
+        unlockedBases: [...(prev.unlockedBases || ["hideout"]), baseId],
+        currentBaseId: baseId,
+        poi: base.name,
+        maxStamina: (prev.maxStamina || 100) + (baseId === "docks_bunker" ? 20 : baseId === "satoshi_penthouse" ? 35 : 50)
+      };
+    });
+
+    triggerToast(`BASE PURCHASED: Acquired deed to "${base.name}" (-${base.price}¤)!`);
+  };
+
+  const handleNPCQuestAction = (questId: string, stageId: string, pathId?: string) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      const quests = [...(next.campaignQuestsRegistry || [])];
+      const questIdx = quests.findIndex(q => q.id === questId);
+      if (questIdx === -1) return prev;
+
+      const quest = { ...quests[questIdx] };
+      const stageIdx = quest.stages.findIndex(s => s.id === stageId);
+      if (stageIdx === -1) return prev;
+
+      const stage = { ...quest.stages[stageIdx] };
+      const path = pathId ? stage.operationalPaths?.find(p => p.id === pathId) : null;
+
+      // Handle path checks if required
+      if (path && path.checkType && path.checkType !== "none") {
+        if (path.checkType === "credits") {
+          const cost = path.checkValue || 0;
+          if (next.credits < cost) {
+            triggerToast(`INSUFFICIENT CREDITS: Need ${cost}¤ (You have ${next.credits}¤)`);
+            return prev;
+          }
+          next.credits -= cost;
+        } else if (path.checkType === "item") {
+          const reqItem = path.requiredItem || "";
+          if (reqItem && !next.inventory.includes(reqItem)) {
+            triggerToast(`MISSING REQUIRED ITEM: ${reqItem}`);
+            return prev;
+          }
+        } else {
+          const playerStat = 
+            path.checkType === "str" ? (next.attributes?.str || 10) :
+            path.checkType === "dex" ? (next.attributes?.dex || 10) :
+            path.checkType === "int" ? (next.attributes?.int || 10) :
+            path.checkType === "will" ? (next.attributes?.will || 10) :
+            (next.skills?.mindmancer || 0);
+
+          const targetDC = path.checkValue || 12;
+          const roll = Math.floor(Math.random() * 20) + 1 + Math.floor(playerStat / 2);
+          if (roll < targetDC) {
+            triggerToast(`CHECK FAILED: [${path.checkType.toUpperCase()}] Roll ${roll} vs DC ${targetDC}. Try another tactic!`);
+            return prev;
+          }
+        }
+      }
+
+      // Bonus rewards from chosen path
+      if (path?.grantsBonusCredits) next.credits = (next.credits || 0) + path.grantsBonusCredits;
+      if (path?.grantsBonusXP) next.xp = (next.xp || 0) + path.grantsBonusXP;
+      if (path?.grantsBonusItem) next.inventory = [...next.inventory, path.grantsBonusItem];
+
+      // Mark stage complete
+      stage.completed = true;
+      quest.stages[stageIdx] = stage;
+
+      // Check if all stages completed
+      const allStagesCompleted = quest.stages.every(s => s.completed);
+      if (allStagesCompleted) {
+        quest.completed = true;
+        if (!next.completedQuests.includes(quest.title)) {
+          next.completedQuests.push(quest.title);
+        }
+        next.activeQuests = (next.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
+
+        // Grant rewards
+        if (quest.rewardXP) next.xp = (next.xp || 0) + quest.rewardXP;
+        if (quest.rewardCredits) next.credits = (next.credits || 0) + quest.rewardCredits;
+        if (quest.rewardItems && quest.rewardItems.length > 0) {
+          next.inventory = [...next.inventory, ...quest.rewardItems];
+        }
+
+        // Apply world unlocks
+        if (quest.worldUnlocks) {
+          if (quest.worldUnlocks.unlockBaseId) {
+            next.unlockedBases = Array.from(new Set([...(next.unlockedBases || ["hideout"]), quest.worldUnlocks.unlockBaseId]));
+          }
+          if (quest.worldUnlocks.unlockDistrictId) {
+            next.unlockedDistricts = Array.from(new Set([...(next.unlockedDistricts || ["slums", "downtown"]), quest.worldUnlocks.unlockDistrictId]));
+          }
+          if (quest.worldUnlocks.unlockPerkOrSkill) {
+            next.perks = Array.from(new Set([...(next.perks || []), quest.worldUnlocks.unlockPerkOrSkill]));
+          }
+          if (quest.worldUnlocks.recruitCompanionId) {
+            next.recruitedCompanions = Array.from(new Set([...(next.recruitedCompanions || []), quest.worldUnlocks.recruitCompanionId]));
+          }
+        }
+
+        triggerToast(`🎉 QUEST COMPLETE: "${quest.title}" (+${quest.rewardXP || 100} XP, +${quest.rewardCredits || 250}¤)!`);
+      } else {
+        triggerToast(`🎯 STAGE COMPLETED: "${stage.title}"! Next objective updated.`);
+      }
+
+      quests[questIdx] = quest;
+      next.campaignQuestsRegistry = quests;
+
+      // Update NPC dialogue reaction
+      next.baseNPCs = (next.baseNPCs || []).map(n => {
+        if (n.id === currentNPC.id) {
+          return {
+            ...n,
+            respect: Math.min(100, n.respect + 10),
+            happiness: Math.min(100, n.happiness + 8),
+            dialogue: `"${path?.outcomeDesc || `Thank you for taking care of this, Commander! We've advanced our tactical hold over the sector.`}"`,
+            reaction: `📜 DIRECTIVE RESOLVED: Completed mission task with ${n.name}!`
+          };
+        }
+        return n;
+      });
+
+      return next;
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-950/95 z-50 overflow-y-auto p-4 md:p-6 flex flex-col justify-center items-center font-mono select-none">
       {/* Decorative full screen cyber grid */}
@@ -1007,6 +1284,7 @@ export default function NPCBaseManagement({
           <div className="flex flex-wrap border-b border-white/10 pb-2 gap-1 md:gap-2">
             {[
               { id: "talk", label: "Talk Options", icon: <BookOpen size={13} /> },
+              { id: "bases", label: "Real Estate & Bases", icon: <Building2 size={13} /> },
               { id: "gifts", label: "Gifts & Food", icon: <Coffee size={13} /> },
               { id: "activities", label: "Activities", icon: <Award size={13} /> },
               { id: "job", label: "Job Allocation", icon: <Briefcase size={13} /> },
@@ -1039,31 +1317,133 @@ export default function NPCBaseManagement({
           <div className="min-h-[110px] flex items-center justify-center p-1 bg-slate-900/40 rounded-xl border border-white/5">
             
             {/* 1. TALK PANEL */}
-            {activeSubTab === "talk" && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full p-2">
-                <button
-                  onClick={() => handleTalk("base_strategy")}
-                  className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
-                >
-                  <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">STRATEGIC COMMAND</p>
-                  <p className="text-slate-400 leading-snug">Consult {currentNPC.name} about base defense strategy.</p>
-                </button>
-                <button
-                  onClick={() => handleTalk("past_lore")}
-                  className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
-                >
-                  <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">DEEP MEMORY INQUIRY</p>
-                  <p className="text-slate-400 leading-snug">Ask about her life prior to the Megacity grid war.</p>
-                </button>
-                <button
-                  onClick={() => handleTalk("flirt")}
-                  className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
-                >
-                  <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">TACTICAL ADVANCE</p>
-                  <p className="text-slate-400 leading-snug">Express personal interest / Flirt with her.</p>
-                </button>
-              </div>
-            )}
+            {activeSubTab === "talk" && (() => {
+              const matchedCustom = DEFAULT_CAMPAIGN_NPCS.find(n => n.id === currentNPC.id || n.name === currentNPC.name);
+              const customChoices = matchedCustom?.choices || [];
+
+              const activeQuestDirectives = (gameState?.campaignQuestsRegistry || []).flatMap(quest => {
+                const isQuestActive = gameState?.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+                if (!isQuestActive) return [];
+                const currentStage = quest.stages?.find(s => !s.completed);
+                if (!currentStage) return [];
+                const targetNpcLower = (currentStage.targetNPC || "").toLowerCase();
+                const currentNpcNameLower = currentNPC.name.toLowerCase();
+                const currentNpcIdLower = currentNPC.id.toLowerCase();
+                if (targetNpcLower && (currentNpcNameLower.includes(targetNpcLower) || currentNpcIdLower.includes(targetNpcLower) || targetNpcLower.includes(currentNpcIdLower))) {
+                  return [{ quest, stage: currentStage }];
+                }
+                return [];
+              });
+
+              return (
+                <div className="flex flex-col gap-3 w-full p-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+                    <button
+                      onClick={() => handleTalk("base_strategy")}
+                      className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
+                    >
+                      <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">STRATEGIC COMMAND</p>
+                      <p className="text-slate-400 leading-snug">Consult {currentNPC.name} about base defense strategy.</p>
+                    </button>
+                    <button
+                      onClick={() => handleTalk("past_lore")}
+                      className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
+                    >
+                      <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">DEEP MEMORY INQUIRY</p>
+                      <p className="text-slate-400 leading-snug">Ask about her life prior to the Megacity grid war.</p>
+                    </button>
+                    <button
+                      onClick={() => handleTalk("flirt")}
+                      className="bg-[#242b3d] hover:bg-slate-800 border border-white/10 text-slate-100 rounded-lg p-3 text-xs text-left cursor-pointer transition-all hover:border-amber-500"
+                    >
+                      <p className="font-extrabold uppercase text-[10px] text-amber-500 mb-1">TACTICAL ADVANCE</p>
+                      <p className="text-slate-400 leading-snug">Express personal interest / Flirt with her.</p>
+                    </button>
+                  </div>
+
+                  {/* Active Campaign Quest Directives for this NPC */}
+                  {activeQuestDirectives.length > 0 && (
+                    <div className="border-t border-amber-500/30 pt-2 space-y-2 text-left">
+                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Scroll size={12} className="text-amber-400 animate-pulse" /> ⚡ Active Campaign Directives With {currentNPC.name}
+                      </span>
+                      <div className="space-y-2">
+                        {activeQuestDirectives.map(({ quest, stage }, qIdx) => (
+                          <div key={qIdx} className="bg-amber-950/40 border border-amber-500/40 p-3 rounded-lg flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-black text-amber-300 uppercase">
+                                📜 {quest.title} : {stage.title}
+                              </span>
+                              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-400/30 font-mono">
+                                STAGE OBJECTIVE
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 font-sans">
+                              {stage.description}
+                            </p>
+                            {stage.operationalPaths && stage.operationalPaths.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                {stage.operationalPaths.map(path => (
+                                  <button
+                                    key={path.id}
+                                    onClick={() => handleNPCQuestAction(quest.id, stage.id, path.id)}
+                                    className="p-2 bg-slate-900/90 hover:bg-amber-900/40 border border-amber-500/30 hover:border-amber-400 rounded text-left transition-all cursor-pointer group"
+                                  >
+                                    <p className="text-xs font-bold text-amber-200 group-hover:text-amber-100 flex items-center justify-between">
+                                      <span>{path.label}</span>
+                                      <span className="text-[10px] text-amber-400/80 font-mono uppercase">
+                                        [{path.checkType || "action"}]
+                                      </span>
+                                    </p>
+                                    {path.checkType && path.checkType !== "none" && (
+                                      <p className="text-[10px] text-amber-400/70 mt-0.5">
+                                        Requires: {path.checkType === "credits" ? `${path.checkValue}¤` : path.checkType === "item" ? (path.requiredItem || "Item") : `${path.checkType.toUpperCase()} Check (DC ${path.checkValue || 12})`}
+                                      </p>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleNPCQuestAction(quest.id, stage.id)}
+                                className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black uppercase text-xs rounded transition-all cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.3)] mt-1"
+                              >
+                                Complete Directive: {stage.title}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dynamic Studio / Campaign Special Interaction Choices & Stat Checks */}
+                  {customChoices.length > 0 && (
+                    <div className="border-t border-cyan-500/20 pt-2 space-y-2 text-left">
+                      <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">
+                        ⚡ Special Inquiries & Tactical Stat Checks
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {customChoices.map((choice, cIdx) => (
+                          <button
+                            key={cIdx}
+                            onClick={() => handleCustomDialogueChoice(choice)}
+                            className="bg-slate-950/80 hover:bg-cyan-950/60 border border-cyan-500/30 hover:border-cyan-400 p-2.5 rounded-lg text-left transition-all cursor-pointer group"
+                          >
+                            <p className="text-cyan-300 font-bold text-xs group-hover:text-cyan-200">
+                              {choice.text}
+                            </p>
+                            <p className="text-slate-400 text-[10px] line-clamp-1 mt-0.5 font-sans">
+                              {choice.response}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* 2. GIFTS PANEL */}
             {activeSubTab === "gifts" && (
@@ -2014,6 +2394,113 @@ export default function NPCBaseManagement({
                 </div>
               );
             })()}
+
+            {/* 11. BASES PANEL */}
+            {activeSubTab === "bases" && (
+              <div className="flex flex-col gap-3 w-full p-2 text-left">
+                <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                  <div>
+                    <span className="text-xs font-black text-cyan-400 uppercase tracking-wider block">
+                      🏢 Megacity Real Estate & Command Bases
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Purchase new district bases or switch your active crew headquarters to claim specialized regional perks.
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-500 uppercase block font-mono">Current Balance</span>
+                    <span className="text-sm font-black text-amber-400">{gameState.credits}¤</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {BASE_PROPERTIES.map(base => {
+                    const unlocked = gameState.unlockedBases || ["hideout"];
+                    const isOwned = unlocked.includes(base.id);
+                    const isCurrentHQ = (gameState.currentBaseId || "hideout") === base.id;
+
+                    return (
+                      <div
+                        key={base.id}
+                        className={`border rounded-xl p-3 flex flex-col justify-between transition-all ${
+                          isCurrentHQ
+                            ? "bg-cyan-950/40 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                            : isOwned
+                            ? "bg-slate-900/60 border-emerald-500/40"
+                            : "bg-slate-950/60 border-white/10 opacity-90 hover:opacity-100"
+                        }`}
+                      >
+                        <div className="flex gap-3">
+                          <img
+                            src={base.image}
+                            alt={base.name}
+                            className="w-20 h-20 rounded-lg object-cover border border-white/10 flex-shrink-0"
+                          />
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-xs font-extrabold text-white block uppercase">
+                                  {base.name}
+                                </span>
+                                <span className="text-[9px] text-cyan-400 uppercase font-mono">
+                                  📍 {base.region} • Security Level {base.securityLevel}
+                                </span>
+                              </div>
+                              {isCurrentHQ && (
+                                <span className="bg-cyan-500 text-slate-950 text-[9px] font-black uppercase px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <CheckCircle2 size={10} /> Active HQ
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-slate-400 font-sans mt-1 leading-snug">
+                              {base.description}
+                            </p>
+                            <div className="mt-2 p-1.5 bg-slate-900/80 rounded border border-white/5 text-[9.5px] text-amber-300 font-mono">
+                              ⚡ Perk: {base.perk}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 pt-2 border-t border-white/5 flex justify-between items-center">
+                          <span className="text-xs font-mono font-bold text-slate-300">
+                            {isOwned ? (
+                              <span className="text-emerald-400 flex items-center gap-1 text-[10px]">
+                                <CheckCircle2 size={12} /> Deed Owned
+                              </span>
+                            ) : (
+                              <span className="text-amber-400">{base.price}¤</span>
+                            )}
+                          </span>
+
+                          {isCurrentHQ ? (
+                            <button
+                              disabled
+                              className="px-4 py-1.5 bg-cyan-950 border border-cyan-500 text-cyan-400 font-black uppercase text-[10px] rounded cursor-default"
+                            >
+                              Current Base
+                            </button>
+                          ) : isOwned ? (
+                            <button
+                              onClick={() => handlePurchaseOrSwitchBase(base.id)}
+                              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black uppercase text-[10px] rounded transition-all cursor-pointer border border-emerald-400"
+                            >
+                              Relocate HQ Here
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handlePurchaseOrSwitchBase(base.id)}
+                              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black uppercase text-[10px] rounded transition-all cursor-pointer border border-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]"
+                            >
+                              Purchase Deed ({base.price}¤)
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
           </div>
 

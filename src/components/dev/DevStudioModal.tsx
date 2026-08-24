@@ -21,22 +21,25 @@ import {
   Play,
   RotateCcw
 } from "lucide-react";
-import { GridCombatant, GameState } from "../../types";
+import { GridCombatant, GameState, UnifiedQuest, CustomPOIData } from "../../types";
 import { MAP_POIS, MapPOI, REGIONS, Region, ITEM_METADATA, ItemDetails } from "../../data";
+import { DEFAULT_CAMPAIGN_QUESTS } from "../../questsData";
+import { DEFAULT_CAMPAIGN_NPCS } from "../../npcsData";
 import { DialogueGraphEditor, CustomDialogueNode } from "./DialogueGraphEditor";
 import { QuestGraphEditor, CustomQuest } from "./QuestGraphEditor";
 import { TacticalEncounterStudio, CustomCombatEncounter } from "./TacticalEncounterStudio";
 import { ItemForgeStudio, CustomWorldItem } from "./ItemForgeStudio";
 import { NPCStudio, CustomCharacter } from "./NPCStudio";
-import { POIStudio, CustomPOIData } from "./POIStudio";
-import { QuestStudio, CustomQuestData } from "./QuestStudio";
+import { POIStudio } from "./POIStudio";
+import { SceneStudio } from "./SceneStudio";
+import { QuestStudio } from "./QuestStudio";
 import { EventStudio, CustomWorldEvent } from "./EventStudio";
 
 export interface DevStudioModalProps {
   isOpen: boolean;
   onClose: () => void;
-  gameState: GameState;
-  setGameState: React.Dispatch<React.SetStateAction<GameState>>;
+  gameState?: GameState | null;
+  setGameState?: React.Dispatch<React.SetStateAction<GameState>>;
   customPOIs?: MapPOI[];
   setCustomPOIs?: React.Dispatch<React.SetStateAction<MapPOI[]>>;
   customItems?: ItemDetails[];
@@ -71,6 +74,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
   const STORAGE_KEY_POIS = "dev_studio_custom_pois_v2";
   const STORAGE_KEY_QUESTS = "dev_studio_custom_quests_v2";
   const STORAGE_KEY_EVENTS = "dev_studio_custom_events_v2";
+  const STORAGE_KEY_ENCOUNTERS = "dev_studio_custom_encounters_v2";
 
   // --- STATE FOR ADVANCED CONTENT STUDIOS ---
   const [customItems, setCustomItems] = useState<CustomWorldItem[]>(() => {
@@ -114,29 +118,12 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
   const [customNPCs, setCustomNPCs] = useState<CustomCharacter[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_NPCS);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
-      {
-        id: "npc_nyx_infiltrator",
-        name: "Nyx, The Void Slicer",
-        role: "Mercenary Net-Assassin",
-        avatar: "🥷",
-        portraitUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=600",
-        bodyUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=600",
-        bio: "An elite phantom decker with sub-dermal holographic tattoos. Ex-Arasaka Black Ops operative now offering lethal infiltration skills.",
-        npcType: "recruitable",
-        locationPOI: "Neon Abyss Bar",
-        recruitmentCost: 250,
-        team: "player",
-        hp: 110,
-        maxHp: 110,
-        atk: 32,
-        range: 3,
-        initialDialogue: "Looking for someone who can turn a corporate firewall into molten slag before they even sound the alarm?",
-        dialogueNodes: []
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    ];
+    } catch (e) {}
+    return DEFAULT_CAMPAIGN_NPCS;
   });
 
   const [customPOIs, setCustomPOIs] = useState<CustomPOIData[]>(() => {
@@ -174,39 +161,15 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
     ];
   });
 
-  const [customQuests, setCustomQuests] = useState<CustomQuestData[]>(() => {
+  const [customQuests, setCustomQuests] = useState<UnifiedQuest[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_QUESTS);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
-      {
-        id: "quest_void_core_heist",
-        title: "The Void Core Infiltration",
-        desc: "Steal the prototype Singularity Overcharger from the heavily fortified Arasaka Sub-Vault in Shatter Ridge before corporate security seals the sector.",
-        giverNPC: "Agent Jax",
-        category: "faction",
-        rewardCredits: 450,
-        rewardXP: 180,
-        rewardItems: ["Singularity Rail-Pistol Mk.IV"],
-        steps: [
-          {
-            id: "step_1",
-            description: "Obtain the encrypted access passkey from the corrupted logistics node.",
-            targetPOI: "Cargo Logistics Hub",
-            targetCount: 1,
-            currentCount: 0
-          },
-          {
-            id: "step_2",
-            description: "Breach the Sub-Vault security grid and defeat the Sentinel Mech.",
-            targetPOI: "Corporate Sub-Vault",
-            targetCount: 1,
-            currentCount: 0
-          }
-        ]
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    ];
+    } catch (e) {}
+    return DEFAULT_CAMPAIGN_QUESTS;
   });
 
   const [customEvents, setCustomEvents] = useState<CustomWorldEvent[]>(() => {
@@ -247,6 +210,100 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
     ];
   });
 
+  const [customEncounters, setCustomEncounters] = useState<CustomCombatEncounter[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ENCOUNTERS);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      {
+        id: "enc_conduit_ambush",
+        name: "Conduit 09 Sector Ambush",
+        district: "conduit09",
+        description: "A squad of Ares Security enforcers has cordoned off the maintenance gateway.",
+        backgroundUrl: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800",
+        combatants: [
+          {
+            id: "player",
+            name: "You",
+            team: "player",
+            hp: gameState?.hp ?? 100,
+            maxHp: gameState?.maxHp ?? 100,
+            shields: 30,
+            maxShields: 30,
+            x: 1,
+            y: 2,
+            avatar: "⚡",
+            color: "border-cyan-400 bg-cyan-950/60",
+            range: 2,
+            damage: 30,
+            ap: 2,
+            maxAp: 2,
+            initiative: 15,
+            isDead: false
+          },
+          {
+            id: "enemy_1",
+            name: "Ares Enforcer Lead",
+            team: "enemy",
+            hp: 90,
+            maxHp: 90,
+            shields: 20,
+            maxShields: 20,
+            x: 6,
+            y: 2,
+            avatar: "🥷",
+            color: "border-rose-500 bg-rose-950/60",
+            range: 3,
+            damage: 25,
+            ap: 2,
+            maxAp: 2,
+            initiative: 12,
+            isDead: false
+          },
+          {
+            id: "enemy_2",
+            name: "Vanguard Droid",
+            team: "enemy",
+            hp: 60,
+            maxHp: 60,
+            shields: 10,
+            maxShields: 10,
+            x: 5,
+            y: 4,
+            avatar: "🤖",
+            color: "border-rose-500 bg-rose-950/60",
+            range: 2,
+            damage: 18,
+            ap: 2,
+            maxAp: 2,
+            initiative: 8,
+            isDead: false
+          }
+        ],
+        interactiveObjects: [
+          {
+            id: "obj_battery_1",
+            name: "Ether Battery",
+            type: "battery" as const,
+            x: 4,
+            y: 2,
+            hp: 40,
+            maxHp: 40,
+            isDestroyed: false,
+            isHacked: false,
+            avatar: "🔋",
+            color: "border-cyan-400 bg-cyan-950/80 text-cyan-300",
+            description: "Volatile battery."
+          }
+        ],
+        rewardCredits: 300,
+        rewardExp: 60,
+        rewardItem: "Military Stun Grenade"
+      }
+    ];
+  });
+
   // Save to LocalStorage whenever modified
   useEffect(() => {
     try {
@@ -278,8 +335,15 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
     } catch (e) {}
   }, [customEvents]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ENCOUNTERS, JSON.stringify(customEncounters));
+    } catch (e) {}
+  }, [customEncounters]);
+
   // Tab navigation
-  const [activeTab, setActiveTab] = useState<"pois" | "npcs" | "items" | "quests" | "events" | "dialogues" | "export">("pois");
+  const [activeTab, setActiveTab] = useState<"pois" | "scenes" | "npcs" | "items" | "quests" | "events" | "encounters" | "export">("pois");
+  const [selectedSceneIdForEditor, setSelectedSceneIdForEditor] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
@@ -289,7 +353,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
     const exportBundle = {
       meta: {
         exportedAt: new Date().toISOString(),
-        version: "4.0.0",
+        version: "4.1.0",
         title: "Masters of Raana & Cyberpunk RPG Content Expansion Pack",
         author: gameState.playerName || "GameMaster"
       },
@@ -297,7 +361,9 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
       customNPCs,
       customItems,
       customQuests,
-      customEvents
+      customEvents,
+      customEncounters,
+      poiInteractiveScenes: gameState.poiInteractiveScenes || {}
     };
     return JSON.stringify(exportBundle, null, 2);
   };
@@ -317,6 +383,16 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
       if (data.customItems) setCustomItems(data.customItems);
       if (data.customQuests) setCustomQuests(data.customQuests);
       if (data.customEvents) setCustomEvents(data.customEvents);
+      if (data.customEncounters) setCustomEncounters(data.customEncounters);
+      if (data.poiInteractiveScenes) {
+        setGameState(prev => ({
+          ...prev,
+          poiInteractiveScenes: {
+            ...(prev.poiInteractiveScenes || {}),
+            ...data.poiInteractiveScenes
+          }
+        }));
+      }
       triggerToast("CAMPAIGN MODULE SUCCESSFULLY IMPORTED & LOADED!");
     } catch (e) {
       triggerToast("ERROR: Invalid JSON module format!");
@@ -403,16 +479,31 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab("npcs")}
+            onClick={() => setActiveTab("scenes")}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 whitespace-nowrap cursor-pointer ${
-              activeTab === "npcs"
+              activeTab === "scenes"
                 ? "border-purple-400 text-purple-300 bg-purple-950/30"
                 : "border-transparent text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Users size={15} className="text-purple-400" /> 
+            <Zap size={15} className="text-purple-400" /> 
+            <span>Interactive Scenes & Nodes</span>
+            <span className="text-3xs bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-500/30 text-purple-400 font-bold">
+              {Object.keys(gameState?.poiInteractiveScenes || {}).length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("npcs")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 whitespace-nowrap cursor-pointer ${
+              activeTab === "npcs"
+                ? "border-pink-400 text-pink-300 bg-pink-950/30"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Users size={15} className="text-pink-400" /> 
             <span>Characters & Companions</span>
-            <span className="text-3xs bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-500/30 text-purple-400 font-bold">{customNPCs.length}</span>
+            <span className="text-3xs bg-pink-950/80 px-1.5 py-0.2 rounded border border-pink-500/30 text-pink-400 font-bold">{customNPCs.length}</span>
           </button>
 
           <button
@@ -450,8 +541,21 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
             }`}
           >
             <Zap size={15} className="text-rose-400" /> 
-            <span>Dynamic Events & Travel Encounters</span>
+            <span>Dynamic Events & Travel</span>
             <span className="text-3xs bg-rose-950/80 px-1.5 py-0.2 rounded border border-rose-500/30 text-rose-400 font-bold">{customEvents.length}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("encounters")}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 whitespace-nowrap cursor-pointer ${
+              activeTab === "encounters"
+                ? "border-red-500 text-red-300 bg-red-950/30"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Swords size={15} className="text-red-400" /> 
+            <span>Tactical Grid Spawner</span>
+            <span className="text-3xs bg-red-950/80 px-1.5 py-0.2 rounded border border-red-500/30 text-red-400 font-bold">{customEncounters.length}</span>
           </button>
 
           <button
@@ -477,6 +581,17 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
               customNPCs={customNPCs}
               gameState={gameState}
               setGameState={setGameState}
+              triggerToast={triggerToast}
+            />
+          )}
+
+          {/* TAB 1.5: INTERACTIVE SCENE & NODE STUDIO */}
+          {activeTab === "scenes" && (
+            <SceneStudio
+              gameState={gameState}
+              setGameState={setGameState}
+              customPOIs={customPOIs}
+              initialSelectedSceneId={selectedSceneIdForEditor || undefined}
               triggerToast={triggerToast}
             />
           )}
@@ -515,6 +630,10 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
               gameState={gameState}
               setGameState={setGameState}
               triggerToast={triggerToast}
+              onOpenSceneInEditor={(sceneId) => {
+                setSelectedSceneIdForEditor(sceneId);
+                setActiveTab("scenes");
+              }}
             />
           )}
 
@@ -544,7 +663,25 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
             />
           )}
 
-          {/* TAB 6: CAMPAIGN MODULE HUB / JSON SERIALIZER */}
+          {/* TAB 6: TACTICAL GRID ENCOUNTER SPAWNER */}
+          {activeTab === "encounters" && (
+            <TacticalEncounterStudio
+              encounters={customEncounters}
+              setEncounters={setCustomEncounters}
+              gameState={gameState}
+              onLaunchEncounterInGame={(enc) => {
+                if (typeof onLaunchEncounterInGame === "function") {
+                  onLaunchEncounterInGame(enc);
+                } else {
+                  triggerToast(`DEPLOYING ENCOUNTER: ${enc.name.toUpperCase()}`);
+                }
+                onClose();
+              }}
+              triggerToast={triggerToast}
+            />
+          )}
+
+          {/* TAB 7: CAMPAIGN MODULE HUB / JSON SERIALIZER */}
           {activeTab === "export" && (
             <div className="flex flex-col gap-4 h-full bg-slate-900/50 border border-slate-800 rounded-xl p-5">
               <div className="flex flex-wrap justify-between items-center gap-3 border-b border-white/10 pb-3">
@@ -553,7 +690,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
                     <Terminal size={16} className="text-cyan-400" /> CAMPAIGN EXPANSION PACK EXPORTER & IMPORTER
                   </span>
                   <p className="text-2xs text-slate-400 font-sans mt-0.5">
-                    Export your custom POIs, recruitable NPCs, forged items, quests, and travel events as a single JSON module file.
+                    Export your custom POIs, recruitable NPCs, forged items, quests, travel events, and tactical encounters as a single JSON module file.
                   </p>
                 </div>
 
@@ -568,7 +705,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-2xs">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-2xs">
                 <div className="bg-slate-950 p-3 rounded-lg border border-cyan-500/20 text-center">
                   <div className="text-cyan-400 font-bold text-base">{customPOIs.length}</div>
                   <div className="text-slate-400 uppercase text-3xs">World & Interior POIs</div>
@@ -584,6 +721,10 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
                 <div className="bg-slate-950 p-3 rounded-lg border border-emerald-500/20 text-center">
                   <div className="text-emerald-400 font-bold text-base">{customQuests.length}</div>
                   <div className="text-slate-400 uppercase text-3xs">Quests & Storylines</div>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-lg border border-red-500/20 text-center">
+                  <div className="text-red-400 font-bold text-base">{customEncounters.length}</div>
+                  <div className="text-slate-400 uppercase text-3xs">Tactical Encounters</div>
                 </div>
               </div>
 

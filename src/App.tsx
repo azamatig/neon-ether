@@ -56,10 +56,13 @@ import NPCBaseManagement from "./components/NPCBaseManagement";
 import TypewriterText from "./components/TypewriterText";
 import TacticalCombatView from "./components/combat/TacticalCombatView";
 import DevStudioModal from "./components/dev/DevStudioModal";
+import { POIInteriorHub } from "./components/POIInteriorHub";
 
 import { GameProvider, useGame } from "./context/GameContext";
 
-import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward } from "./types";
+import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward, POIInteractiveEvent, POISceneStep, POISceneChoice, POICompanionDialogue, CustomPOIData } from "./types";
+import { DEFAULT_POI_INTERACTIVE_SCENES } from "./poiScenesData";
+import { DEFAULT_CAMPAIGN_QUESTS } from "./questsData";
 import vicePortrait from "./assets/characters/vice/vice_portrait.png";
 import viceBody from "./assets/characters/vice/vice_body.png";
 import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
@@ -508,6 +511,42 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
         q.log = ["Secured the Encrypted Ares Ledger from Shatter Ridge. Fast-travel home to hand it to Vice!"];
       } else {
         q.log = ["Breach the secure server farm at Shatter Ridge Corridors in Downtown Region."];
+      }
+    }
+  }
+
+  // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
+  const campaignRegistry = state.campaignQuestsRegistry || [];
+  for (const customQ of campaignRegistry) {
+    const isCompleted = state.completedQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
+    const isActive = state.activeQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
+
+    if (isActive || isCompleted) {
+      const q = getOrCreate(customQ.id, {
+        title: customQ.title,
+        category: (customQ.category === "Main Quest" ? "Main Quest" : "Side Quest") as any,
+        description: customQ.description,
+        objectives: (customQ.stages || []).map((s, idx) => ({
+          id: s.id || `stage_${idx}`,
+          text: s.title + (s.description ? `: ${s.description}` : ""),
+          current: isCompleted ? (s.targetCount || 1) : (s.currentCount || 0),
+          target: s.targetCount || 1,
+          completed: isCompleted || s.completed || (s.currentCount >= (s.targetCount || 1))
+        })),
+        rewards: [
+          ...(customQ.rewards?.credits ? [{ type: "credits" as const, amount: customQ.rewards.credits }] : []),
+          ...(customQ.rewards?.experience ? [{ type: "experience" as const, amount: customQ.rewards.experience }] : []),
+          ...(customQ.rewards?.items?.map(it => ({ type: "item" as const, itemName: it })) || [])
+        ]
+      });
+
+      if (isCompleted) {
+        q.status = "COMPLETED";
+      } else {
+        q.status = "ACTIVE";
+      }
+      if (customQ.narrativeBriefing) {
+        q.log = [customQ.narrativeBriefing];
       }
     }
   }
@@ -1382,6 +1421,104 @@ function MainGame() {
       if (clean.includes("salvage") && gameState.completedPOIActions.includes("shatter_ridge_reactor_well:reactor_core")) return true;
       if (clean.includes("tactics") && gameState.completedPOIActions.includes("shatter_ridge_reactor_well:tactics")) return true;
     }
+    return false;
+  };
+
+  // Priority State Machine Intercept Checker
+  const hasActiveQuestIntercept = (poiId: string | null): boolean => {
+    if (!poiId || !gameState) return false;
+    
+    // 1. Prologue/Dungeon regions (conduit09, shatter_ridge_core, data_vault)
+    // In these regions, every POI is a dedicated cinematic quest-room/combat checkpoint!
+    const isPrologue = ["conduit09", "shatter_ridge_core", "data_vault"].includes(gameState.district);
+    if (isPrologue) {
+      return true;
+    }
+    
+    const activeQ = gameState.activeQuests || [];
+    const completedActions = gameState.completedPOIActions || [];
+    const inv = gameState.inventory || [];
+    
+    // 2. Standard main-quest/side-quest active targets
+    if (poiId === "corporate_plaza" && activeQ.some(q => q.includes("Rescue Vice"))) {
+      const isCompleted = completedActions.includes("corporate_plaza:detention_floor") && 
+                          (completedActions.includes("corporate_plaza:cryo_valve_forced") || 
+                           completedActions.includes("corporate_plaza:cryo_valve_overridden") || 
+                           completedActions.includes("corporate_plaza:cryo_valve_shocked"));
+      if (!isCompleted) return true;
+    }
+    
+    if (poiId === "freight_hub" && activeQ.some(q => q.includes("Hunt for Vice"))) {
+      const foundTarget = completedActions.includes("freight_hub:data_secured") || 
+                          completedActions.includes("freight_hub:supervisor_intimidated") || 
+                          completedActions.includes("freight_hub:clerk_bought");
+      if (!foundTarget) return true;
+    }
+    
+    if (poiId === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
+      if (!inv.includes("Experimental Drone Chip")) return true;
+    }
+    
+    if (poiId === "bar" && activeQ.some(q => q.includes("Drone Schematic")) && inv.includes("Experimental Drone Chip")) {
+      return true;
+    }
+    
+    if (poiId === "sludge_conduits" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
+      const slimesCount = inv.filter(i => i === "Glowing Slime").length;
+      if (slimesCount < 3) return true;
+    }
+    
+    if (poiId === "temple" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
+      const slimesCount = inv.filter(i => i === "Glowing Slime").length;
+      if (slimesCount >= 3) return true;
+    }
+    
+    // Vice's Retribution ledger quest
+    const hasLedger = inv.includes("Encrypted Ares Ledger");
+    const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
+    if (isViceQuestActive) {
+      if (poiId === "shatter_ridge" && !hasLedger) return true;
+      if (poiId === "hideout" && hasLedger) return true;
+    }
+    
+    // 3. Dynamic campaign quest objectives targeting this POI
+    if (gameState.campaignQuestsRegistry && gameState.campaignQuestsRegistry.length > 0) {
+      const currentPoiObj = MAP_POIS.find(p => p.id === poiId);
+      const currentPoiName = (currentPoiObj?.name || "").toLowerCase();
+      const currentPoiId = poiId.toLowerCase();
+      const currentDistrict = (currentPoiObj?.district || gameState.district || "").toLowerCase();
+      
+      let hasCampaignStage = false;
+      gameState.campaignQuestsRegistry.forEach(quest => {
+        const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+        if (!isQuestActive) return;
+        
+        const currentStage = quest.stages?.find(s => !s.completed);
+        if (!currentStage) return;
+        
+        const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
+        const targetDistrictLower = (currentStage.targetDistrict || "").toLowerCase();
+        
+        const matchesThisPOI = 
+          (targetPoiLower && (currentPoiName.includes(targetPoiLower) || currentPoiId.includes(targetPoiLower) || targetPoiLower.includes(currentPoiId))) ||
+          (!targetPoiLower && targetDistrictLower && targetDistrictLower === currentDistrict);
+          
+        if (matchesThisPOI) {
+          hasCampaignStage = true;
+        }
+      });
+      if (hasCampaignStage) return true;
+    }
+    
+    // 4. Custom POI Studio triggers
+    const found = (gameState.customPOIsRegistry || []).find(p => p.id === poiId);
+    if (found && found.questTrigger?.questId) {
+      const isTriggerActive = gameState.activeQuests?.some(q => q.includes(found.questTrigger.questId));
+      if (isTriggerActive && !completedActions.includes(`${poiId}:quest_triggered`)) {
+        return true;
+      }
+    }
+    
     return false;
   };
 
@@ -3609,6 +3746,177 @@ function MainGame() {
       return;
     }
 
+    // ---- LIVE CAMPAIGN QUEST DIRECTOR RUNTIME HOOK ----
+    if (actionText.startsWith("[QUEST:") || cleanAction.includes("[quest:")) {
+      const match = actionText.match(/\[QUEST:\s*([^\]]+)\]\s*(.*)/);
+      if (match) {
+        const idsPart = match[1].trim();
+        const labelPart = match[2].trim();
+        const parts = idsPart.split(":");
+        const questId = parts[0];
+        const stageId = parts[1];
+        const pathId = parts[2];
+
+        const registry = nextState.campaignQuestsRegistry || [];
+        const quest = registry.find(q => q.id === questId);
+        if (quest) {
+          const stage = quest.stages?.find(s => s.id === stageId || !s.completed);
+          if (stage) {
+            const path = stage.operationalPaths?.find(p => p.id === pathId);
+            
+            // Execute Check if defined
+            let checkPassed = true;
+            let rollText = "";
+            if (path && path.checkType && path.checkType !== "none") {
+              const req = path.checkValue || 10;
+              if (path.checkType === "int") {
+                const stat = nextState.attributes?.int || 10;
+                const d20 = Math.floor(Math.random() * 20) + 1;
+                const total = stat + d20;
+                checkPassed = total >= req;
+                rollText = `[INT Check: 1d20(${d20}) + ${stat} = ${total} vs DC ${req}]`;
+              } else if (path.checkType === "str") {
+                const stat = nextState.attributes?.str || 10;
+                const d20 = Math.floor(Math.random() * 20) + 1;
+                const total = stat + d20;
+                checkPassed = total >= req;
+                rollText = `[STR Check: 1d20(${d20}) + ${stat} = ${total} vs DC ${req}]`;
+              } else if (path.checkType === "dex") {
+                const stat = nextState.attributes?.dex || 10;
+                const d20 = Math.floor(Math.random() * 20) + 1;
+                const total = stat + d20;
+                checkPassed = total >= req;
+                rollText = `[DEX Check: 1d20(${d20}) + ${stat} = ${total} vs DC ${req}]`;
+              } else if (path.checkType === "will") {
+                const stat = nextState.attributes?.will || 10;
+                const d20 = Math.floor(Math.random() * 20) + 1;
+                const total = stat + d20;
+                checkPassed = total >= req;
+                rollText = `[WILL Check: 1d20(${d20}) + ${stat} = ${total} vs DC ${req}]`;
+              } else if (path.checkType === "mindmancer") {
+                checkPassed = !!nextState.mindmancerUnlocked;
+                rollText = checkPassed ? `[Mindmancer Telepathic Override: Active]` : `[Mindmancer: Locked]`;
+              } else if (path.checkType === "credits") {
+                if (nextState.credits >= req) {
+                  nextState.credits -= req;
+                  checkPassed = true;
+                  rollText = `[Bribe Paid: -${req}¤ Credits]`;
+                } else {
+                  checkPassed = false;
+                  rollText = `[Insufficient Credits: need ${req}¤]`;
+                }
+              } else if (path.checkType === "item") {
+                const hasItem = path.requiredItem ? nextState.inventory.includes(path.requiredItem) : true;
+                checkPassed = hasItem;
+                rollText = `[Required Item: ${path.requiredItem || "Item"}]`;
+              }
+            }
+
+            if (checkPassed) {
+              // Grant path bonus rewards
+              let bonusText = "";
+              if (path?.grantsBonusXP) {
+                nextState.experience = (nextState.experience || 0) + path.grantsBonusXP;
+                bonusText += ` +${path.grantsBonusXP} XP`;
+              }
+              if (path?.grantsBonusCredits) {
+                nextState.credits = (nextState.credits || 0) + path.grantsBonusCredits;
+                bonusText += ` +${path.grantsBonusCredits}¤`;
+              }
+              if (path?.grantsBonusItem) {
+                nextState.inventory.push(path.grantsBonusItem);
+                bonusText += ` +Item '${path.grantsBonusItem}'`;
+              }
+
+              // Advance stage progression
+              stage.currentCount = (stage.currentCount || 0) + 1;
+              if (stage.currentCount >= (stage.targetCount || 1)) {
+                stage.completed = true;
+              }
+
+              // Check if entire quest is complete
+              const allStagesDone = quest.stages.every(s => s.completed);
+              if (allStagesDone) {
+                quest.status = "COMPLETED";
+                nextState.activeQuests = (nextState.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
+                if (!nextState.completedQuests.includes(quest.title)) {
+                  nextState.completedQuests.push(quest.title);
+                }
+
+                // Award Quest Rewards
+                const r = quest.rewards || {};
+                if (r.credits) nextState.credits += r.credits;
+                if (r.experience) nextState.experience += r.experience;
+                if (r.items && r.items.length > 0) nextState.inventory.push(...r.items);
+
+                // Execute Deterministic World Unlocks
+                const wu = r.worldUnlocks || {};
+                let worldUnlockMsgs: string[] = [];
+                if (wu.unlockBaseId) {
+                  if (!nextState.unlockedBases) nextState.unlockedBases = ["hideout"];
+                  if (!nextState.unlockedBases.includes(wu.unlockBaseId)) nextState.unlockedBases.push(wu.unlockBaseId);
+                  if (!nextState.ownedBases) nextState.ownedBases = ["hideout"];
+                  if (!nextState.ownedBases.includes(wu.unlockBaseId)) nextState.ownedBases.push(wu.unlockBaseId);
+                  worldUnlockMsgs.push(`🏠 Base Deed Unlocked: ${wu.unlockBaseId}`);
+                }
+                if (wu.unlockDistrictId) {
+                  if (!nextState.unlockedDistricts) nextState.unlockedDistricts = ["conduit09", "downtown", "aurus"];
+                  if (!nextState.unlockedDistricts.includes(wu.unlockDistrictId)) nextState.unlockedDistricts.push(wu.unlockDistrictId);
+                  worldUnlockMsgs.push(`🚇 District Gate Unlocked: ${wu.unlockDistrictId}`);
+                }
+                if (wu.unlockPerkOrSkill) {
+                  if (!nextState.unlockedPerks) nextState.unlockedPerks = [];
+                  if (!nextState.unlockedPerks.includes(wu.unlockPerkOrSkill)) nextState.unlockedPerks.push(wu.unlockPerkOrSkill);
+                  worldUnlockMsgs.push(`🔮 Global Perk Granted: ${wu.unlockPerkOrSkill}`);
+                }
+                if (wu.recruitCompanionId) {
+                  if (!nextState.party.includes(wu.recruitCompanionId)) nextState.party.push(wu.recruitCompanionId);
+                  worldUnlockMsgs.push(`👤 Recruited Operative: ${wu.recruitCompanionId}`);
+                }
+
+                // Auto-trigger next quest in campaign chain
+                if (quest.nextQuestId) {
+                  const nextQ = registry.find(q => q.id === quest.nextQuestId);
+                  if (nextQ) {
+                    const nextQStr = `${nextQ.title} - ${nextQ.description}`;
+                    if (!nextState.activeQuests.includes(nextQStr) && !nextState.completedQuests.includes(nextQ.title)) {
+                      nextState.activeQuests.push(nextQStr);
+                      nextQ.status = "ACTIVE";
+                      worldUnlockMsgs.push(`➔ Sequential Arc Activated: "${nextQ.title}"`);
+                    }
+                  }
+                }
+
+                narrative = `🏆 CAMPAIGN QUEST COMPLETED: "${quest.title}"!\n\n${path?.outcomeDesc || stage.description}\n\nPayout Claimed: +${r.credits || 0}¤, +${r.experience || 0} XP${r.items?.length ? `, Items: ${r.items.join(", ")}` : ""}${worldUnlockMsgs.length ? `\n\n${worldUnlockMsgs.join("\n")}` : ""}`;
+                triggerToast(`QUEST COMPLETED: ${quest.title}!`);
+              } else {
+                narrative = `⚡ CAMPAIGN DIRECTIVE ADVANCED: [${quest.title} - ${stage.title}]\n\n${path?.outcomeDesc || stage.description} ${rollText}${bonusText ? `\n\nBonus Rewards: ${bonusText}` : ""}`;
+                triggerToast(`OBJECTIVE ADVANCED: ${stage.title}`);
+              }
+            } else {
+              narrative = `❌ TACTICAL CHECK FAILED: ${rollText}\n\nYour attempt was deflected by the perimeter defenses. Re-assess your approach and try an alternative operational route.`;
+              triggerToast(`Check Failed: ${rollText}`);
+            }
+
+            setGameState(nextState);
+            const finalLog: LogMessage = {
+              id: crypto.randomUUID(),
+              timestamp: timeString,
+              text: narrative,
+              type: "action",
+              district: nextState.district,
+              poi: nextState.poi
+            };
+            const updatedLogs = [...logs, finalLog];
+            setLogs(updatedLogs);
+            triggerAutosave(nextState, updatedLogs);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+    }
+
     // ---- COMBAT ACTIONS RESOLUTION ----
     if (gameState.combatState?.isActive) {
       const combat = { ...gameState.combatState };
@@ -4053,6 +4361,198 @@ function MainGame() {
 
       // ---- SPECIFIC HOOKS ----
       
+      // 0. SCENE TRIGGER VIA REGISTRY
+      if (actionText.startsWith("[SCENE:") || cleanAction.startsWith("[scene:")) {
+        const match = actionText.match(/\[SCENE:\s*([^:\]]+)(?::([^\]]+))?\]/i);
+        if (match) {
+          const sceneId = match[1].trim();
+          const stepId = match[2] ? match[2].trim() : undefined;
+          
+          const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
+          const scene = allScenes[sceneId];
+          if (scene) {
+            const startStep = stepId || scene.initialStepId;
+            nextState.activePOIScene = {
+              sceneId: scene.id,
+              currentStepId: startStep,
+              history: [startStep],
+              variables: {}
+            };
+            setGameState(nextState);
+            setLogs(prev => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                timestamp: timeString,
+                text: `⚡ EVENT INITIATED: Entering "${scene.title}"...`,
+                type: "system",
+                district: nextState.district,
+                poi: nextState.poi
+              }
+            ]);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
+      // 0.1 QUEST DISPATCHER
+      if (actionText.startsWith("[QUEST:") || cleanAction.startsWith("[quest:")) {
+        const match = actionText.match(/\[QUEST:\s*([^:\]]+):([^:\]]+)(?::([^\]]+))?\]/i);
+        if (match) {
+          const questId = match[1].trim();
+          const stageId = match[2].trim();
+          const pathId = match[3] ? match[3].trim() : undefined;
+
+          const registry = nextState.campaignQuestsRegistry || DEFAULT_CAMPAIGN_QUESTS;
+          const quest = registry.find(q => q.id === questId);
+          const stage = quest?.stages?.find(s => s.id === stageId);
+
+          if (stage) {
+            // If stage is linked to an interactive scene directly, launch it!
+            if (stage.linkedPOISceneId) {
+              const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
+              const scene = allScenes[stage.linkedPOISceneId];
+              if (scene) {
+                const startStep = stage.linkedPOISceneStepId || scene.initialStepId;
+                nextState.activePOIScene = {
+                  sceneId: scene.id,
+                  currentStepId: startStep,
+                  history: [startStep],
+                  variables: {}
+                };
+                setGameState(nextState);
+                setIsLoading(false);
+                return;
+              }
+            }
+
+            if (pathId && stage.operationalPaths) {
+              const path = stage.operationalPaths.find(p => p.id === pathId);
+              if (path) {
+                // Check if path has a linked scene
+                if (path.linkedPOISceneId) {
+                  const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
+                  const scene = allScenes[path.linkedPOISceneId];
+                  if (scene) {
+                    nextState.activePOIScene = {
+                      sceneId: scene.id,
+                      currentStepId: scene.initialStepId,
+                      history: [scene.initialStepId],
+                      variables: {}
+                    };
+                    setGameState(nextState);
+                    setIsLoading(false);
+                    return;
+                  }
+                }
+
+                // Check stat/skill requirements
+                let reqPassed = true;
+                let failMsg = "";
+                if (path.requiredStat) {
+                  const statVal = (nextState.attributes as any)?.[path.requiredStat] || 10;
+                  if (statVal < (path.requiredStatValue || 10)) {
+                    reqPassed = false;
+                    failMsg = `Requires ${path.requiredStat.toUpperCase()} ${path.requiredStatValue} (Current: ${statVal})`;
+                  }
+                }
+                if (reqPassed && path.requiredSkill) {
+                  const skillVal = (nextState.skills as any)?.[path.requiredSkill] || 0;
+                  if (skillVal < (path.requiredSkillLevel || 1)) {
+                    reqPassed = false;
+                    failMsg = `Requires Skill ${path.requiredSkill} Level ${path.requiredSkillLevel}`;
+                  }
+                }
+                if (reqPassed && path.requiredItem) {
+                  if (!nextState.inventory.includes(path.requiredItem)) {
+                    reqPassed = false;
+                    failMsg = `Requires Item: "${path.requiredItem}"`;
+                  }
+                }
+                if (reqPassed && path.requiredMana) {
+                  if (nextState.mana < path.requiredMana) {
+                    reqPassed = false;
+                    failMsg = `Requires ${path.requiredMana} Mana (Current: ${nextState.mana})`;
+                  }
+                }
+
+                if (!reqPassed) {
+                  narrative = `❌ PREREQUISITE FAILED: ${failMsg}`;
+                  triggerToast(failMsg);
+                } else {
+                  // Deduct mana or consume item if required
+                  if (path.requiredMana) nextState.mana -= path.requiredMana;
+                  if (path.requiredItem && path.outcomeText?.toLowerCase().includes("consume")) {
+                    const itmIdx = nextState.inventory.indexOf(path.requiredItem);
+                    if (itmIdx > -1) nextState.inventory.splice(itmIdx, 1);
+                  }
+
+                  // Grant rewards
+                  if (path.rewardCredits) nextState.credits += path.rewardCredits;
+                  if (path.rewardXP) nextState.experience += path.rewardXP;
+                  if (path.rewardItem) nextState.inventory.push(path.rewardItem);
+
+                  // Complete stage
+                  stage.completed = true;
+                  stage.currentCount = stage.targetCount || 1;
+
+                  // Check if all stages of quest are complete
+                  const allDone = quest?.stages?.every(s => s.completed || s.id === stage.id);
+                  if (allDone && quest) {
+                    if (quest.rewards?.credits) nextState.credits += quest.rewards.credits;
+                    if (quest.rewards?.experience) nextState.experience += quest.rewards.experience;
+                    if (quest.rewards?.items) quest.rewards.items.forEach(it => nextState.inventory.push(it));
+                    
+                    nextState.activeQuests = (nextState.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
+                    if (!nextState.completedQuests.includes(quest.title)) {
+                      nextState.completedQuests.push(quest.title);
+                    }
+                  }
+
+                  narrative = path.outcomeText || `🎯 QUEST ADVANCED: ${stage.title} accomplished via ${path.label}!`;
+                  setActivePopup({
+                    title: `🎯 QUEST OBJECTIVE COMPLETE`,
+                    subtitle: stage.title.toUpperCase(),
+                    type: "check_success",
+                    text: narrative + (path.rewardCredits ? `\n\nRewards: +${path.rewardCredits}¤ Credits, +${path.rewardXP || 0} XP` : "")
+                  });
+                }
+
+                setGameState(nextState);
+                setLogs(prev => [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    timestamp: timeString,
+                    text: narrative,
+                    type: reqPassed ? "system" : "combat",
+                    district: nextState.district,
+                    poi: nextState.poi
+                  }
+                ]);
+                setIsLoading(false);
+                return;
+              }
+            } else {
+              // Direct stage completion
+              stage.completed = true;
+              stage.currentCount = stage.targetCount || 1;
+              narrative = `🎯 OBJECTIVE COMPLETED: ${stage.title}`;
+              setActivePopup({
+                title: `🎯 OBJECTIVE COMPLETED`,
+                subtitle: stage.title.toUpperCase(),
+                type: "check_success",
+                text: `${stage.description || stage.title} has been accomplished!`
+              });
+              setGameState(nextState);
+              setIsLoading(false);
+              return;
+            }
+          }
+        }
+      }
+
       // Consumables use / consume
       if (cleanAction.startsWith("consume ")) {
         const itemToConsume = nextState.inventory.find(item => cleanAction.includes(item.toLowerCase()));
@@ -6533,9 +7033,48 @@ function MainGame() {
 
                         {/* Interactive District Pins Map Grid */}
                         <div className="absolute inset-x-0 h-full w-full max-w-4xl mx-auto z-10">
-                          {MAP_POIS.filter(poi => poi.district === activeRegionId).map((p, idx) => {
+                          {(() => {
+                            const basePOIs = MAP_POIS.filter(poi => poi.district === activeRegionId);
+                            const customReg = (gameState?.customPOIsRegistry || []).filter(p => p.district === activeRegionId);
+                            const mergedMap: Record<string, any> = {};
+                            basePOIs.forEach(p => { mergedMap[p.id] = p; });
+                            customReg.forEach(p => {
+                              // If custom POI has the same ID or new ID, merge with standard MapPOI interface
+                              mergedMap[p.id] = {
+                                ...(mergedMap[p.id] || {}),
+                                ...p,
+                                id: p.id,
+                                name: p.name,
+                                district: p.district,
+                                type: p.type || (p.category === "medical" ? "safehouse" : p.category === "shop" ? "shop" : "social"),
+                                x: p.x,
+                                y: p.y,
+                                image: p.bgImage || p.image || mergedMap[p.id]?.image,
+                                buttons: (p.actions && p.actions.length > 0) ? p.actions.map(a => a.label) : (mergedMap[p.id]?.buttons || [])
+                              };
+                            });
+                            return Object.values(mergedMap);
+                          })().map((p: any, idx: number) => {
                             const isCurrentlyHere = gameState.poi === p.name;
                             
+                            // Check if an active campaign quest targets this POI
+                            const questPinDirective = (() => {
+                              if (!gameState?.campaignQuestsRegistry) return null;
+                              for (const quest of gameState.campaignQuestsRegistry) {
+                                const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+                                if (!isQuestActive) continue;
+                                const currentStage = quest.stages?.find(s => !s.completed);
+                                if (!currentStage) continue;
+                                const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
+                                const pNameLower = p.name.toLowerCase();
+                                const pIdLower = p.id.toLowerCase();
+                                if (targetPoiLower && (pNameLower.includes(targetPoiLower) || pIdLower.includes(targetPoiLower) || targetPoiLower.includes(pIdLower))) {
+                                  return { quest, stage: currentStage };
+                                }
+                              }
+                              return null;
+                            })();
+
                             // Determine type details for better icons and indicators
                             const isClinic = p.id === "marv_clinic" || p.name.toLowerCase().includes("clinic");
                             const isSafehouse = p.type === "safehouse" || p.id === "hideout" || p.id === "neon_shrine";
@@ -6545,7 +7084,10 @@ function MainGame() {
                             let nodeColorClasses = "";
                             let nodeBlinkerColor = "bg-slate-400";
 
-                            if (isCurrentlyHere) {
+                            if (questPinDirective) {
+                              nodeColorClasses = "bg-amber-500 border-amber-200 text-amber-950 shadow-[0_0_16px_rgba(245,158,11,0.95)] ring-2 ring-amber-400/80 animate-pulse";
+                              nodeBlinkerColor = "bg-amber-400";
+                            } else if (isCurrentlyHere) {
                               nodeColorClasses = "bg-cyan-500 border-cyan-200 text-cyan-950 shadow-[0_0_18px_rgba(34,211,238,0.95)]";
                               nodeBlinkerColor = "bg-cyan-400";
                             } else if (isClinic) {
@@ -6696,17 +7238,27 @@ function MainGame() {
                                     className={`relative inline-flex items-center justify-center rounded-full h-6.5 w-6.5 border-2 shadow-lg transition-all transform group-hover/pin:scale-125 ${nodeColorClasses}`}
                                   >
                                     {nodeIcon}
+                                    {questPinDirective && (
+                                      <span className="absolute -top-2.5 -right-2.5 bg-amber-400 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center border border-amber-200 shadow-[0_0_8px_rgba(245,158,11,1)] animate-bounce z-30">
+                                        ⚡
+                                      </span>
+                                    )}
                                   </div>
                                   
                                   {/* Holographic Tooltip above pin on hover */}
-                                  <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-white/20 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/pin:opacity-100 transition-all pointer-events-none scale-90 group-hover/pin:scale-100 z-50 text-left font-mono">
+                                  <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 bg-slate-950/95 border border-white/20 whitespace-nowrap px-2.5 py-1.5 rounded-md shadow-2xl opacity-0 group-hover/pin:opacity-100 transition-all pointer-events-none scale-90 group-hover/pin:scale-100 z-50 text-left font-mono max-w-xs">
                                     <p className="text-2xs font-extrabold text-white flex items-center gap-1">
-                                      <span className={`w-1 h-1 rounded-full ${isCurrentlyHere ? "bg-cyan-400" : "bg-slate-400"}`} />
+                                      <span className={`w-1 h-1 rounded-full ${isCurrentlyHere ? "bg-cyan-400" : questPinDirective ? "bg-amber-400" : "bg-slate-400"}`} />
                                       {p.name.toUpperCase()}
                                     </p>
                                     <p className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-wider">
                                       {isClinic ? "clinic" : isSafehouse ? "safehouse" : isShop ? "shop" : p.type} node
                                     </p>
+                                    {questPinDirective && (
+                                      <p className="text-[8.5px] text-amber-300 mt-1 font-bold border-t border-amber-500/30 pt-0.5 whitespace-normal">
+                                        ⚡ DIRECTIVE: {questPinDirective.quest.title} - {questPinDirective.stage.title}
+                                      </p>
+                                    )}
                                     {isCurrentlyHere && <p className="text-[8.5px] text-cyan-400 mt-0.5">✓ CURRENT COORDINATE</p>}
                                   </div>
                                 </div>
@@ -6769,15 +7321,113 @@ function MainGame() {
                         </div>
                       </motion.div>
                     ) : (
-                      
-                      // VIEW B: IMAGES OF THE DETALED POI MAP SCANNER (THE LOCAL CLOSE-UP BLUEPRINT SCREEN!)
                       <motion.div
                         key="detailed-poi-view"
                         initial={{ opacity: 0, scale: 0.99 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.99 }}
-                        className="grid grid-cols-1 lg:grid-cols-12 gap-3 bg-slate-950/95 border border-cyan-500/30 rounded-xl p-3 md:p-4 shadow-[0_0_25px_rgba(6,182,212,0.05)] h-[calc(100vh-200px)] min-h-[300px] overflow-y-auto"
+                        className="bg-slate-950/95 border border-cyan-500/30 rounded-xl p-3 md:p-4 shadow-[0_0_25px_rgba(6,182,212,0.05)] h-[calc(100vh-200px)] min-h-[300px] overflow-y-auto"
                       >
+                        {(() => {
+                          const isDialogueActive = squadDialogue || gameState?.activeBranchingDialogue || activeDialogue;
+                          const isQuestIntercept = hasActiveQuestIntercept(activePOIView);
+                          if (!isDialogueActive && !isQuestIntercept) {
+                            const found = (gameState.customPOIsRegistry || []).find(p => p.id === activePOIView) || MAP_POIS.find(p => p.id === activePOIView);
+                            if (found) {
+                              const resolvedPOI: CustomPOIData = {
+                                id: found.id,
+                                name: found.name,
+                                district: found.district || gameState.district || "",
+                                category: (found as any).category || (
+                                  found.id === "hideout" ? "safehouse" :
+                                  found.name.toLowerCase().includes("clinic") ? "medical" :
+                                  found.name.toLowerCase().includes("market") || found.name.toLowerCase().includes("shop") ? "shop" :
+                                  found.name.toLowerCase().includes("auction") ? "auction" :
+                                  found.name.toLowerCase().includes("bar") || found.name.toLowerCase().includes("abyss") ? "social" :
+                                  found.name.toLowerCase().includes("temple") || found.name.toLowerCase().includes("shrine") ? "temple" : "social"
+                                ),
+                                desc: found.desc || (found as any).description || "Megacity-9 Local Grid Node. Scan line frequencies align.",
+                                x: found.x,
+                                y: found.y,
+                                image: found.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&q=80&w=400",
+                                isUnlocked: true,
+                                services: (found as any).services || {
+                                  shop: {
+                                    enabled: found.name.toLowerCase().includes("market") || found.name.toLowerCase().includes("shop") || found.id === "hideout",
+                                    merchantName: found.name.includes("Black Market") ? "Fixer Corvus" : "Local Merchant",
+                                    merchantTitle: "Arms & Smuggled Hardware Dealer",
+                                    greeting: "Got clean credits? Look around, but don't touch what you can't afford.",
+                                    priceMultiplier: 1.0,
+                                    allowSell: true,
+                                    items: ["Health Stimpack", "Cyber-Ammo Pack", "Energy Cell", "Tactical Cyber-SMG", "Nano Med-Stim"]
+                                  },
+                                  clinic: {
+                                    enabled: found.name.toLowerCase().includes("clinic") || found.id === "hideout",
+                                    doctorName: "Dr. Rachel Sterling",
+                                    greeting: "The trauma beds are warmed up. Try to keep your limbs attached.",
+                                    healHpCost: 15,
+                                    healStaminaCost: 10,
+                                    surgeryUpgradeCost: 150
+                                  },
+                                  rest: {
+                                    enabled: found.id === "hideout",
+                                    comfortLevel: "Premium Safehouse Cot",
+                                    staminaRegen: 100,
+                                    restNarrative: "You lock the heavy biometric deadbolts of your safehouse apartment. Laying down on the clean military cot, you fall into a deep, dreamless sleep as the ambient drone of the city thrums through the concrete walls."
+                                  },
+                                  auction: {
+                                    enabled: found.name.toLowerCase().includes("auction") || found.name.toLowerCase().includes("market"),
+                                    lobbyGreeting: "Welcome to the Under-Grid Servitude Exchange."
+                                  },
+                                  contracts: {
+                                    enabled: found.name.toLowerCase().includes("bar") || found.id === "hideout" || found.name.toLowerCase().includes("abyss"),
+                                    availableQuestIds: ["Outcast Directive", "Drone Schematic"]
+                                  },
+                                  rumors: {
+                                    enabled: true,
+                                    rumorList: [
+                                      "Whispers on the net say Ares Biotech is secret-testing a cognitive mindmancer deck under Level B4.",
+                                      "Titan Logistics is running illegal military stims from the outer orbital stations.",
+                                      "A cyber-gladiator named Mira Voss is looking for someone strong enough to challenge her at the Aurus Pit."
+                                    ]
+                                  }
+                                },
+                                actions: (found as any).actions || [],
+                                buttons: (found as any).buttons || [],
+                                placedNPCIds: (found as any).placedNPCIds || (
+                                  found.id === "hideout" ? ["vice"] :
+                                  found.id === "neon_abyss_bar" ? ["jax", "mira_voss"] :
+                                  found.id === "temple_gardens" ? ["morgana"] : []
+                                )
+                              };
+                              return (
+                                <POIInteriorHub
+                                  poi={resolvedPOI}
+                                  gameState={gameState}
+                                  setGameState={setGameState}
+                                  setLogs={setLogs}
+                                  triggerToast={triggerToast}
+                                  onReturnToMap={() => {
+                                    setActivePOIView(null);
+                                    setActiveDialogue(null);
+                                  }}
+                                  onStartDialogue={(npcId, nodeId) => {
+                                    setGameState(prev => ({
+                                      ...prev,
+                                      activeBranchingDialogue: { npcId, nodeId: nodeId || "start" }
+                                    }));
+                                  }}
+                                  onExecuteAction={(actionText) => {
+                                    handleExecuteAction(actionText);
+                                  }}
+                                  completedActions={gameState.completedPOIActions || []}
+                                />
+                              );
+                            }
+                          }
+
+                          return (
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 w-full h-full">
                         {/* Left half: POI scenery illustration frame */}
                         <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 group min-h-[220px] lg:min-h-[340px]">
                           {/* Main Close-up Illustrated Photo of local environment */}
@@ -7077,462 +7727,274 @@ function MainGame() {
                                 );
                               })()
                             ) : activeDialogue ? (
-                              activeDialogue === "relic_awakening" ? (
-                                <motion.div
-                                  key="relic_awakening"
-                                  variants={slideInVariants}
-                                  initial="initial"
-                                  animate="animate"
-                                  exit="exit"
-                                  transition={{ duration: 0.25, ease: "easeOut" }}
-                                  className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink"
-                                >
-                                  {/* Step-based header */}
-                                  <div className="flex justify-between items-center border-b border-purple-500/20 pb-2">
-                                    <span className="text-purple-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                      <Zap size={14} className="text-purple-500" /> ANOMALY SEQUENCE: OBSIDIAN ALTAR
-                                    </span>
-                                    <span className="text-3xs text-purple-500 font-bold bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 uppercase">
-                                      {relicStep === "awakening" || relicStep === "awakened_fury" ? "SYNAPTIC CONVULSION" : "ACTIVE CONSOLE FIELD"}
-                                    </span>
-                                  </div>
-
-                                  {/* Beautiful landscape-aspect cinematic viewport box */}
-                                  {(() => {
-                                    const RELIC_CINEMATICS: Record<string, { image: string; title: string; narrative: string; alertType?: string }> = {
-                                      intro: {
-                                        image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800",
-                                        title: "A Floating Relic of Unknown Origins",
-                                        narrative: "The golden, multi-faceted device hovers three inches above the heavy obsidian altar. It radiates a heartbeat-like pulse of violet energy. It bypasses your cyberdeck's firewall indicators, humming in the back of your skull."
-                                      },
-                                      examine: {
-                                        image: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
-                                        title: "[CYBERDECK SCAN] High-Ether Frequency",
-                                        narrative: "You sync your deck to perform a non-contact resonance analysis. The readout spikes into warning thresholds. The energy signature is cognitive, resembling an ancient neural network's architecture. It operates directly on mental bio-electricity."
-                                      },
-                                      discuss_vice: {
-                                        image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800",
-                                        title: "[CONSULTING VICE] Technical Concerns",
-                                        narrative: "Vice stands close with his particle rifle raised, his tactical eye keeping a watchful lock on the exit corridor. He shakes his head, his face grim. He warns that pre-collapse neural code could permanently fry your cortex."
-                                      },
-                                      discuss_tracker: {
-                                        image: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=800",
-                                        title: "[CONSULTING TRACKER] Tactical Risk Assessment",
-                                        narrative: "Tracker leans against a pillar, checking his weapon's ammo counter. He has a tight, cold smile on his scarred face, his gaze locked on the golden energy pulse. He encourages you to reach out and seize the advantage."
-                                      },
-                                      awakening: {
-                                        image: "https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?auto=format&fit=crop&q=80&w=800",
-                                        title: "SYNAPTIC MERGE AWAKENING",
-                                        narrative: "You extend your hand and brush your fingers against the warm, gold-etched casing of the relic.\n\nInstantly, your vision is blown out by a blinding flash of violet light! A terrifying psychic shockwave rips into your temples, rearranging your synaptic cells. Your mind burns as ancient mental protocols fuse directly with your neural framework.",
-                                        alertType: "empowered"
-                                      },
-                                      breach: {
-                                        image: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800",
-                                        title: "⚠ IMMINENT THREAT DETECTED: PERIMETER BREACH",
-                                        narrative: "Before the neural code can even settle, a massive rumble shakes the stone chamber! The heavy outer blast door is violently blown inward in a cascade of metal shards and plaster dust.\n\nThrough the smoke, a heavily armed tactical squad of Ares Corporate Enforcers advances, their automatic laser rifles painting the room with lethal red targeting beams!",
-                                        alertType: "breach"
-                                      },
-                                      sacrifice: {
-                                        image: "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&q=80&w=800",
-                                        title: "🩸 CRITICAL CASUALTY: TRACKER DOWN",
-                                        narrative: "You are still paralyzed by the high-frequency synaptic merging, helpless as an Ares elite sniper aligns a laser beam directly onto your temples.\n\nSensing the threat, Tracker lunges in front of your neural deck! The superheated plasma shot rips straight through his central processor core. Metal shreds, sparks cascade, and with a terrible mechanical shriek, Tracker collapses onto the stone floor, his vitals flatlining.",
-                                        alertType: "casualty"
-                                      },
-                                      awakened_fury: {
-                                        image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800",
-                                        title: "🔮 HYPER-CONSCIOUS UNLEASHED: MINDMANCER",
-                                        narrative: "Tracker's chassis lies silent, venting smoking radioactive coolant. Vice is pinned behind a metal terminal block, return-firing desperately:\n\n'Tracker is down! His power core is completely flatlined! Rookie, whatever that gold relic did to your mind, you have to unleash it now! SQUEEZE THEIR CHIPS! BURST THEIR BRAINS!'\n\nYou stand up, your temples pulsing with raw purple energy. The neural block is gone. You are ready.",
-                                        alertType: "empowered"
-                                      }
-                                    };
-
-                                    const currentStep = RELIC_CINEMATICS[relicStep] || RELIC_CINEMATICS.intro;
-
+                              activeDialogue === "relic_awakening" || (gameState?.poiInteractiveScenes && activeDialogue in gameState.poiInteractiveScenes) || (activeDialogue in DEFAULT_POI_INTERACTIVE_SCENES) ? (
+                                (() => {
+                                  const resolvedSceneKey = activeDialogue === "relic_awakening" ? "relic_altar" : activeDialogue;
+                                  const sceneRegistry: Record<string, POIInteractiveEvent> = {
+                                    ...DEFAULT_POI_INTERACTIVE_SCENES,
+                                    ...(gameState?.poiInteractiveScenes || {})
+                                  };
+                                  const sceneData = sceneRegistry[resolvedSceneKey];
+                                  if (!sceneData || !sceneData.steps) {
                                     return (
-                                      <div id="relic-cinematic-view" className="flex flex-col gap-4 w-full">
-                                        {/* Cinematic Widescreen Viewport */}
-                                        <div id="cinematic-viewport" className="w-full h-48 rounded-xl overflow-hidden border border-purple-500/30 relative flex items-end justify-start shadow-inner bg-slate-950">
+                                      <div className="bg-slate-950 p-4 rounded-xl border border-white/10 text-slate-400 font-mono text-xs">
+                                        <p className="text-amber-400 font-bold">⚠️ Scene node data missing for "{resolvedSceneKey}"</p>
+                                        <button onClick={() => setActiveDialogue(null)} className="mt-2 px-3 py-1 bg-slate-800 rounded text-slate-200 cursor-pointer">Close</button>
+                                      </div>
+                                    );
+                                  }
+
+                                  const activeStepKey = (relicStep && sceneData.steps[relicStep])
+                                    ? relicStep
+                                    : (sceneData.steps[sceneData.initialStepId] ? sceneData.initialStepId : Object.keys(sceneData.steps)[0]);
+                                  const stepData = sceneData.steps[activeStepKey] || Object.values(sceneData.steps)[0];
+
+                                  const handleExecuteChoice = (choice: POISceneChoice) => {
+                                    if (!gameState) return;
+                                    let nextState = { ...gameState };
+
+                                    // Check if choice triggers combat
+                                    if (choice.triggerCombatEncounterId === "ares_ambush" || choice.id === "opt_fury_combat" || choice.targetStepId === "combat_ares") {
+                                      nextState.maxHp = Math.max(50, nextState.maxHp - 25);
+                                      nextState.hp = Math.min(nextState.hp, nextState.maxHp);
+                                      if (nextState.skills) {
+                                        nextState.skills.mindmancer = Math.max(1, (nextState.skills.mindmancer || 0) + 1);
+                                      }
+                                      nextState.mindmancerUnlocked = true;
+                                      nextState.combatState = {
+                                        enemyName: "Ares Corporate Enforcers (Ambush)",
+                                        enemyHp: 160,
+                                        enemyMaxHp: 160,
+                                        enemyShields: 20,
+                                        enemyMaxShields: 20,
+                                        isActive: true,
+                                        turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Defend your squad!"
+                                      };
+                                      setActiveDialogue(null);
+                                      setRelicStep("intro");
+                                      setGameState(nextState);
+                                      const ambushLogs = [
+                                        ...logs,
+                                        {
+                                          id: crypto.randomUUID(),
+                                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                          text: `💥 NEURAL AWAKENING & AMBUSH: A surge of strange mental frequencies fuses with your cortex! Ares Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
+                                          type: "combat" as const,
+                                          district: nextState.district,
+                                          poi: nextState.poi
+                                        }
+                                      ];
+                                      setLogs(ambushLogs);
+                                      triggerAutosave(nextState, ambushLogs);
+                                      triggerToast("COMBAT START: AWAKENING AMBUSH");
+                                      return;
+                                    }
+
+                                    // Stat / Skill checks evaluation
+                                    if (choice.checkType && choice.checkType !== "none" && choice.checkValue) {
+                                      const rollD20 = Math.floor(Math.random() * 20) + 1;
+                                      let statVal = 0;
+                                      if (choice.checkType === "int") statVal = nextState.attributes?.int || 10;
+                                      else if (choice.checkType === "str") statVal = nextState.attributes?.str || 10;
+                                      else if (choice.checkType === "dex") statVal = nextState.attributes?.dex || 10;
+                                      else if (choice.checkType === "will") statVal = nextState.attributes?.will || 10;
+                                      else if (choice.checkType === "mindmancer") statVal = (nextState.skills?.mindmancer || 0) * 3;
+                                      
+                                      const totalRoll = rollD20 + statVal;
+                                      const isSuccess = totalRoll >= choice.checkValue;
+
+                                      if (!isSuccess) {
+                                        triggerToast(`⚠️ CHECK FAILED: Roll ${totalRoll} vs DC ${choice.checkValue}`);
+                                        setLogs(prev => [
+                                          ...prev,
+                                          {
+                                            id: crypto.randomUUID(),
+                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                            text: `[CHECK FAILURE]: Rolled ${rollD20} + ${statVal} = ${totalRoll} vs DC ${choice.checkValue} (${choice.checkType.toUpperCase()}). Action failed or triggered defensive feedback!`,
+                                            type: "system" as const,
+                                            district: nextState.district,
+                                            poi: nextState.poi
+                                          }
+                                        ]);
+                                      } else {
+                                        triggerToast(`⚡ CHECK SUCCESS: Roll ${totalRoll} vs DC ${choice.checkValue}!`);
+                                      }
+                                    }
+
+                                    // Grant Rewards
+                                    if (choice.grantsXP) {
+                                      nextState.experience += choice.grantsXP;
+                                      triggerToast(`+${choice.grantsXP} XP Granted`);
+                                    }
+                                    if (choice.grantsCredits) {
+                                      nextState.credits += choice.grantsCredits;
+                                      triggerToast(`+${choice.grantsCredits}¤ Credits Granted`);
+                                    }
+                                    if (choice.grantsItem && !nextState.inventory.includes(choice.grantsItem)) {
+                                      nextState.inventory = [choice.grantsItem, ...nextState.inventory];
+                                      triggerToast(`Item Acquired: ${choice.grantsItem}`);
+                                    }
+                                    if (choice.unlockDistrictId) {
+                                      nextState.district = choice.unlockDistrictId;
+                                      setActiveRegionId(choice.unlockDistrictId);
+                                    }
+
+                                    // Narrative Log Output
+                                    if (choice.outcomeNarrative) {
+                                      const newEntry = {
+                                        id: crypto.randomUUID(),
+                                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                                        text: `[${choice.label}]: ${choice.outcomeNarrative}`,
+                                        type: "narration" as const,
+                                        district: nextState.district,
+                                        poi: nextState.poi
+                                      };
+                                      setLogs(prev => [...prev, newEntry]);
+                                    }
+
+                                    setGameState(nextState);
+
+                                    // Step Branching
+                                    if (choice.targetStepId) {
+                                      setRelicStep(choice.targetStepId);
+                                    } else if (choice.targetPOIId) {
+                                      setActivePOIView(choice.targetPOIId);
+                                      setActiveDialogue(null);
+                                      setRelicStep("intro");
+                                    } else {
+                                      setActiveDialogue(null);
+                                      setRelicStep("intro");
+                                    }
+                                  };
+
+                                  return (
+                                    <motion.div
+                                      key={`poi-scene-${resolvedSceneKey}-${activeStepKey}`}
+                                      variants={slideInVariants}
+                                      initial="initial"
+                                      animate="animate"
+                                      exit="exit"
+                                      transition={{ duration: 0.25, ease: "easeOut" }}
+                                      className="bg-slate-950/95 border border-purple-500/50 rounded-xl p-5 relative flex flex-col gap-4 font-mono shadow-2xl box-glow-pink"
+                                    >
+                                      {/* Header Bar */}
+                                      <div className="flex justify-between items-center border-b border-purple-500/20 pb-2">
+                                        <span className="text-purple-400 font-extrabold text-[12px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                                          <Zap size={14} className="text-purple-500" /> {stepData.stepTitle || sceneData.title}
+                                        </span>
+                                        <span className="text-3xs text-purple-500 font-bold bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 uppercase">
+                                          {stepData.badgeLabel || "ACTIVE CONSOLE FIELD"}
+                                        </span>
+                                      </div>
+
+                                      {/* Landscape Cinematic Viewport Box */}
+                                      <div className="relative rounded-xl overflow-hidden border border-purple-500/30 bg-slate-950 shadow-inner group">
+                                        <div className="aspect-[21/9] sm:aspect-[24/9] w-full relative overflow-hidden bg-slate-900">
                                           <img
-                                            src={currentStep.image}
-                                            alt="Cinematic Screen"
+                                            src={stepData.bannerImage || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800"}
+                                            alt={stepData.bannerTitle}
                                             referrerPolicy="no-referrer"
-                                            className="absolute inset-0 w-full h-full object-cover mix-blend-screen opacity-75 transition-all duration-700"
+                                            className="w-full h-full object-cover object-center filter brightness-90 group-hover:scale-105 transition-transform duration-700 ease-out"
                                           />
-                                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/25 to-transparent z-10" />
-                                          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent" />
-                                          <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-purple-500/40 to-transparent" />
+                                          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+                                          <div className="absolute inset-0 bg-purple-950/20 mix-blend-color-dodge pointer-events-none" />
                                           
-                                          <div className="p-4 z-20 text-left font-mono relative">
-                                            <span className={`text-[8px] font-bold tracking-widest uppercase px-2 py-0.5 rounded border ${
-                                              currentStep.alertType === "breach" ? "bg-red-950/80 text-red-400 border-red-500/30 animate-pulse" :
-                                              currentStep.alertType === "casualty" ? "bg-amber-950/80 text-amber-500 border-amber-500/30 animate-pulse" :
-                                              currentStep.alertType === "empowered" ? "bg-purple-950/80 text-purple-400 border-purple-500/30 animate-pulse" :
-                                              "bg-slate-900/80 text-cyan-400 border-cyan-500/30"
-                                            }`}>
-                                              {relicStep === "intro" ? "ANOMALY SEQUENCE INITIALIZED" :
-                                               relicStep === "examine" ? "SCANNING GRID SPECTRUM" :
-                                               relicStep === "discuss_vice" ? "SQUAD LOGS: ADVISORY" :
-                                               relicStep === "discuss_tracker" ? "SQUAD LOGS: ADVISORY" :
-                                               relicStep === "awakening" ? "BIOMASS SYNAPSE ENGAGEMENT" :
-                                               relicStep === "breach" ? "TACTICAL CRISIS: ENGAGED" :
-                                               relicStep === "sacrifice" ? "SQUAD CASUALTY DETECTED" :
-                                               "COGNITIVE PROTOCOL ACTIVE"}
+                                          {/* Scanlines Effect */}
+                                          <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none opacity-40" />
+
+                                          {/* Bottom Overlay Info inside Banner */}
+                                          <div className="absolute bottom-3 left-4 right-4 text-left">
+                                            <span className="text-4xs font-mono uppercase tracking-widest text-purple-400 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-500/40 backdrop-blur-sm">
+                                              ANOMALY SCAN FEED
                                             </span>
-                                            <h3 className="text-white text-[11px] font-black uppercase mt-1.5 tracking-wider drop-shadow-md">
-                                              {currentStep.title}
+                                            <h3 className="text-sm sm:text-base font-extrabold text-white uppercase tracking-tight mt-1 drop-shadow-md">
+                                              {stepData.bannerTitle}
                                             </h3>
                                           </div>
                                         </div>
 
                                         {/* Cinematic Narrative Text */}
-                                        <div id="cinematic-narrative" className="text-[10px] leading-relaxed text-slate-300 bg-slate-950/50 border border-purple-500/15 rounded-lg p-3.5 text-left font-sans">
-                                          {currentStep.narrative.split("\n\n").map((para, pIdx) => (
-                                            <p key={pIdx} className={pIdx > 0 ? "mt-2" : ""}>
+                                        <div className="p-4 bg-slate-950/80 text-left border-t border-purple-500/20 space-y-2">
+                                          {stepData.narrativeText.split("\n\n").map((para, pIdx) => (
+                                            <p key={pIdx} className="text-slate-300 font-sans text-xs sm:text-sm leading-relaxed">
                                               {para}
                                             </p>
                                           ))}
                                         </div>
                                       </div>
-                                    );
-                                  })()}
 
-                                  {/* Dialog boxes matching steps */}
-                                  <div className="grid grid-cols-1 gap-3">
-                                    {relicStep === "intro" && (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {/* Vice */}
-                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">🔫</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                            <span className="text-[7px] text-slate-500 block mt-0.5 uppercase">Companion</span>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "Careful, rookie. Those thermal readings are off the charts. It's radiating an unshielded cerebral broadcaster field. We came here for corporate databases, not to get our brains fried by ancient hardware. Leave it alone."
-                                            </p>
-                                          </div>
+                                      {/* Dynamic Companion Dialogue Barks */}
+                                      {stepData.companions && stepData.companions.length > 0 && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left">
+                                          {stepData.companions.map((comp) => {
+                                            const isVice = comp.id.includes("vice") || comp.name.toLowerCase().includes("vice");
+                                            const isTracker = comp.id.includes("tracker") || comp.name.toLowerCase().includes("tracker");
+                                            const borderClass = isVice 
+                                              ? "border-rose-500/30 bg-rose-950/20" 
+                                              : isTracker 
+                                                ? "border-amber-500/30 bg-amber-950/20"
+                                                : "border-cyan-500/30 bg-cyan-950/20";
+                                            const textClass = isVice ? "text-rose-400" : isTracker ? "text-amber-400" : "text-cyan-400";
+
+                                            return (
+                                              <div key={comp.id} className={`border ${borderClass} p-3 rounded-lg flex gap-2.5 items-start font-mono shadow-sm`}>
+                                                <div className="w-9 h-9 rounded-md bg-slate-900 border border-white/10 flex items-center justify-center flex-shrink-0 text-base shadow">
+                                                  {comp.avatar || (isVice ? "🔫" : isTracker ? "📟" : "👤")}
+                                                </div>
+                                                <div className="text-[10px] space-y-0.5 flex-1">
+                                                  <p className={`${textClass} font-extrabold uppercase flex items-center justify-between`}>
+                                                    <span>{comp.name}</span>
+                                                    <span className="text-3xs text-slate-500">{comp.role || "Squad Member"}</span>
+                                                  </p>
+                                                  <p className="text-slate-300 font-sans text-2xs italic leading-relaxed pt-0.5">
+                                                    "{comp.text}"
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
-                                        {/* Tracker */}
-                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">📟</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                            <span className="text-[7px] text-slate-500 block mt-0.5 uppercase">Companion</span>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "We are in an active black-site, Vice. The blast doors are sealing, and corporate hit squads are coming. If that device can bypass firewall decrypters, we need it. Reach out, kid. Desperate times demand desperate weapons."
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
+                                      )}
 
-                                    {relicStep === "examine" && (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {/* Vice */}
-                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">🔫</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "See that? Your ocular indicators are flickering already. Step back before that mental hum triggers a total cerebral bleed!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                        {/* Tracker */}
-                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">📟</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "It's already syncing with your bio-signature. It wants a host, kid. Grab it. Stop hesitating before we get cornered like rats."
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
+                                      {/* Interactive Operational Choices */}
+                                      <div className="flex flex-wrap gap-2.5 pt-2 border-t border-purple-500/20 justify-start">
+                                        {stepData.choices.map((choice) => {
+                                          const isPurple = choice.variant === "purple" || choice.id.includes("awakening") || choice.id.includes("combat");
+                                          const isAmber = choice.variant === "amber";
+                                          const isRose = choice.variant === "rose";
+                                          const isCyan = choice.variant === "cyan" || !choice.variant;
 
-                                    {relicStep === "discuss_vice" && (
-                                      <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
-                                        <span className="text-xl">🔫</span>
-                                        <div className="text-[10px] text-left">
-                                          <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                            "There is no safe way to load pre-collapse neural code. If you touch that, it'll dump raw, unfiltered cognitive files straight into your cerebral deck. Best case, you get a severe skull migraine. Worst case, your cortex turns into charcoal."
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {relicStep === "discuss_tracker" && (
-                                      <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
-                                        <span className="text-xl">📟</span>
-                                        <div className="text-[10px] text-left">
-                                          <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                            "We're low-life runners, rookie. Every step in Megacity-9 is a gamble. Playing it safe gets you a shallow grave in the sewers. I'd rather take a direct psychic spike and have a fighting chance than sit here waiting for Ares executioners to hollow us out."
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {relicStep === "awakening" && (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
-                                        {/* Vice */}
-                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">🔫</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "Whoa! Kid! Your eyes... they are glowing purple! Settle your heartbeat! We've got massive sound reports breaching the outer perimeter!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                        {/* Tracker */}
-                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">📟</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "The ventilation shaft covers are blowing open! Ares Biotech Enforcers have arrived! Ready your weapons, recruit! It's do or die!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {relicStep === "breach" && (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5 animate-pulse">
-                                          <span className="text-xl">🔫</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "They're inside! Sector lockdown has initiated! Guard your flanks! Don't let them pin us down in this altar room!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="bg-amber-950/25 border border-amber-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">📟</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-amber-400 uppercase leading-none">Tracker</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "I see high-caliber lasers painting the altar! They are targeting the recruit while they're syncing with the database crystal! Get behind cover!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {relicStep === "sacrifice" && (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5">
-                                          <span className="text-xl">👩‍🎤</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-rose-400 uppercase leading-none">Vice</p>
-                                            <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                              "NO! Tracker! You absolute idiot... why did you do that?! His central energy matrix is ruptured... he's leaking direct reactor plasma!"
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="bg-slate-900/40 border border-amber-500/20 p-3 rounded-lg flex gap-2.5 opacity-75">
-                                          <span className="text-xl">📟</span>
-                                          <div className="text-[10px] text-left">
-                                            <p className="font-bold text-amber-500 uppercase leading-none">Tracker (Dying)</p>
-                                            <p className="text-slate-400 font-sans text-[9px] leading-normal italic mt-1 animate-pulse">
-                                              "*Glitch static*... Rook... don't let... them take the crystal... Vice... escape..."
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {relicStep === "awakened_fury" && (
-                                      <div className="bg-rose-950/25 border border-rose-500/20 p-3 rounded-lg flex gap-2.5 animate-pulse">
-                                        <span className="text-xl">👩‍🎤</span>
-                                        <div className="text-[10px] text-left">
-                                          <p className="font-bold text-rose-400 uppercase leading-none">Vice (Furious)</p>
-                                          <p className="text-slate-300 font-sans text-[9px] leading-normal italic mt-1">
-                                            "His spark is gone, rookie... completely flatlined. I'm pinned down behind this backup console. Squeeze their neural chips! Burn them to the ground with that mindmancy!"
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Interactive choices and branch buttons */}
-                                  <div className="flex flex-wrap justify-center gap-2 border-t border-white/5 pt-3">
-                                    {relicStep === "intro" && (
-                                      <>
-                                        <button
-                                          id="relic-btn-examine"
-                                          onClick={() => setRelicStep("examine")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-cyan-500/30 text-cyan-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          🔎 [Examine Relic Frequencies]
-                                        </button>
-                                        <button
-                                          id="relic-btn-discuss-vice"
-                                          onClick={() => setRelicStep("discuss_vice")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          💬 "Vice, is there any way to analyze this safely?"
-                                        </button>
-                                        <button
-                                          id="relic-btn-discuss-tracker"
-                                          onClick={() => setRelicStep("discuss_tracker")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          💬 "Tracker, you seem awfully eager to risk my life here."
-                                        </button>
-                                        <button
-                                          id="relic-btn-touch"
-                                          onClick={() => setRelicStep("awakening")}
-                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)] animate-pulse"
-                                        >
-                                          ⚡ [Reach out and touch the Relic]
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {relicStep === "examine" && (
-                                      <>
-                                        <button
-                                          id="relic-btn-examine-vice"
-                                          onClick={() => setRelicStep("discuss_vice")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          💬 "Is there any way to insulate the connection, Vice?"
-                                        </button>
-                                        <button
-                                          id="relic-btn-examine-touch"
-                                          onClick={() => setRelicStep("awakening")}
-                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
-                                        >
-                                          ⚡ [Touch the pulsing gold alloy]
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {relicStep === "discuss_vice" && (
-                                      <>
-                                        <button
-                                          id="relic-btn-vice-tracker"
-                                          onClick={() => setRelicStep("discuss_tracker")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          💬 "What do you think, Tracker?"
-                                        </button>
-                                        <button
-                                          id="relic-btn-vice-touch"
-                                          onClick={() => setRelicStep("awakening")}
-                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
-                                        >
-                                          ⚡ [Take the risk. Touch the Relic]
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {relicStep === "discuss_tracker" && (
-                                      <>
-                                        <button
-                                          id="relic-btn-tracker-vice"
-                                          onClick={() => setRelicStep("discuss_vice")}
-                                          className="bg-slate-900 hover:bg-slate-800 border border-rose-500/30 text-rose-400 font-mono text-[10px] px-3.5 py-2 rounded-lg cursor-pointer transition-all"
-                                        >
-                                          💬 "Vice, do we have any alternative escape gear?"
-                                        </button>
-                                        <button
-                                          id="relic-btn-tracker-touch"
-                                          onClick={() => setRelicStep("awakening")}
-                                          className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/50 text-purple-300 font-mono text-[10px] px-4 py-2 rounded-lg cursor-pointer transition-all font-bold shadow-[0_0_8px_rgba(168,85,247,0.3)]"
-                                        >
-                                          ⚡ [Grab the Relic] "Let's do this."
-                                        </button>
-                                      </>
-                                    )}
-
-                                    {relicStep === "awakening" && (
-                                      <button
-                                        id="relic-btn-awakening-next"
-                                        onClick={() => setRelicStep("breach")}
-                                        className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                                      >
-                                        ⚡ [The Code Floods Your Mind] Hear the Static...
-                                      </button>
-                                    )}
-
-                                    {relicStep === "breach" && (
-                                      <button
-                                        id="relic-btn-breach-next"
-                                        onClick={() => setRelicStep("sacrifice")}
-                                        className="bg-red-600 hover:bg-red-500 hover:scale-105 border border-red-500 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]"
-                                      >
-                                        🔥 [Dive for Cover] "Vice, watch the doors!"
-                                      </button>
-                                    )}
-
-                                    {relicStep === "sacrifice" && (
-                                      <button
-                                        id="relic-btn-sacrifice-next"
-                                        onClick={() => setRelicStep("awakened_fury")}
-                                        className="bg-amber-600 hover:bg-amber-500 hover:scale-105 border border-amber-500 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.4)]"
-                                      >
-                                        🩸 [Catch Tracker as He Falls] "NO! Tracker!"
-                                      </button>
-                                    )}
-
-                                    {relicStep === "awakened_fury" && (
-                                      <button
-                                        id="relic-btn-fury-combat"
-                                        onClick={() => {
-                                          if (!gameState) return;
-                                          let nextState = { ...gameState };
-                                          
-                                          // Debuff player: reduce max HP by 25, set mana to highly unstable
-                                          nextState.maxHp = Math.max(50, nextState.maxHp - 25);
-                                          nextState.hp = Math.min(nextState.hp, nextState.maxHp);
-                                          
-                                          // Dual Class Unlock: Grant both the skills entry AND the unlocked flag
-                                          if (nextState.skills) {
-                                            nextState.skills.mindmancer = 1; // Unlock Mindmancer skills on sheets
+                                          let btnClass = "bg-slate-900 hover:bg-slate-800 border-white/20 text-slate-200";
+                                          if (isPurple) {
+                                            btnClass = "bg-purple-600 hover:bg-purple-500 border-purple-400 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse";
+                                          } else if (isAmber) {
+                                            btnClass = "bg-amber-950/70 hover:bg-amber-900 border-amber-500/40 text-amber-200";
+                                          } else if (isRose) {
+                                            btnClass = "bg-rose-950/70 hover:bg-rose-900 border-rose-500/40 text-rose-200";
+                                          } else if (isCyan) {
+                                            btnClass = "bg-cyan-950/70 hover:bg-cyan-900 border-cyan-500/40 text-cyan-200";
                                           }
-                                          nextState.mindmancerUnlocked = true; // Unlock Mindmancer dual-class powers in combat!
-                                          
-                                          // Spawn Ambush Encounter: Ares Corporate Enforcers
-                                          nextState.combatState = {
-                                            enemyName: "Ares Corporate Enforcers (Ambush)",
-                                            enemyHp: 160,
-                                            enemyMaxHp: 160,
-                                            enemyShields: 20,
-                                            enemyMaxShields: 20,
-                                            isActive: true,
-                                            turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Tracker is struck by a lethal shot! Vice is heavily wounded!"
-                                          };
-                                          
-                                          setActiveDialogue(null);
-                                          setGameState(nextState);
-                                          
-                                          const finalLogs = [
-                                            ...logs,
-                                            {
-                                              id: crypto.randomUUID(),
-                                              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                              text: `💥 NEURAL AWAKENING & AMBUSH: A surge of strange mental frequencies fuses with your cortex! Your temples burn, and you realize you can channel bizarre, cognitive attacks in combat.\n\nAres Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
-                                              type: "combat" as const,
-                                              district: nextState.district,
-                                              poi: nextState.poi
-                                            }
-                                          ];
-                                          setLogs(finalLogs);
-                                          triggerAutosave(nextState, finalLogs);
-                                          triggerToast("COMBAT START: AWAKENING AMBUSH");
-                                        }}
-                                        className="bg-purple-600 hover:bg-purple-500 hover:scale-105 border border-purple-400 text-white font-mono font-black text-xs px-6 py-3.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                                      >
-                                        🔮 [Wield the Relic's Mindmancy] Engage Ambushers
-                                      </button>
-                                    )}
-                                  </div>
-                                </motion.div>
+
+                                          return (
+                                            <button
+                                              key={choice.id}
+                                              id={`scene-choice-${choice.id}`}
+                                              onClick={() => handleExecuteChoice(choice)}
+                                              className={`border font-mono font-bold text-2xs sm:text-xs px-4 py-2.5 rounded-xl cursor-pointer transition-all uppercase tracking-wider flex items-center gap-2 ${btnClass}`}
+                                            >
+                                              <span>{choice.label}</span>
+                                              {choice.checkType && choice.checkType !== "none" && (
+                                                <span className="text-3xs bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-extrabold border border-amber-500/30">
+                                                  [DC {choice.checkValue}]
+                                                </span>
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </motion.div>
+                                  );
+                                })()
                               ) : activeDialogue === "post_combat_tracker" ? (
                                 <motion.div
                                   key="post_combat_tracker"
@@ -9339,6 +9801,39 @@ function MainGame() {
                                              btns.push("🤝 Deliver Encrypted Ledger directly to Vice");
                                            }
                                          }
+
+                                         // 9. DYNAMIC CAMPAIGN QUEST DIRECTOR OPERATIONAL HOOKS
+                                         if (gameState?.campaignQuestsRegistry && gameState?.campaignQuestsRegistry.length > 0) {
+                                           const currentPoiObj = MAP_POIS.find(p => p.id === activePOIView);
+                                           const currentPoiName = (currentPoiObj?.name || "").toLowerCase();
+                                           const currentPoiId = (activePOIView || "").toLowerCase();
+                                           const currentDistrict = (currentPoiObj?.district || gameState.district || "").toLowerCase();
+
+                                           gameState.campaignQuestsRegistry.forEach(quest => {
+                                             const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+                                             if (!isQuestActive) return;
+
+                                             const currentStage = quest.stages?.find(s => !s.completed);
+                                             if (!currentStage) return;
+
+                                             const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
+                                             const targetDistrictLower = (currentStage.targetDistrict || "").toLowerCase();
+
+                                             const matchesThisPOI = 
+                                               (targetPoiLower && (currentPoiName.includes(targetPoiLower) || currentPoiId.includes(targetPoiLower) || targetPoiLower.includes(currentPoiId))) ||
+                                               (!targetPoiLower && targetDistrictLower && targetDistrictLower === currentDistrict);
+
+                                             if (matchesThisPOI) {
+                                               if (currentStage.operationalPaths && currentStage.operationalPaths.length > 0) {
+                                                  currentStage.operationalPaths.forEach(path => {
+                                                    btns.push(`[QUEST: ${quest.id}:${currentStage.id}:${path.id}] ${path.label}`);
+                                                  });
+                                               } else {
+                                                  btns.push(`[QUEST: ${quest.id}:${currentStage.id}] 🎯 ${currentStage.title} - ${currentStage.description}`);
+                                               }
+                                             }
+                                           });
+                                         }
                                       }
                                       
                                       if (gameState && gameState.stamina <= 35) {
@@ -9411,6 +9906,9 @@ function MainGame() {
                             )}
                           </div>
                         </div>
+                            </div>
+                          );
+                        })()}
                       </motion.div>
                     )}
                   </AnimatePresence>

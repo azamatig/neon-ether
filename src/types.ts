@@ -118,6 +118,304 @@ export interface GameState {
     nodeId: string;
   } | null;
   mindmancerUnlocked?: boolean;
+  unlockedBases?: string[];
+  ownedBases?: string[];
+  currentBaseId?: string;
+  unlockedDistricts?: string[];
+  unlockedPerks?: string[];
+  campaignQuestsRegistry?: UnifiedQuest[];
+  poiInteractiveScenes?: Record<string, POIInteractiveEvent>;
+  customPOIsRegistry?: CustomPOIData[];
+}
+
+export interface POIShopService {
+  enabled: boolean;
+  merchantName?: string;
+  merchantTitle?: string;
+  merchantAvatar?: string;
+  greeting?: string;
+  items?: string[];
+  priceMultiplier?: number;
+  allowSell?: boolean;
+}
+
+export interface POIClinicService {
+  enabled: boolean;
+  doctorName?: string;
+  doctorAvatar?: string;
+  healHpCost?: number;
+  restoreManaCost?: number;
+  cureDebuffsCost?: number;
+  surgeryAvailable?: boolean;
+}
+
+export interface POIRestService {
+  enabled: boolean;
+  innkeeperName?: string;
+  rentRoomCost?: number;
+  staminaRestore?: number;
+  hpRestore?: number;
+  advanceHours?: number;
+  flavorText?: string;
+}
+
+export interface POIAuctionLot {
+  id: string;
+  name: string;
+  type: "slave" | "mercenary" | "companion" | "artifact" | "cyberware";
+  price: number;
+  desc: string;
+  stats?: string;
+  avatar?: string;
+  companionIdToRecruit?: string;
+  itemIdToGrant?: string;
+  purchased?: boolean;
+}
+
+export interface POIAuctionService {
+  enabled: boolean;
+  auctioneerName?: string;
+  auctioneerAvatar?: string;
+  description?: string;
+  lots?: POIAuctionLot[];
+}
+
+export interface POIContractsService {
+  enabled: boolean;
+  boardTitle?: string;
+  boardDescription?: string;
+  availableQuestIds?: string[];
+}
+
+export interface POIRumorItem {
+  id: string;
+  title: string;
+  text: string;
+  cost?: number;
+  unlocksDistrictId?: string;
+  unlocksPoiId?: string;
+  grantsXP?: number;
+  heard?: boolean;
+}
+
+export interface POIRumorsService {
+  enabled: boolean;
+  informantName?: string;
+  informantAvatar?: string;
+  rumorList?: POIRumorItem[];
+}
+
+export interface POINpcsService {
+  enabled: boolean;
+  placedNPCIds?: string[];
+}
+
+export interface POIQuestTriggerConfig {
+  linkedSceneId?: string;
+  linkedSceneStepId?: string;
+  triggerCondition?: "always_on_enter" | "first_time_only" | "if_active_quest" | "manual_button";
+  linkedQuestId?: string;
+  linkedQuestStageId?: string;
+  triggerButtonLabel?: string;
+}
+
+export interface UnifiedPOIServices {
+  shop?: POIShopService;
+  clinic?: POIClinicService;
+  rest?: POIRestService;
+  auction?: POIAuctionService;
+  contracts?: POIContractsService;
+  rumors?: POIRumorsService;
+  npcs?: POINpcsService;
+}
+
+export interface CustomPOIAction {
+  id: string;
+  label: string;
+  desc: string;
+  cost?: number;
+  statCheck?: string;
+  actionType: "dialogue" | "shop" | "combat" | "rumor" | "event" | "rest" | "scene" | "custom";
+  targetNpcId?: string;
+  targetEventId?: string;
+  targetSceneId?: string;
+  rewardCredits?: number;
+  rewardXP?: number;
+  rewardItem?: string;
+}
+
+export interface CustomPOIData {
+  id: string;
+  name: string;
+  district: string;
+  category: "safehouse" | "social" | "shop" | "combat" | "temple" | "quest" | "auction" | "medical";
+  desc: string;
+  x: number;
+  y: number;
+  bgImage?: string;
+  image?: string;
+  isUnlocked: boolean;
+  fastTravelCost?: number;
+  dangerRating?: "Safe" | "Low" | "Medium" | "High" | "Lethal";
+  
+  // Quest / Scene Integration
+  questTrigger?: POIQuestTriggerConfig;
+
+  // Interior Modular Services
+  services?: UnifiedPOIServices;
+
+  // Interior Activities & Actions
+  actions: CustomPOIAction[];
+  buttons?: string[];
+  
+  // Placed NPCs in this POI
+  placedNPCIds: string[];
+
+  // Combat Configuration (if combat POI)
+  isCombatZone?: boolean;
+  enemyUnitName?: string;
+  enemyHp?: number;
+  enemyShields?: number;
+  enemyAtk?: number;
+  enemyDesc?: string;
+  isCapturable?: boolean;
+  capturableNpcId?: string;
+  victoryCredits?: number;
+  victoryXP?: number;
+  victoryItemDrop?: string;
+
+  // Legacy fields for backward compatibility
+  entryEventId?: string;
+}
+
+export interface POICompanionDialogue {
+  id: string;
+  name: string;
+  role: string;
+  avatar?: string;
+  portrait?: string;
+  text: string;
+  color?: string;
+}
+
+export interface POISceneChoice {
+  id: string;
+  label: string;
+  targetStepId?: string;
+  targetPOIId?: string;
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "item";
+  checkValue?: number;
+  requiredItem?: string;
+  outcomeNarrative?: string;
+  grantsXP?: number;
+  grantsCredits?: number;
+  grantsItem?: string;
+  triggerCombatEncounterId?: string;
+  unlockDistrictId?: string;
+  unlockBaseId?: string;
+  completeQuestStageId?: string;
+  variant?: "cyan" | "amber" | "rose" | "purple" | "emerald";
+}
+
+export interface POISceneStep {
+  id: string;
+  stepTitle?: string;
+  bannerTitle: string;
+  bannerImage: string;
+  badgeLabel?: string;
+  narrativeText: string;
+  companions?: POICompanionDialogue[];
+  choices: POISceneChoice[];
+}
+
+export interface POIInteractiveEvent {
+  id?: string;
+  poiId: string;
+  poiName: string;
+  districtId: string;
+  title: string;
+  initialStepId: string;
+  steps: Record<string, POISceneStep>;
+  linkedQuestId?: string;
+  linkedStageId?: string;
+}
+
+export interface QuestOperationalPath {
+  id: string;
+  label: string;
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "item";
+  checkValue?: number;
+  requiredStat?: string;
+  requiredStatValue?: number;
+  requiredSkill?: string;
+  requiredSkillLevel?: number;
+  requiredItem?: string;
+  requiredMana?: number;
+  outcomeDesc?: string;
+  outcomeText?: string;
+  grantsBonusCredits?: number;
+  grantsBonusXP?: number;
+  grantsBonusItem?: string;
+  rewardCredits?: number;
+  rewardXP?: number;
+  rewardItem?: string;
+  linkedPOISceneId?: string;
+  linkedPOISceneStepId?: string;
+}
+
+export interface QuestStage {
+  id: string;
+  stageIndex: number;
+  title: string;
+  description: string;
+  objectiveType: "interact_poi" | "kill_target" | "hack_terminal" | "talk_npc" | "collect_item" | "custom_choice";
+  targetPOI?: string;
+  targetDistrict?: string;
+  targetNPC?: string;
+  targetItem?: string;
+  targetCount: number;
+  currentCount: number;
+  completed: boolean;
+  operationalPaths?: QuestOperationalPath[];
+  linkedPOISceneId?: string;
+  linkedPOISceneStepId?: string;
+}
+
+export interface QuestWorldUnlocks {
+  unlockBaseId?: string;
+  unlockDistrictId?: string;
+  unlockVendorTier?: string;
+  unlockPerkOrSkill?: string;
+  recruitCompanionId?: string;
+}
+
+export interface UnifiedQuest {
+  id: string;
+  title: string;
+  category: "Main Quest" | "Side Quest" | "Faction Contract" | "Companion Story";
+  chapter?: "Prologue" | "Chapter 1: The Outcast Spark" | "Chapter 2: The Corporate War" | "Chapter 3: Technomantic Singularity" | "Endgame";
+  description: string;
+  narrativeBriefing?: string;
+  giverNPC?: string;
+  giverPOI?: string;
+  minLevel?: number;
+  prerequisiteQuestId?: string;
+  nextQuestId?: string;
+  stages: QuestStage[];
+  rewards: {
+    credits?: number;
+    experience?: number;
+    items?: string[];
+    reputation?: {
+      streetOutlaws?: number;
+      titanLogistics?: number;
+      aresCorporate?: number;
+    };
+    worldUnlocks?: QuestWorldUnlocks;
+  };
+  status: "NOT_STARTED" | "ACTIVE" | "COMPLETED" | "FAILED";
+  log: string[];
+  rewardClaimed?: boolean;
 }
 
 export interface BaseNPC {

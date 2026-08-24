@@ -18,10 +18,17 @@ import {
   Flame, 
   Zap, 
   Eye, 
-  UserPlus 
+  UserPlus,
+  Play,
+  RotateCcw,
+  Search,
+  Sliders,
+  Shield,
+  Activity,
+  Award
 } from "lucide-react";
 import { BaseNPC, CompanionState, GameState } from "../../types";
-import { INITIAL_COMPANIONS } from "../../data";
+import { ITEM_METADATA } from "../../data";
 
 export interface CustomDialogueChoiceOption {
   id: string;
@@ -78,7 +85,7 @@ interface NPCStudioProps {
   triggerToast: (msg: string) => void;
 }
 
-const PRESET_AVATARS = ["👩‍🎤", "🥷", "🔮", "🦾", "🔫", "🌸", "✨", "🧹", "🗡️", "🦹", "⛓️", "👑"];
+const PRESET_AVATARS = ["👩‍🎤", "🥷", "🔮", "🦾", "🔫", "🌸", "✨", "🧹", "🗡️", "🦹", "⛓️", "👑", "🕶️", "📟", "🧪", "⚙️"];
 
 const PRESET_PORTRAITS = [
   { name: "Vice (Leader)", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400" },
@@ -88,7 +95,9 @@ const PRESET_PORTRAITS = [
   { name: "Rescued Subject Mia", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400" },
   { name: "Corporate Suit Aria", url: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400" },
   { name: "Heavy Merc Brick", url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400" },
-  { name: "Syndicate Enforcer", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400" }
+  { name: "Syndicate Enforcer", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400" },
+  { name: "Decker Kira", url: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=400" },
+  { name: "Outlaw Fixer Jax", url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400" }
 ];
 
 const PRESET_BODY_SHOTS = [
@@ -115,62 +124,49 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
   setGameState,
   triggerToast
 }) => {
-  const [selectedId, setSelectedId] = useState<string>(customNPCs[0]?.id || "new");
-  const [activeSubTab, setActiveSubTab] = useState<"identity" | "psychology" | "dialogue" | "appearance">("identity");
+  const [selectedId, setSelectedId] = useState<string>(customNPCs[0]?.id || "aria");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [activeSubTab, setActiveSubTab] = useState<"identity" | "psychology" | "dialogue" | "appearance" | "equipment">("identity");
 
   // Form State
-  const [npcForm, setNpcForm] = useState<CustomCharacter>({
-    id: `npc_${Date.now()}`,
-    name: "Elena Rostova",
-    characterType: "slave",
-    role: "Former Arasaka Bio-Chemist",
-    avatar: "⛓️",
-    portraitImage: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400",
-    bodyImage: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&q=80&w=600",
-    bio: "Captured during a corporate extraction raid in the Upper Terraces. Sold off to the Under-Alley Auction Block with a sealed neural limiter.",
-    greetingDialogue: "P-please don't shock me again... I know how to synthesize pure combat stimulants and calibrate neural chips if you just take me away from this pen.",
-    hiringFee: 0,
-    slaveAuctionPrice: 220,
-    collarStatus: "Active Shock Collar",
-    happiness: 35,
-    affection: "Distant",
-    affectionValue: 30,
-    willpower: 60,
-    corruption: 10,
-    discipline: 75,
-    defiance: 40,
-    fear: 65,
-    anger: 20,
-    respect: 45,
-    hygiene: "Dirty",
-    hunger: "Hungry",
-    assignedJob: "Ether Synthesizer",
-    choices: [
-      {
-        id: "c1",
-        text: "[Buy Freedom] Pay 220¤ to Auctioneer and Unlock Collar",
-        response: "Elena clutches her throat as the magnetic collar clicks open. Tears fill her augmented eyes: 'You... you bought my deed just to set me free? I'll follow you to your base. My chemistry expertise is yours.'",
-        checkType: "credits",
-        cost: 220,
-        outcome: "buy_slave"
-      },
-      {
-        id: "c2",
-        text: "[Mindmancer Level 2] Rewrite Neural Collar Frequency to obey you",
-        response: "Purple ether waves ripple across the slave collar. Elena's defiance fades into serene devotion: 'Master... the neural noise has ceased. I am aligned with your directives.'",
-        checkType: "mindmancer",
-        checkValue: 2,
-        outcome: "recruit_base"
-      },
-      {
-        id: "c3",
-        text: "[Intimidate - STR 13] Threaten the Auction Guards and pry her cage open",
-        response: "You crush the titanium cell bars with raw cyberware force. The auction guards scatter in panic as Elena slips out!",
-        checkType: "str",
-        checkValue: 13,
-        outcome: "recruit_party"
-      }
-    ]
+  const [npcForm, setNpcForm] = useState<CustomCharacter>(() => {
+    return customNPCs.find(n => n.id === selectedId) || customNPCs[0] || {
+      id: `npc_${Date.now()}`,
+      name: "New Operative",
+      characterType: "companion",
+      role: "Tactical Specialist",
+      avatar: "🥷",
+      portraitImage: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=400",
+      bodyImage: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=600",
+      bio: "An enigmatic operative in Megacity-9.",
+      greetingDialogue: "Keep your guard up. What's the directive?",
+      hiringFee: 100,
+      slaveAuctionPrice: 0,
+      collarStatus: "Unlocked / Free",
+      happiness: 65,
+      affection: "Amiable",
+      affectionValue: 40,
+      willpower: 80,
+      corruption: 20,
+      discipline: 75,
+      defiance: 35,
+      fear: 10,
+      anger: 15,
+      respect: 60,
+      hygiene: "Normal",
+      hunger: "Satiated",
+      assignedJob: "Defensive Security Guard",
+      startingEquipment: ["Nano-alloy Katana"],
+      choices: [
+        {
+          id: "c1",
+          text: "[Recruit] Invite to join active squad",
+          response: "Sounds like a profitable contract. Lead the way.",
+          outcome: "recruit_party"
+        }
+      ]
+    };
   });
 
   const handleSelectExisting = (npc: CustomCharacter) => {
@@ -185,33 +181,46 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       name: type === "slave" ? "Captive Asset" : type === "hireable" ? "Freelance Merc" : "New Operative",
       characterType: type,
       role: type === "slave" ? "Auctioned Captive" : "Tactical Specialist",
-      avatar: type === "slave" ? "⛓️" : "🥷",
-      portraitImage: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400",
-      bodyImage: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=600",
-      bio: "An enigmatic figure operating in the rain-slicked alleys of Megacity-9.",
-      greetingDialogue: "What do you need, runner? Make it fast before corporate drones trace our comms.",
+      avatar: type === "slave" ? "⛓️" : type === "hireable" ? "🪙" : "🥷",
+      portraitImage: type === "slave"
+        ? "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=400"
+        : "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=400",
+      bodyImage: type === "slave"
+        ? "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&q=80&w=600"
+        : "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=600",
+      bio: type === "slave"
+        ? "Captured during a raid and placed on the under-alley auction block with a sealed neural limiter."
+        : "An experienced street operator with specialized combat enhancements.",
+      greetingDialogue: type === "slave"
+        ? "P-please... unlock this collar and I'll manage your safehouse with complete devotion."
+        : "What's the job, runner? State the parameters.",
       hiringFee: type === "hireable" ? 120 : 0,
-      slaveAuctionPrice: type === "slave" ? 200 : 0,
+      slaveAuctionPrice: type === "slave" ? 180 : 0,
       collarStatus: type === "slave" ? "Active Shock Collar" : "Unlocked / Free",
-      happiness: 70,
-      affection: "Amiable",
-      affectionValue: 50,
-      willpower: 50,
-      corruption: 20,
-      discipline: 60,
-      defiance: 20,
-      fear: 10,
+      happiness: type === "slave" ? 40 : 70,
+      affection: type === "slave" ? "Distant" : "Amiable",
+      affectionValue: type === "slave" ? 30 : 50,
+      willpower: 70,
+      corruption: 15,
+      discipline: 75,
+      defiance: type === "slave" ? 30 : 25,
+      fear: type === "slave" ? 50 : 10,
       anger: 10,
-      respect: 50,
-      hygiene: "Normal",
-      hunger: "Satiated",
-      assignedJob: "Defensive Security Guard",
+      respect: 55,
+      hygiene: type === "slave" ? "Dirty" : "Normal",
+      hunger: type === "slave" ? "Hungry" : "Satiated",
+      assignedJob: type === "slave" ? "Safehouse Maid & Tech Analyst" : "Defensive Security Guard",
+      startingEquipment: [],
       choices: [
         {
-          id: "c1",
-          text: "[Recruit] Invite to join active squad",
-          response: "Sounds like a profitable contract. I'm in.",
-          outcome: "recruit_party"
+          id: `c_${Date.now()}`,
+          text: type === "slave" ? "[Buy Freedom] Pay 180¤ and unlock collar" : "[Recruit] Enlist to squad",
+          response: type === "slave" 
+            ? "The shock collar clicks open! 'Thank you... I will serve your safehouse loyally!'"
+            : "Deal sealed. I'll watch your six.",
+          outcome: type === "slave" ? "buy_slave" : "recruit_party",
+          checkType: type === "slave" ? "credits" : "none",
+          cost: type === "slave" ? 180 : 0
         }
       ]
     };
@@ -235,12 +244,11 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       return [...prev, npcForm];
     });
 
-    triggerToast(`CHARACTER SAVED: "${npcForm.name}" registered!`);
+    triggerToast(`CHARACTER SAVED: "${npcForm.name}" updated in Master Registry!`);
   };
 
   // Direct injection to live game state!
   const handleDeployToLiveGame = () => {
-    // 1. Add as companion if applicable
     const companionObj: CompanionState = {
       name: npcForm.name,
       fee: npcForm.hiringFee || 0,
@@ -250,16 +258,15 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       avatar: npcForm.avatar,
       image: npcForm.portraitImage,
       equipment: {
-        meleeWeapon: null,
-        rangedWeapon: null,
-        armor: null,
+        meleeWeapon: npcForm.startingEquipment?.find(e => ITEM_METADATA[e]?.slot === "meleeWeapon" || ITEM_METADATA[e]?.slot === "weapon") || null,
+        rangedWeapon: npcForm.startingEquipment?.find(e => ITEM_METADATA[e]?.slot === "rangedWeapon") || null,
+        armor: npcForm.startingEquipment?.find(e => ITEM_METADATA[e]?.slot === "armor") || null,
         headpiece: null,
         trinket: null
       },
       inventory: []
     };
 
-    // 2. Add as Base NPC
     const baseNpcObj: BaseNPC = {
       id: npcForm.id,
       name: npcForm.name,
@@ -282,7 +289,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       anger: npcForm.anger,
       defiance: npcForm.defiance,
       fear: npcForm.fear,
-      inventory: ["Synthesized Bio-Stim", "Encrypted Datapad"],
+      inventory: npcForm.startingEquipment || ["Synthesized Bio-Stim", "Encrypted Datapad"],
       currentJob: npcForm.assignedJob
     };
 
@@ -302,15 +309,16 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       };
     });
 
-    triggerToast(`LIVE INJECTION: "${npcForm.name}" added to Party and Safehouse Base!`);
+    triggerToast(`LIVE INJECTION: "${npcForm.name}" recruited to active Party & Safehouse Base!`);
   };
 
   const handleAddChoice = () => {
     const newChoice: CustomDialogueChoiceOption = {
       id: `c_${Date.now()}`,
-      text: "[New Inquire Option] Ask about local contacts",
-      response: "I know a few brokers down at Conduit 09.",
-      checkType: "none",
+      text: "[Intelligence 12] Inquire about syndicate security vectors",
+      response: "The local patrol drones sweep every 4 minutes along the perimeter.",
+      checkType: "int",
+      checkValue: 12,
       outcome: "none"
     };
     setNpcForm({
@@ -326,15 +334,26 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
     });
   };
 
+  // Filter NPCs
+  const filteredNPCs = customNPCs.filter(npc => {
+    const matchesSearch = !searchQuery || 
+      npc.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      npc.role.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesType = typeFilter === "all" || npc.characterType === typeFilter;
+    return matchesSearch && matchesType;
+  });
+
+  const availableItems = Object.keys(ITEM_METADATA);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full overflow-hidden text-xs font-mono">
       
-      {/* LEFT COLUMN: NPC List & Creation Filters */}
+      {/* LEFT COLUMN: NPC Roster List & Quick Creator */}
       <div className="lg:col-span-4 flex flex-col gap-3 h-full overflow-hidden border-r border-cyan-500/20 pr-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-cyan-400 font-bold text-sm tracking-wider uppercase">
             <Users size={16} />
-            <span>Character Roster</span>
+            <span>NPC & Companion Roster ({customNPCs.length})</span>
           </div>
           
           <div className="flex gap-1">
@@ -350,24 +369,66 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
               className="bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded font-bold uppercase cursor-pointer text-3xs"
               title="Add Auction Captive / Slave"
             >
-              + Slave/Captive
+              + Slave
+            </button>
+            <button
+              onClick={() => handleCreateNew("hireable")}
+              className="bg-amber-600 hover:bg-amber-500 text-slate-950 px-2 py-1 rounded font-bold uppercase cursor-pointer text-3xs"
+              title="Add Freelance Merc"
+            >
+              + Merc
             </button>
           </div>
         </div>
 
-        <p className="text-3xs text-slate-400 font-sans">
-          Create & customize characters: Squad Companions, Hireables, Captives in Auction Pens, and Lore NPCs with stat checks.
-        </p>
+        {/* Search and Filters */}
+        <div className="space-y-2">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-2.5 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Search by name, role, traits..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-cyan-500/20 rounded pl-8 pr-3 py-1.5 text-2xs text-cyan-200 placeholder-slate-600 outline-none"
+            />
+          </div>
 
-        {/* Character List */}
+          <div className="flex gap-1 overflow-x-auto pb-1 custom-scrollbar text-3xs">
+            {[
+              { id: "all", label: "All" },
+              { id: "companion", label: "Companions" },
+              { id: "slave", label: "Auction Captives" },
+              { id: "hireable", label: "Hireable Mercs" },
+              { id: "story_npc", label: "Story Lore" }
+            ].map(f => (
+              <button
+                key={f.id}
+                onClick={() => setTypeFilter(f.id)}
+                className={`px-2 py-0.5 rounded font-bold uppercase whitespace-nowrap cursor-pointer transition-all ${
+                  typeFilter === f.id
+                    ? "bg-cyan-500 text-slate-950 font-black"
+                    : "bg-slate-900/80 text-slate-400 hover:text-white border border-white/5"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Character Roster List */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-          {customNPCs.length === 0 ? (
+          {filteredNPCs.length === 0 ? (
             <div className="p-4 rounded border border-dashed border-cyan-500/30 text-center text-slate-500 text-2xs">
-              No custom characters created yet. Use the top buttons to author companions, auction captives, or mercs!
+              No matching characters found.
             </div>
           ) : (
-            customNPCs.map(npc => {
+            filteredNPCs.map(npc => {
               const isSelected = selectedId === npc.id;
+              const inParty = gameState.party?.includes(npc.name);
+              const inBase = gameState.baseNPCs?.some(b => b.id === npc.id || b.name === npc.name);
+
               return (
                 <div
                   key={npc.id}
@@ -388,7 +449,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
                       <span className="font-bold text-cyan-200 truncate">{npc.name}</span>
                       <span className="text-sm">{npc.avatar}</span>
                     </div>
-                    <div className="flex items-center justify-between text-3xs text-slate-400">
+                    <div className="flex items-center justify-between text-3xs text-slate-400 mt-0.5">
                       <span className="truncate">{npc.role}</span>
                       <span className={`px-1 rounded uppercase font-bold text-3xs ${
                         npc.characterType === "slave" ? "bg-purple-950 text-purple-300 border border-purple-500/30" :
@@ -398,6 +459,20 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
                       }`}>
                         {npc.characterType}
                       </span>
+                    </div>
+
+                    {/* Status Tags (In Party / In Base) */}
+                    <div className="flex gap-1.5 mt-1">
+                      {inParty && (
+                        <span className="text-3xs bg-emerald-950 text-emerald-300 px-1 rounded border border-emerald-500/30 font-bold">
+                          ✓ IN SQUAD
+                        </span>
+                      )}
+                      {inBase && (
+                        <span className="text-3xs bg-cyan-950 text-cyan-300 px-1 rounded border border-cyan-500/30 font-bold">
+                          🏡 SAFEHOUSE
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -410,10 +485,10 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
       {/* RIGHT COLUMN: Full Character Studio Editor */}
       <div className="lg:col-span-8 flex flex-col gap-3 h-full overflow-y-auto pr-2 custom-scrollbar">
         
-        {/* Top Action Bar */}
+        {/* Top Header Action Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-500/20 pb-2.5">
           <div className="flex items-center gap-2">
-            <span className="text-xl">{npcForm.avatar}</span>
+            <span className="text-2xl">{npcForm.avatar}</span>
             <div>
               <span className="font-bold text-sm text-white uppercase tracking-wider">{npcForm.name || "Untitled Character"}</span>
               <span className="text-3xs text-cyan-400 block uppercase font-mono">{npcForm.role} • {npcForm.characterType}</span>
@@ -425,7 +500,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
               onClick={handleDeployToLiveGame}
               className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded font-bold uppercase cursor-pointer text-2xs transition-all shadow-[0_0_10px_rgba(168,85,247,0.4)]"
             >
-              <UserPlus size={13} /> Deploy to Party & Base
+              <UserPlus size={13} /> Deploy Live to Squad & Base
             </button>
             <button
               onClick={handleSaveNPC}
@@ -454,8 +529,9 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
           {[
             { id: "identity", label: "Identity & Role", icon: Users },
             { id: "appearance", label: "Portraits & Body Art", icon: ImageIcon },
-            { id: "psychology", label: "Psychology & Base Stats", icon: Heart },
-            { id: "dialogue", label: "Dialogue & Stat-Checks", icon: MessageSquare }
+            { id: "psychology", label: "Psychology & Safehouse", icon: Heart },
+            { id: "dialogue", label: "Dialogue & Stat-Checks", icon: MessageSquare },
+            { id: "equipment", label: "Gear & Equipment", icon: Shield }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
@@ -529,7 +605,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
                     <label className="text-3xs text-purple-300 uppercase font-bold">Auction Price (Credits ¤)</label>
                     <input
                       type="number"
-                      value={npcForm.slaveAuctionPrice || 200}
+                      value={npcForm.slaveAuctionPrice || 180}
                       onChange={e => setNpcForm({ ...npcForm, slaveAuctionPrice: parseInt(e.target.value) || 0 })}
                       className="w-full bg-slate-950 border border-purple-500/30 rounded p-2 text-amber-300 text-xs font-bold outline-none"
                     />
@@ -564,19 +640,19 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
 
             {/* Bio */}
             <div className="space-y-1">
-              <label className="text-3xs text-cyan-400 uppercase font-bold">Backstory & Bio</label>
+              <label className="text-3xs text-cyan-400 uppercase font-bold">Backstory & Narrative Bio</label>
               <textarea
                 rows={3}
                 value={npcForm.bio}
                 onChange={e => setNpcForm({ ...npcForm, bio: e.target.value })}
                 className="w-full bg-slate-950 border border-cyan-500/30 rounded p-2 text-slate-300 text-2xs outline-none font-sans"
-                placeholder="Describe their past, syndicates, and combat capabilities..."
+                placeholder="Describe their past, syndicates, and capabilities..."
               />
             </div>
 
             {/* Emoji Avatar Selector */}
             <div className="space-y-1">
-              <label className="text-3xs text-cyan-400 uppercase font-bold">Avatar Icon</label>
+              <label className="text-3xs text-cyan-400 uppercase font-bold">Avatar Emoji Icon</label>
               <div className="flex gap-2 flex-wrap">
                 {PRESET_AVATARS.map((emoji, idx) => (
                   <button
@@ -601,7 +677,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               
-              {/* Portrait */}
+              {/* Headshot Portrait */}
               <div className="border border-cyan-500/30 bg-slate-950/60 rounded-lg p-3 space-y-3">
                 <span className="text-3xs font-bold text-cyan-400 uppercase tracking-wider block">Headshot Portrait</span>
                 <div className="flex gap-3 items-center">
@@ -685,7 +761,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
           </div>
         )}
 
-        {/* TAB 3: PSYCHOLOGY & BASE STATS */}
+        {/* TAB 3: PSYCHOLOGY & SAFEHOUSE */}
         {activeSubTab === "psychology" && (
           <div className="space-y-4">
             
@@ -820,7 +896,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
           <div className="space-y-4">
             {/* Opening Line */}
             <div className="space-y-1">
-              <label className="text-3xs text-cyan-400 uppercase font-bold">Opening Greeting / Dialogue Node</label>
+              <label className="text-3xs text-cyan-400 uppercase font-bold">Opening Greeting / Dialogue Line</label>
               <textarea
                 rows={2}
                 value={npcForm.greetingDialogue}
@@ -859,7 +935,7 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       <div className="md:col-span-2 space-y-1">
-                        <label className="text-3xs text-slate-400 uppercase font-bold">Player Choice Text (Include brackets for stat checks)</label>
+                        <label className="text-3xs text-slate-400 uppercase font-bold">Player Choice Text (Include brackets for checks)</label>
                         <input
                           type="text"
                           value={choice.text}
@@ -888,14 +964,41 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
                           <option value="int">🧠 [Intelligence Check]</option>
                           <option value="str">💪 [Strength Check]</option>
                           <option value="dex">⚡ [Dexterity Check]</option>
+                          <option value="will">🔥 [Willpower Check]</option>
                           <option value="mindmancer">🔮 [Mindmancer Skill Check]</option>
                           <option value="credits">🪙 [Credit Payment]</option>
                         </select>
                       </div>
                     </div>
 
+                    {/* DC / Cost / Value */}
+                    {choice.checkType && choice.checkType !== "none" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-3xs text-cyan-400 uppercase font-bold">
+                            {choice.checkType === "credits" ? "Credit Cost (¤)" : "Required Difficulty DC / Level"}
+                          </label>
+                          <input
+                            type="number"
+                            value={choice.checkType === "credits" ? (choice.cost || 0) : (choice.checkValue || 10)}
+                            onChange={e => {
+                              const val = parseInt(e.target.value) || 0;
+                              const next = [...npcForm.choices];
+                              if (choice.checkType === "credits") {
+                                next[idx].cost = val;
+                              } else {
+                                next[idx].checkValue = val;
+                              }
+                              setNpcForm({ ...npcForm, choices: next });
+                            }}
+                            className="w-full bg-slate-950 border border-cyan-500/30 rounded p-1.5 text-cyan-200 text-2xs outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-1">
-                      <label className="text-3xs text-slate-400 uppercase font-bold">NPC Reply / Consequence Description</label>
+                      <label className="text-3xs text-slate-400 uppercase font-bold">NPC Reply / Narrative Outcome</label>
                       <textarea
                         rows={2}
                         value={choice.response}
@@ -934,6 +1037,46 @@ export const NPCStudio: React.FC<NPCStudioProps> = ({
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* TAB 5: GEAR & EQUIPMENT */}
+        {activeSubTab === "equipment" && (
+          <div className="space-y-4">
+            <div className="border border-cyan-500/30 bg-slate-950/60 p-4 rounded-lg space-y-3">
+              <span className="text-3xs font-bold text-cyan-400 uppercase tracking-wider block">
+                Starting Equipment & Loadout
+              </span>
+              <p className="text-3xs text-slate-400 font-sans">
+                Select items from the Master Item database that this operative carries or equips upon joining your squad or safehouse.
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2">
+                {availableItems.slice(0, 15).map((itemName, idx) => {
+                  const isEquipped = (npcForm.startingEquipment || []).includes(itemName);
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        const current = npcForm.startingEquipment || [];
+                        const updated = isEquipped 
+                          ? current.filter(i => i !== itemName)
+                          : [...current, itemName];
+                        setNpcForm({ ...npcForm, startingEquipment: updated });
+                      }}
+                      className={`p-2 rounded border text-left text-3xs font-mono transition-all cursor-pointer flex items-center justify-between ${
+                        isEquipped
+                          ? "bg-cyan-950 border-cyan-400 text-cyan-200 shadow"
+                          : "bg-slate-900 border-white/10 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <span className="truncate">{itemName}</span>
+                      {isEquipped && <Check size={12} className="text-cyan-400 flex-shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 

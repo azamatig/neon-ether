@@ -7518,6 +7518,7 @@ function MainGame() {
                                                   // Lightweight actions are rendered by POIInteriorHub from the POI registry.
                                                } else if (currentStage.linkedPOISceneId) {
                                                   const linkedStep = currentStage.linkedPOISceneStepId ? `:${currentStage.linkedPOISceneStepId}` : "";
+                                                  btns = btns.filter(button => !button.toLowerCase().startsWith(`[scene:${currentStage.linkedPOISceneId!.toLowerCase()}`));
                                                   btns.push(`[SCENE:${currentStage.linkedPOISceneId}${linkedStep}] 🎬 ${currentStage.title}`);
                                                } else if (currentStage.operationalPaths && currentStage.operationalPaths.length > 0) {
                                                   currentStage.operationalPaths.forEach(path => {

@@ -275,11 +275,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Search the debris in Shatter Ridge Corridors (Downtown Region) and extract the core.",
         objectiveType: "collect_item",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Technical Signal Core",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "outcast:core_secured",
+        linkedPOISceneId: "outcast_core_recovery",
+        linkedPOISceneStepId: "search",
         operationalPaths: [
           {
             id: "mq1_p1_search",
@@ -305,11 +309,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meet Agent Jax at Neon Abyss Bar in Conduit 09 to decrypt the data stream.",
         objectiveType: "talk_npc",
         targetPOI: "Neon Abyss Bar",
+        targetPOIId: "bar",
         targetDistrict: "conduit09",
         targetNPC: "Agent Jax",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "outcast:delivered",
+        linkedPOISceneId: "outcast_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -342,11 +350,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Infiltrate Sludge Conduits (Docks) and destroy the bio-engineered Behemoth.",
         objectiveType: "kill_target",
         targetPOI: "Sludge Conduits",
+        targetPOIId: "sludge_conduits",
         targetDistrict: "docks",
         targetItem: "Acid Beast Core",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "corporate_hunt:behemoth_defeated",
+        linkedPOISceneId: "corporate_hunt_behemoth",
+        linkedPOISceneStepId: "hunt",
         operationalPaths: [
           {
             id: "mq2_p1_science",
@@ -373,11 +385,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Deliver the Acid Beast Core to Chancellor Aria at Apex Armory in Downtown.",
         objectiveType: "talk_npc",
         targetPOI: "Apex Armory",
+        targetPOIId: "armory",
         targetDistrict: "downtown",
         targetNPC: "Chancellor Aria",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "corporate_hunt:delivered",
+        linkedPOISceneId: "corporate_hunt_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -414,11 +430,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meditate at the Satoshi Cyber-Shrine to harmonize your ether channels.",
         objectiveType: "interact_poi",
         targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOIId: "neon_shrine",
         targetDistrict: "satoshi",
         targetItem: "Charged Ley-Matrix",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "syndicate:matrix_charged",
+        linkedPOISceneId: "syndicate_charge_matrix",
+        linkedPOISceneStepId: "shrine",
         operationalPaths: [
           {
             id: "mq3_p1_mind",
@@ -444,12 +464,16 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         title: "Return Matrix to Priestess Morgana",
         description: "Deliver the Charged Ley-Matrix to Priestess Morgana in Satoshi Square.",
         objectiveType: "talk_npc",
-        targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOI: "The Iron Coven Temple",
+        targetPOIId: "temple",
         targetDistrict: "satoshi",
         targetNPC: "Priestess Morgana",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "syndicate:matrix_delivered",
+        linkedPOISceneId: "syndicate_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -486,10 +510,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Infiltrate Titan Logistics Freight Hub (Docks) and extract transport logs.",
         objectiveType: "hack_terminal",
         targetPOI: "Titan Logistics Freight Hub",
+        targetPOIId: "freight_hub",
         targetDistrict: "docks",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "hunt_for_vice:logs_acquired",
+        linkedPOISceneId: "hunt_for_vice_freight_logs",
+        linkedPOISceneStepId: "terminal",
         operationalPaths: [
           {
             id: "mq4_p1_bribe",
@@ -540,10 +568,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Assault or disable the automated laser grid guarding Corporate Plaza entrance.",
         objectiveType: "interact_poi",
         targetPOI: "Corporate Plaza Sublevels",
+        targetPOIId: "corporate_plaza",
         targetDistrict: "downtown",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "rescue_vice:checkpoint_bypassed",
+        linkedPOISceneId: "rescue_vice_plaza",
+        linkedPOISceneStepId: "checkpoint",
         operationalPaths: [
           {
             id: "mq5_p1_guns",
@@ -569,11 +601,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Override Cryo-Pod B-12 and escort Vice back to the Safehouse.",
         objectiveType: "talk_npc",
         targetPOI: "Corporate Plaza Sublevels",
+        targetPOIId: "corporate_plaza",
         targetDistrict: "downtown",
         targetNPC: "Vice",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "rescue_vice:extracted",
+        linkedPOISceneId: "rescue_vice_plaza",
+        linkedPOISceneStepId: "cryo_bay"
       }
     ],
     rewards: {

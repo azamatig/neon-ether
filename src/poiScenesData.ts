@@ -492,6 +492,93 @@ export const DEFAULT_POI_INTERACTIVE_SCENES: Record<string, POIInteractiveEvent>
     }
   },
 
+  outcast_briefing: {
+    id: "outcast_briefing", poiId: "bar", poiName: "The Neon Abyss Bar", districtId: "aurus", title: "OUTCAST DIRECTIVE", initialStepId: "briefing", linkedQuestId: "outcast_directive",
+    steps: { briefing: { id: "briefing", stepTitle: "AGENT JAX BRIEFING", bannerTitle: "TECHNICAL SIGNAL CORE CONTRACT", bannerImage: "https://images.unsplash.com/photo-1542838132-92c53300491e5?auto=format&fit=crop&q=80&w=800", narrativeText: "Jax traces an Ares telemetry core to the derelict Shatter Ridge highwalks. Recover it before the scavengers strip its encryption lattice.", companions: [{ id: "jax_outcast", name: "Agent Jax", role: "Outcast Coordinator", avatar: "🕶️", color: "cyan", text: "Bring me the Technical Signal Core intact. I need its routing table." }], choices: [{ id: "accept_outcast", label: "Accept Outcast Directive", activateQuestId: "outcast_directive", targetPOIId: "shatter_ridge", outcomeNarrative: "The Shatter Ridge coordinates upload to your map.", variant: "emerald" }] } }
+  },
+  outcast_core_recovery: {
+    id: "outcast_core_recovery", poiId: "shatter_ridge", poiName: "Shatter Ridge Corridors", districtId: "downtown", title: "OUTCAST: CORE RECOVERY", initialStepId: "search", linkedQuestId: "outcast_directive", linkedStageId: "mq1_s1",
+    steps: { search: { id: "search", stepTitle: "SCAVENGER INTERCEPT", bannerTitle: "SHATTER RIDGE HIGHWALKS", bannerImage: "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?auto=format&fit=crop&q=80&w=800", narrativeText: "Rust-Claw scavengers drag an active copper signal core across the high-voltage catwalks.", choices: [
+      { id: "outcast_stealth", label: "Navigate Catwalks Silently [DEX 11]", checkType: "dex", checkValue: 11, grantsXP: 40, grantsItem: "Technical Signal Core", completionAction: "outcast:core_secured", targetPOIId: "bar", outcomeNarrative: "You detach the core without alerting the patrol.", failureNarrative: "A patrol drone catches your movement. Reassess the route.", failureHpDamage: 10, failureTargetStepId: "search", variant: "cyan" },
+      { id: "outcast_fight", label: "Attack the Scavenger Guard", combat: { enemyName: "Rogue Rust-Claw Orc", enemyHp: 80, enemyShields: 20, turnLog: "The scavenger guard opens fire across the highwalk.", victorySceneId: "outcast_core_victory", victoryCompletionAction: "outcast:core_secured" }, variant: "rose" }
+    ] } }
+  },
+  outcast_core_victory: {
+    id: "outcast_core_victory", poiId: "shatter_ridge", poiName: "Shatter Ridge Corridors", districtId: "downtown", title: "CORE SECURED", initialStepId: "loot", linkedQuestId: "outcast_directive", linkedStageId: "mq1_s1",
+    steps: { loot: { id: "loot", stepTitle: "SCAVENGER WAGON CAPTURED", bannerTitle: "TECHNICAL SIGNAL CORE RECOVERED", bannerImage: "https://images.unsplash.com/photo-1601042879364-f3947d3f9c16?auto=format&fit=crop&q=80&w=800", narrativeText: "The scavenger guard collapses. The copper Technical Signal Core is still active inside the salvage wagon.", choices: [{ id: "take_outcast_core", label: "Take Core and Return to Jax", grantsItem: "Technical Signal Core", grantsCredits: 0, completionAction: "outcast:core_secured", targetPOIId: "bar", variant: "emerald" }] } }
+  },
+  outcast_turn_in: {
+    id: "outcast_turn_in", poiId: "bar", poiName: "The Neon Abyss Bar", districtId: "aurus", title: "OUTCAST DIRECTIVE: DELIVERY", initialStepId: "delivery", linkedQuestId: "outcast_directive", linkedStageId: "mq1_s2",
+    steps: { delivery: { id: "delivery", stepTitle: "AGENT JAX", bannerTitle: "SIGNAL CORE DECRYPTION", bannerImage: "https://images.unsplash.com/photo-1542838132-92c53300491e5?auto=format&fit=crop&q=80&w=800", narrativeText: "Jax opens a shielded receiver case and waits for the Technical Signal Core.", choices: [{ id: "deliver_outcast", label: "Deliver Technical Signal Core", checkType: "item", requiredItem: "Technical Signal Core", consumeItem: true, completionAction: "outcast:delivered", completeQuestId: "outcast_directive", outcomeNarrative: "Jax decrypts the Ares telemetry stream and transfers your payment.", variant: "emerald" }] } }
+  },
+  corporate_hunt_briefing: {
+    id: "corporate_hunt_briefing", poiId: "armory", poiName: "Apex Armory (Underground Weapon Shop)", districtId: "aurus", title: "CORPORATE HUNT", initialStepId: "briefing", linkedQuestId: "corporate_hunt",
+    steps: { briefing: { id: "briefing", stepTitle: "CHANCELLOR ARIA", bannerTitle: "ARES MUTAGENIC DISCHARGE", bannerImage: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=800", narrativeText: "Aria identifies an Ares-engineered creature feeding in the Docks waterworks. Its Acid Beast Core is required as evidence.", companions: [{ id: "aria_hunt", name: "Chancellor Aria", role: "Armory Chancellor", avatar: "⚔️", color: "amber", text: "Kill the Behemoth and bring me its core. Do not rupture the catalyst." }], choices: [{ id: "accept_hunt", label: "Accept Corporate Hunt", activateQuestId: "corporate_hunt", targetPOIId: "sludge_conduits", variant: "emerald" }] } }
+  },
+  corporate_hunt_behemoth: {
+    id: "corporate_hunt_behemoth", poiId: "sludge_conduits", poiName: "Sludge Conduits & Waterworks", districtId: "docks", title: "CORPORATE HUNT: BEHEMOTH", initialStepId: "hunt", linkedQuestId: "corporate_hunt", linkedStageId: "mq2_s1",
+    steps: { hunt: { id: "hunt", stepTitle: "TOXIC CONTACT", bannerTitle: "SLUDGE BEHEMOTH LAIR", bannerImage: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=800", narrativeText: "A bio-engineered Behemoth rises from the radioactive runoff, its Acid Beast Core visible beneath a corroded shell.", choices: [
+      { id: "hunt_science", label: "Synthesize Neutralizer [INT 13]", checkType: "int", checkValue: 13, grantsXP: 50, combat: { enemyName: "Toxic Sludge Behemoth", enemyHp: 90, enemyShields: 0, turnLog: "The neutralized Behemoth lunges from the runoff.", victorySceneId: "corporate_hunt_victory", victoryCompletionAction: "corporate_hunt:behemoth_defeated" }, failureNarrative: "The compound destabilizes before injection.", failureTargetStepId: "hunt", variant: "cyan" },
+      { id: "hunt_attack", label: "Engage Toxic Sludge Behemoth", combat: { enemyName: "Toxic Sludge Behemoth", enemyHp: 150, enemyShields: 20, turnLog: "The Behemoth sprays corrosive sludge across the conduit.", victorySceneId: "corporate_hunt_victory", victoryCompletionAction: "corporate_hunt:behemoth_defeated" }, variant: "rose" }
+    ] } }
+  },
+  corporate_hunt_victory: {
+    id: "corporate_hunt_victory", poiId: "sludge_conduits", poiName: "Sludge Conduits & Waterworks", districtId: "docks", title: "ACID CORE RECOVERED", initialStepId: "core", linkedQuestId: "corporate_hunt", linkedStageId: "mq2_s1",
+    steps: { core: { id: "core", stepTitle: "BEHEMOTH ELIMINATED", bannerTitle: "ACID BEAST CORE", bannerImage: "https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&q=80&w=800", narrativeText: "The Behemoth collapses and exposes its pulsating catalyst core.", choices: [{ id: "take_acid_core", label: "Extract Core and Return to Aria", grantsItem: "Acid Beast Core", completionAction: "corporate_hunt:behemoth_defeated", targetPOIId: "armory", variant: "emerald" }] } }
+  },
+  corporate_hunt_turn_in: {
+    id: "corporate_hunt_turn_in", poiId: "armory", poiName: "Apex Armory (Underground Weapon Shop)", districtId: "aurus", title: "CORPORATE HUNT: TURN IN", initialStepId: "delivery", linkedQuestId: "corporate_hunt", linkedStageId: "mq2_s2",
+    steps: { delivery: { id: "delivery", stepTitle: "CHANCELLOR ARIA", bannerTitle: "BIO-CATALYST EVIDENCE", bannerImage: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=800", narrativeText: "Aria's containment vessel is ready for the Acid Beast Core.", choices: [{ id: "deliver_acid", label: "Deliver Acid Beast Core", checkType: "item", requiredItem: "Acid Beast Core", consumeItem: true, completionAction: "corporate_hunt:delivered", completeQuestId: "corporate_hunt", variant: "emerald" }] } }
+  },
+  syndicate_briefing: {
+    id: "syndicate_briefing", poiId: "temple", poiName: "The Iron Coven Temple", districtId: "satoshi", title: "SYNDICATE CATALYST", initialStepId: "briefing", linkedQuestId: "syndicate_catalyst",
+    steps: { briefing: { id: "briefing", stepTitle: "PRIESTESS MORGANA", bannerTitle: "LEY-MATRIX RITUAL", bannerImage: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&q=80&w=800", narrativeText: "Morgana requires a charged Ley-Matrix to decode the corporate frequencies surrounding Vice.", companions: [{ id: "morgana_matrix", name: "Priestess Morgana", role: "Coven Technomancer", avatar: "🔮", color: "purple", text: "Take the matrix into the Cyber-Shrine gardens and align it with the ley-stream." }], choices: [{ id: "accept_syndicate", label: "Accept Syndicate Catalyst", activateQuestId: "syndicate_catalyst", targetPOIId: "neon_shrine", variant: "emerald" }] } }
+  },
+  syndicate_charge_matrix: {
+    id: "syndicate_charge_matrix", poiId: "neon_shrine", poiName: "Satoshi Cyber-Shrine Gardens", districtId: "satoshi", title: "LEY-MATRIX CHARGING", initialStepId: "shrine", linkedQuestId: "syndicate_catalyst", linkedStageId: "mq3_s1",
+    steps: { shrine: { id: "shrine", stepTitle: "CYBER-SHRINE", bannerTitle: "CELESTIAL FREQUENCY ALIGNMENT", bannerImage: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&q=80&w=800", narrativeText: "Holographic blossoms orbit the dormant Ley-Matrix as the shrine opens a channel into the ether stream.", choices: [
+      { id: "matrix_will", label: "Enter Technomantic Trance [WILL 12]", checkType: "will", checkValue: 12, grantsXP: 60, grantsItem: "Charged Ley-Matrix", completionAction: "syndicate:matrix_charged", outcomeNarrative: "The matrix ignites with stable violet energy.", failureNarrative: "The ley-stream rejects the unstable synchronization.", failureTargetStepId: "shrine", variant: "purple" },
+      { id: "matrix_battery", label: "Overcharge with Ether Battery", checkType: "item", requiredItem: "Ether battery", consumeItem: true, grantsCredits: 50, grantsItem: "Charged Ley-Matrix", completionAction: "syndicate:matrix_charged", variant: "cyan" },
+      { id: "matrix_return", label: "Return Charged Matrix to Morgana", checkType: "item", requiredItem: "Charged Ley-Matrix", targetStepId: "__EXIT__", targetPOIId: "temple", variant: "emerald" }
+    ] } }
+  },
+  syndicate_turn_in: {
+    id: "syndicate_turn_in", poiId: "temple", poiName: "The Iron Coven Temple", districtId: "satoshi", title: "SYNDICATE CATALYST: RETURN", initialStepId: "delivery", linkedQuestId: "syndicate_catalyst", linkedStageId: "mq3_s2",
+    steps: { delivery: { id: "delivery", stepTitle: "PRIESTESS MORGANA", bannerTitle: "CHARGED MATRIX DELIVERED", bannerImage: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&q=80&w=800", narrativeText: "Morgana extends both hands toward the charged matrix.", choices: [{ id: "deliver_matrix", label: "Deliver Charged Ley-Matrix", checkType: "item", requiredItem: "Charged Ley-Matrix", consumeItem: true, completionAction: "syndicate:matrix_delivered", completeQuestId: "syndicate_catalyst", variant: "emerald" }] } }
+  },
+  hunt_for_vice_briefing: {
+    id: "hunt_for_vice_briefing", poiId: "club_afterlife", poiName: "Club Afterlife VIP Lounge", districtId: "downtown", title: "THE HUNT FOR VICE", initialStepId: "briefing", linkedQuestId: "hunt_for_vice",
+    steps: { briefing: { id: "briefing", stepTitle: "CIPHER'S TRACE", bannerTitle: "ARES CRYO-SHIPMENT ID", bannerImage: "https://images.unsplash.com/photo-1542838132-92c53300491e5?auto=format&fit=crop&q=80&w=800", narrativeText: "Cipher isolates a Titan Logistics shipment ID connected to an Ares cryogenic holding block.", companions: [{ id: "cipher_trace", name: "Cipher", role: "Data Broker", avatar: "💻", color: "cyan", text: "The freight terminal has the chamber coordinates. Slice it or buy access." }], choices: [{ id: "accept_hunt_vice", label: "Begin the Hunt for Vice", activateQuestId: "hunt_for_vice", targetPOIId: "freight_hub", variant: "emerald" }] } }
+  },
+  hunt_for_vice_freight_logs: {
+    id: "hunt_for_vice_freight_logs", poiId: "freight_hub", poiName: "Titan Logistics Freight Hub", districtId: "docks", title: "FREIGHT LOG INFILTRATION", initialStepId: "terminal", linkedQuestId: "hunt_for_vice", linkedStageId: "mq4_s1",
+    steps: { terminal: { id: "terminal", stepTitle: "TITAN CARGO TERMINAL", bannerTitle: "CRYO-SHIPMENT DATABASE", bannerImage: "https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&q=80&w=800", narrativeText: "The freight terminal indexes millions of corporate cargo lines. Vice's cryo-shipment is buried inside the encrypted manifest.", choices: [
+      { id: "logs_bribe", label: "Pay Dock Foreman [100¤]", checkType: "credits", checkValue: 100, grantsXP: 30, completionAction: "hunt_for_vice:logs_acquired", completeQuestId: "hunt_for_vice", outcomeNarrative: "The foreman provides Chamber B-12 coordinates.", variant: "amber" },
+      { id: "logs_slice", label: "Slice Cargo Terminal [INT 13]", checkType: "int", checkValue: 13, grantsXP: 60, completionAction: "hunt_for_vice:logs_acquired", completeQuestId: "hunt_for_vice", outcomeNarrative: "The manifest reveals Vice in Cryo-Chamber B-12 beneath Corporate Plaza.", failureNarrative: "The terminal ICE rejects the intrusion.", failureManaDamage: 20, failureTargetStepId: "terminal", variant: "cyan" }
+    ] } }
+  },
+  rescue_vice_plaza: {
+    id: "rescue_vice_plaza", poiId: "corporate_plaza", poiName: "Ares Biotech Corporate Plaza", districtId: "downtown", title: "RESCUE VICE", initialStepId: "checkpoint", linkedQuestId: "rescue_vice", linkedStageId: "mq5_s1",
+    steps: {
+      checkpoint: { id: "checkpoint", stepTitle: "PLAZA CHECKPOINT", bannerTitle: "ARES LASER GRID", bannerImage: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800", narrativeText: "Automated sentinels guard the staff lift leading to Cryo-Bay B-12.", choices: [
+        { id: "plaza_stealth", label: "Scale Maintenance Shaft [DEX 14]", checkType: "dex", checkValue: 14, grantsXP: 80, completionAction: "rescue_vice:checkpoint_bypassed", targetStepId: "cryo_bay", outcomeNarrative: "You bypass the checkpoint and drop above the cryo bay.", failureNarrative: "The security grid detects your approach.", failureHpDamage: 15, failureTargetStepId: "checkpoint", variant: "cyan" },
+        { id: "plaza_assault", label: "Assault the Plaza Guards", combat: { enemyName: "Ares Plasma Sentinel", enemyHp: 110, enemyShields: 40, turnLog: "The ceiling-mounted Plasma Sentinel engages.", victorySceneId: "rescue_vice_after_checkpoint", victoryCompletionAction: "rescue_vice:checkpoint_bypassed" }, variant: "rose" }
+      ] },
+      cryo_bay: { id: "cryo_bay", stepTitle: "CRYO-BAY B-12", bannerTitle: "VICE IN CRYO-LOCKDOWN", bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800", narrativeText: "Vice is suspended behind frost-covered glass. Three release vectors remain available.", choices: [
+        { id: "cryo_force", label: "Force Emergency Valve [STR 16]", checkType: "str", checkValue: 16, completionAction: "rescue_vice:extracted", completeQuestId: "rescue_vice", outcomeNarrative: "The valve tears open and Vice ejects safely.", failureNarrative: "Freezing coolant burns your arms.", failureHpDamage: 20, failureTargetStepId: "cryo_bay", variant: "rose" },
+        { id: "cryo_hack", label: "Override Cryogenic Suspension", triggerHackingPuzzleType: "cryo_bypass", variant: "cyan" },
+        { id: "cryo_mana", label: "Short-Circuit Grid [30 Mana]", checkType: "mana", checkValue: 30, completionAction: "rescue_vice:extracted", completeQuestId: "rescue_vice", outcomeNarrative: "The technomantic surge releases Vice from the pod.", variant: "purple" }
+      ] }
+    }
+  },
+  rescue_vice_after_checkpoint: {
+    id: "rescue_vice_after_checkpoint", poiId: "corporate_plaza", poiName: "Ares Biotech Corporate Plaza", districtId: "downtown", title: "CHECKPOINT BREACHED", initialStepId: "continue", linkedQuestId: "rescue_vice", linkedStageId: "mq5_s1",
+    steps: { continue: { id: "continue", stepTitle: "CRYO-BAY B-12", bannerTitle: "VICE IN CRYO-LOCKDOWN", bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800", narrativeText: "The destroyed sentinel exposes the staff lift. Below, Vice is suspended behind frost-covered glass.", choices: [
+      { id: "post_combat_cryo_force", label: "Force Emergency Valve [STR 16]", checkType: "str", checkValue: 16, completionAction: "rescue_vice:extracted", completeQuestId: "rescue_vice", failureNarrative: "Freezing coolant burns your arms.", failureHpDamage: 20, failureTargetStepId: "continue", variant: "rose" },
+      { id: "post_combat_cryo_hack", label: "Override Cryogenic Suspension", triggerHackingPuzzleType: "cryo_bypass", variant: "cyan" },
+      { id: "post_combat_cryo_mana", label: "Short-Circuit Grid [30 Mana]", checkType: "mana", checkValue: 30, completionAction: "rescue_vice:extracted", completeQuestId: "rescue_vice", variant: "purple" }
+    ] } }
+  },
   shatter_ridge_security_post: {
     poiId: "shatter_ridge_security_post",
     poiName: "Shatter Ridge Security Checkpoint",

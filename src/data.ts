@@ -711,6 +711,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 60,
     type: "social",
     buttons: [
+      "[SCENE:outcast_briefing] Outcast Directive Briefing",
       "Talk to Agent Jax",
       "Approach Lost, Frightened Girl",
       "Order Spell-Enhanced Cocktail (-10¤)",
@@ -729,6 +730,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "shop",
     buttons: [
       "Talk to Chancellor Aria",
+      "[SCENE:corporate_hunt_briefing] Corporate Hunt Briefing",
       "Purchase Advanced Gear",
       "Sell Scrap for Credits"
     ]
@@ -794,8 +796,7 @@ export const MAP_POIS: MapPOI[] = [
     buttons: [
       "Accept 'The Smuggler's Run' Side-Quest",
       "Deliver Recovered Weapon Crate to Freight Hub",
-      "Scavenge Shipping Containers",
-      "Interface with Cargo Logs"
+      "Scavenge Shipping Containers"
     ]
   },
   {
@@ -822,7 +823,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 70,
     type: "combat",
     buttons: [
-      "Hunt Toxic Swamp Beast",
       "Scavenge Glowing Slime pools",
       "Search Discarded Sewer Grates"
     ]
@@ -870,7 +870,6 @@ export const MAP_POIS: MapPOI[] = [
     type: "combat",
     buttons: [
       "Ambush Outlaw Scrap-Raiders",
-      "Scavenge Rusted Mine Shafts",
       "Investigate Abandoned Power Terminal"
     ]
   },
@@ -928,6 +927,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 55,
     type: "social",
     buttons: [
+      "[SCENE:hunt_for_vice_briefing] Review Cipher's Vice Trace",
       "Talk to Cipher (VIP Deck - INT Check)",
       "Buy Round of Luxury Champagne (-30¤)",
       "Eavesdrop on Corporate Executives",
@@ -962,6 +962,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "arcane",
     buttons: [
       "Talk to Priestess Morgana",
+      "[SCENE:syndicate_briefing] Syndicate Catalyst Briefing",
       "Train Mana Capacity (+20 Max Mana) (-80¤)",
       "Meditate with the Core (+25 Mana)",
       "Examine Technomantic Matrix"

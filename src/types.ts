@@ -305,7 +305,7 @@ export interface POISceneChoice {
   label: string;
   targetStepId?: string;
   targetPOIId?: string;
-  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "item";
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "mana" | "item";
   checkValue?: number;
   requiredItem?: string;
   outcomeNarrative?: string;
@@ -317,6 +317,7 @@ export interface POISceneChoice {
   unlockBaseId?: string;
   completeQuestStageId?: string;
   completeQuestId?: string;
+  activateQuestId?: string;
   completionAction?: string;
   failureNarrative?: string;
   failureTargetStepId?: string;

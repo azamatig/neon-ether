@@ -94,6 +94,11 @@ export function activateQuest(state: GameState, questId: string): GameState {
   const registry = hydrated.campaignQuestsRegistry || [];
   const quest = registry.find(item => item.id === questId);
   if (!quest || quest.status === "COMPLETED") return hydrated;
+  if ((quest.minLevel || 1) > hydrated.level) return hydrated;
+  if (quest.prerequisiteQuestId) {
+    const prerequisite = registry.find(item => item.id === quest.prerequisiteQuestId);
+    if (!prerequisite || prerequisite.status !== "COMPLETED") return hydrated;
+  }
 
   const nextRegistry = registry.map(item => item.id === questId ? { ...item, status: "ACTIVE" as const } : item);
   return {
@@ -133,6 +138,7 @@ export function completeQuest(state: GameState, questId: string, grantRewards = 
   const shouldReward = grantRewards && !quest.rewardClaimed;
   const rewards = quest.rewards || {};
   const unlocks = rewards.worldUnlocks || {};
+  const reputation = rewards.reputation || {};
   const completedQuest = {
     ...quest,
     status: "COMPLETED" as const,
@@ -159,6 +165,12 @@ export function completeQuest(state: GameState, questId: string, grantRewards = 
     credits: hydrated.credits + (shouldReward ? rewards.credits || 0 : 0),
     experience: hydrated.experience + (shouldReward ? rewards.experience || 0 : 0),
     inventory: shouldReward ? [...hydrated.inventory, ...(rewards.items || [])] : hydrated.inventory,
+    reputations: shouldReward ? {
+      ...hydrated.reputations,
+      streetOutlaws: (hydrated.reputations?.streetOutlaws || 0) + (reputation.streetOutlaws || 0),
+      titanLogistics: (hydrated.reputations?.titanLogistics || 0) + (reputation.titanLogistics || 0),
+      aresCorporate: (hydrated.reputations?.aresCorporate || 0) + (reputation.aresCorporate || 0)
+    } : hydrated.reputations,
     unlockedBases: unlocks.unlockBaseId
       ? Array.from(new Set([...(hydrated.unlockedBases || ["hideout"]), unlocks.unlockBaseId]))
       : hydrated.unlockedBases,
@@ -170,7 +182,12 @@ export function completeQuest(state: GameState, questId: string, grantRewards = 
       : hydrated.unlockedPerks,
     party: unlocks.recruitCompanionId
       ? Array.from(new Set([...hydrated.party, unlocks.recruitCompanionId]))
-      : hydrated.party
+      : hydrated.party,
+    companions: unlocks.recruitCompanionId
+      ? hydrated.companions.map(companion => companion.name.toLowerCase() === unlocks.recruitCompanionId!.toLowerCase()
+        ? { ...companion, status: "in_party" as const }
+        : companion)
+      : hydrated.companions
   };
   return hydrated;
 }

@@ -892,6 +892,7 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                             <option value="will">Willpower Check</option>
                             <option value="mindmancer">Mindmancer Perk Level</option>
                             <option value="credits">Credit Cost</option>
+                            <option value="mana">Mana Cost</option>
                             <option value="item">Required Item</option>
                           </select>
                         </div>
@@ -1039,6 +1040,10 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-emerald-950/20 p-2 rounded border border-emerald-500/20">
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-cyan-300 font-bold uppercase">Activate Quest ID</label>
+                          <input value={choice.activateQuestId || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].activateQuestId=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-cyan-200 font-mono" placeholder="outcast_directive" />
+                        </div>
                         <div className="flex flex-col gap-0.5">
                           <label className="text-4xs text-emerald-300 font-bold uppercase">Complete Quest ID</label>
                           <input value={choice.completeQuestId || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].completeQuestId=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-emerald-200 font-mono" placeholder="prologue" />

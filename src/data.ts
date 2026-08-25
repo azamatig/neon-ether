@@ -1196,7 +1196,7 @@ export function getInitialState(archetype: Archetype): GameState {
     maxMana: archetype.maxMana,
     credits: archetype.credits,
     party: ["Vice", "Tracker"],
-    activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
+    activeQuests: [], // Compatibility field; authored quest status lives in campaignQuestsRegistry.
     completedQuests: [],
     structuredQuests: [
       {

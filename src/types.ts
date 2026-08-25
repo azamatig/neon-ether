@@ -370,12 +370,16 @@ export interface QuestStage {
   description: string;
   objectiveType: "interact_poi" | "kill_target" | "hack_terminal" | "talk_npc" | "collect_item" | "custom_choice";
   targetPOI?: string;
+  /** Stable MAP_POIS id. Names remain presentation-only and may be edited. */
+  targetPOIId?: string;
   targetDistrict?: string;
   targetNPC?: string;
   targetItem?: string;
   targetCount: number;
   currentCount: number;
   completed: boolean;
+  /** Runtime event key written to completedPOIActions when this stage is resolved. */
+  completionAction?: string;
   operationalPaths?: QuestOperationalPath[];
   linkedPOISceneId?: string;
   linkedPOISceneStepId?: string;
@@ -557,6 +561,5 @@ export interface HackingPuzzleState {
 export type District = string;
 export type POI = any;
 export type Item = any;
-
 
 

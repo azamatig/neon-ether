@@ -62,7 +62,7 @@ import { GameProvider, useGame } from "./context/GameContext";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward, POIInteractiveEvent, POISceneStep, POISceneChoice, POICompanionDialogue, CustomPOIData } from "./types";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "./poiScenesData";
-import { DEFAULT_CAMPAIGN_QUESTS } from "./questsData";
+import { buildQuestCatalog, completeQuest, hydrateQuestSystem, synchronizeQuestProgress } from "./questEngine";
 import vicePortrait from "./assets/characters/vice/vice_portrait.png";
 import viceBody from "./assets/characters/vice/vice_body.png";
 import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
@@ -161,26 +161,8 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
     return q;
   };
 
-  // 1. Prologue
-  const prologueActive = state.activeQuests.some(q => q.includes("Prologue"));
-  const prologueCompleted = state.completedQuests.some(q => q.includes("Prologue"));
-  if (prologueActive || prologueCompleted) {
-    const q = getOrCreate("prologue", {
-      title: "Subsurface AI Catacombs",
-      category: "Main Quest",
-      description: "Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech.",
-      objectives: [{ id: "hack_terminal", text: "Hack cyber-vault terminal and retrieve crystals", current: prologueCompleted ? 1 : 0, target: 1, completed: prologueCompleted }],
-      rewards: [{ type: "credits", amount: 150 }, { type: "experience", amount: 100 }]
-    });
-    if (prologueCompleted) {
-      q.status = "COMPLETED";
-      q.objectives[0].current = 1;
-      q.objectives[0].completed = true;
-    } else {
-      q.status = "ACTIVE";
-    }
-  }
-
+  // Legacy quests below remain temporarily available while their authored
+  // definitions are migrated. Prologue is fully owned by DEFAULT_CAMPAIGN_QUESTS.
   // 2. Outcast Directive
   const outcastActive = state.activeQuests.some(q => q.includes("Outcast") || q.includes("Technical Signal Core"));
   const outcastCompleted = state.completedQuests.some(q => q.includes("Outcast"));
@@ -516,12 +498,12 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
   }
 
   // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
-  const campaignRegistry = state.campaignQuestsRegistry || [];
+  const campaignRegistry = buildQuestCatalog(state.campaignQuestsRegistry || []);
   for (const customQ of campaignRegistry) {
     const isCompleted = state.completedQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
     const isActive = state.activeQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
 
-    if (isActive || isCompleted) {
+    if (isActive || isCompleted || customQ.status !== "NOT_STARTED") {
       const q = getOrCreate(customQ.id, {
         title: customQ.title,
         category: (customQ.category === "Main Quest" ? "Main Quest" : "Side Quest") as any,
@@ -540,10 +522,20 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
         ]
       });
 
-      if (isCompleted) {
+      q.title = customQ.title;
+      q.description = customQ.description;
+      q.category = customQ.category === "Main Quest" ? "Main Quest" : "Side Quest";
+      q.objectives = (customQ.stages || []).map((s, idx) => ({
+        id: s.id || `stage_${idx}`,
+        text: s.title + (s.description ? `: ${s.description}` : ""),
+        current: isCompleted ? (s.targetCount || 1) : (s.currentCount || 0),
+        target: s.targetCount || 1,
+        completed: isCompleted || s.completed || (s.currentCount >= (s.targetCount || 1))
+      }));
+      if (isCompleted || customQ.status === "COMPLETED") {
         q.status = "COMPLETED";
       } else {
-        q.status = "ACTIVE";
+        q.status = isActive ? "ACTIVE" : customQ.status;
       }
       if (customQ.narrativeBriefing) {
         q.log = [customQ.narrativeBriefing];
@@ -1497,9 +1489,11 @@ function MainGame() {
         if (!currentStage) return;
         
         const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
+        const targetPoiIdLower = (currentStage.targetPOIId || "").toLowerCase();
         const targetDistrictLower = (currentStage.targetDistrict || "").toLowerCase();
         
         const matchesThisPOI = 
+          (targetPoiIdLower && targetPoiIdLower === currentPoiId) ||
           (targetPoiLower && (currentPoiName.includes(targetPoiLower) || currentPoiId.includes(targetPoiLower) || targetPoiLower.includes(currentPoiId))) ||
           (!targetPoiLower && targetDistrictLower && targetDistrictLower === currentDistrict);
           
@@ -1918,6 +1912,7 @@ function MainGame() {
       nextState.poi = "Mysterious Relic Altar";
       setActivePOIView("relic_altar");
       nextState.inventory.push("Ares Data Crystal");
+      nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "terminal_hacking_puzzle:hacked"];
       nextState.experience += 50;
       setActivePopup({
         title: "DATABASE COPIED",
@@ -2813,6 +2808,27 @@ function MainGame() {
     }
   }, [gameState?.companions, gameState?.baseNPCs]);
 
+  // Quest definitions authored in Quest Studio own progression. World handlers
+  // only emit stable completedPOIActions event keys consumed by the quest engine.
+  useEffect(() => {
+    if (!gameState) return;
+    const synchronized = synchronizeQuestProgress(gameState);
+    const progressSignature = (state: GameState) => JSON.stringify(
+      (state.campaignQuestsRegistry || []).map(q => [
+        q.id,
+        q.status,
+        q.stages.map(stage => [stage.id, stage.currentCount, stage.completed])
+      ])
+    );
+    if (progressSignature(gameState) !== progressSignature(synchronized)) {
+      setGameState(synchronized);
+    }
+  }, [
+    gameState?.completedPOIActions?.join("|"),
+    gameState?.inventory.join("|"),
+    gameState?.campaignQuestsRegistry?.map(q => q.stages.map(stage => stage.completionAction || "").join(",")).join("|")
+  ]);
+
   // Scroll to latest logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2851,7 +2867,7 @@ function MainGame() {
       // Clean migration of old state variables
       const isBlade = state.archetype === "Cyber-Blade";
       const isMage = state.archetype === "Techno-Mage";
-      const migratedState: GameState = {
+      const migratedState: GameState = hydrateQuestSystem({
         district: "aurus",
         poi: "Main Headquarters (The Hideout)",
         hp: 100,
@@ -2891,7 +2907,7 @@ function MainGame() {
           trinket: null
         },
         ...state
-      };
+      });
 
       // Migrate old weapon slot if exists
       if (migratedState.equipment && (migratedState.equipment as any).weapon) {
@@ -3104,7 +3120,7 @@ function MainGame() {
 
     setGameState(prev => {
       // If gameState is not loaded (e.g. from main menu), initialize with the Cyber-Blade archetype
-      const current = prev || getInitialState(ARCHETYPES[0]);
+      const current = hydrateQuestSystem(prev || getInitialState(ARCHETYPES[0]));
       
       return {
         ...current,
@@ -3264,7 +3280,7 @@ function MainGame() {
   // Deploy fresh agent from archetype select
   const handleDeployAgent = async () => {
     setIsLoading(true);
-    const initial = getInitialState(selectedArchetype);
+    const initial = hydrateQuestSystem(getInitialState(selectedArchetype));
     
     // Set custom properties
     initial.playerName = customName.trim() || "Kaelen";
@@ -3757,7 +3773,8 @@ function MainGame() {
         const stageId = parts[1];
         const pathId = parts[2];
 
-        const registry = nextState.campaignQuestsRegistry || [];
+        const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+        nextState.campaignQuestsRegistry = registry;
         const quest = registry.find(q => q.id === questId);
         if (quest) {
           const stage = quest.stages?.find(s => s.id === stageId || !s.completed);
@@ -4193,17 +4210,18 @@ function MainGame() {
 
         // Check Prologue map transitions on combat victory
         if (combat.enemyName.includes("Security Drones") || combat.enemyName.includes("Autonomous Security Drones")) {
+          nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "main_array_core:defended"];
           setSquadDialogue({
             sceneId: "transit_ridge_to_vault",
             nodeId: "start"
           });
           narrative += `\n\n🛡️ SECURITY BYPASSED: The final security drone sparks and explodes! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector!' Talk to your squad to initiate the transition briefing.`;
         }
-        else if (combat.enemyName.includes("Corporate Enforcers") || combat.enemyName.includes("Ambush")) {
+        else if (combat.enemyName.includes("Corporate Enforcers") || (nextState.district === "data_vault" && combat.enemyName.includes("Ambush"))) {
+          nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "relic_altar:ambush_survived"];
           nextState.poi = "Mysterious Relic Altar";
           setActivePOIView("relic_altar");
           setActiveDialogue("post_combat_tracker");
-          nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
           narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
         }
 
@@ -4404,7 +4422,8 @@ function MainGame() {
           const stageId = match[2].trim();
           const pathId = match[3] ? match[3].trim() : undefined;
 
-          const registry = nextState.campaignQuestsRegistry || DEFAULT_CAMPAIGN_QUESTS;
+          const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+          nextState.campaignQuestsRegistry = registry;
           const quest = registry.find(q => q.id === questId);
           const stage = quest?.stages?.find(s => s.id === stageId);
 
@@ -5159,6 +5178,7 @@ function MainGame() {
         return;
       }
       else if (cleanAction.includes("proceed to main array") || cleanAction.includes("main array")) {
+        nextState.completedPOIActions.push("shatter_ridge_reactor_well:transit");
         nextState.poi = "Core Array Shatter-Ridge";
         setActivePOIView("main_array_core");
         narrative = `🚀 ADVANCING TO CORE: You climb up the vertical structural ladders to the main cavernous hangar. Massive vertical server column rows glow in deep electric blue, hum-charging the central grid mainframe.`;
@@ -7544,11 +7564,11 @@ function MainGame() {
                                                     } else if (squadDialogue.sceneId === "tactics") {
                                                       next.completedPOIActions.push("shatter_ridge_reactor_well:tactics");
                                                     } else if (squadDialogue.sceneId === "transit_conduit_to_ridge") {
+                                                      next.completedPOIActions.push("section_gate:transit");
                                                       next.district = "shatter_ridge_core";
                                                       next.poi = "Shatter-Ridge Security Checkpoint";
                                                       setActiveRegionId("shatter_ridge_core");
                                                       setActivePOIView("shatter_ridge_security_post");
-                                                      next.activeQuests = ["Prologue: Shatter-Ridge - Infiltrate deeper to disable the defensive cyber-barriers."];
                                                       setActivePopup({
                                                         title: "SHATTER-RIDGE CORE ACCESS",
                                                         subtitle: "DISTRICT TRANSLATION",
@@ -7560,7 +7580,6 @@ function MainGame() {
                                                       next.poi = "Sanctuary Hacking Terminal";
                                                       setActiveRegionId("data_vault");
                                                       setActivePOIView("terminal_hacking_puzzle");
-                                                      next.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
                                                       setActivePopup({
                                                         title: "DATA VAULT ENTRANCE",
                                                         subtitle: "CORE SANCTUARY SECURED",
@@ -8065,8 +8084,9 @@ function MainGame() {
                                         next.district = "aurus";
                                         next.poi = "Main Headquarters (The Hideout)";
                                         next.party = [];
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedPOIActions = [...(next.completedPOIActions || []), "prologue:escaped"];
                                         next.completedQuests.push("Traitor Discovered (Ares Security Executed)");
+                                        next = completeQuest(synchronizeQuestProgress(next), "prologue");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView(null);
@@ -8099,8 +8119,9 @@ function MainGame() {
                                         if (next.skills) {
                                           next.skills.mindmancer += 1;
                                         }
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedPOIActions = [...(next.completedPOIActions || []), "prologue:escaped"];
                                         next.completedQuests.push("Mind-Shattered Security (Officer Subjugated)");
+                                        next = completeQuest(synchronizeQuestProgress(next), "prologue");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView(null);
@@ -8130,8 +8151,9 @@ function MainGame() {
                                         next.district = "aurus";
                                         next.poi = "Main Headquarters (The Hideout)";
                                         next.party = [];
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
+                                        next.completedPOIActions = [...(next.completedPOIActions || []), "prologue:escaped"];
                                         next.completedQuests.push("Officer Pacified (Sedative Injected)");
+                                        next = completeQuest(synchronizeQuestProgress(next), "prologue");
                                         setGameState(next);
                                         setActiveRegionId("aurus");
                                         setActivePOIView(null);
@@ -11896,19 +11918,19 @@ function MainGame() {
                               let narrative = `★ THREAT EXTERMINATED: You successfully cleared the area in tactical grid combat! Recovered +${rewardC}¤ and earned +${expGained} XP!`;
 
                               const enemyName = gameState.combatState?.enemyName || "";
-                              if (enemyName.includes("Drone") || enemyName.includes("Sentry")) {
+                              if (nextState.district === "shatter_ridge_core" && (enemyName.includes("Drone") || enemyName.includes("Sentry"))) {
+                                nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "main_array_core:defended"];
                                 nextState.district = "data_vault";
                                 nextState.poi = "Sanctuary Hacking Terminal";
                                 setActiveRegionId("data_vault");
                                 setActivePOIView("terminal_hacking_puzzle");
-                                nextState.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
                                 narrative += `\n\n🛡️ SECURITY BYPASSED: The security drones spark and crash to the floor! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector! Get inside the core vault chamber.' You travel to the Data Vault Sanctuary.`;
                               }
-                              else if (enemyName.includes("Enforcer") || enemyName.includes("Ambush") || enemyName.includes("Commander")) {
+                              else if (nextState.district === "data_vault" && (enemyName.includes("Enforcer") || enemyName.includes("Ambush") || enemyName.includes("Commander"))) {
+                                nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "relic_altar:ambush_survived"];
                                 nextState.poi = "Mysterious Relic Altar";
                                 setActivePOIView("relic_altar");
                                 setActiveDialogue("post_combat_tracker");
-                                nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
                                 narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
                               }
                               else if (enemyName.includes("Behemoth") && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {

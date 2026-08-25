@@ -79,124 +79,147 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
     log: ["Infiltrated Level B4 corridors with squad. Terminal firewall located."],
     stages: [
       {
-        id: "p_s1",
+        id: "prologue_ventilation",
         stageIndex: 1,
-        title: "Infiltrate Level B4 Ventilation Shaft",
-        description: "Breach the rusted ventilation chute with Vice and Tracker to gain access to the subterranean catacombs.",
+        title: "Cross the Ventilation Shaft",
+        description: "Slip through the variable-frequency fan blades or use an emergency override to reach the Security Sub-Terminal.",
         objectiveType: "interact_poi",
-        targetPOI: "Level B4 Ventilation Shaft",
+        targetPOI: "Ventilation Shaft (Entry Point)",
+        targetPOIId: "ventilation_shaft",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "ventilation_shaft",
-        linkedPOISceneStepId: "entry",
-        operationalPaths: [
-          {
-            id: "p_path_pry",
-            label: "[Strength 10] Pry open the grating with crowbar",
-            checkType: "str",
-            checkValue: 10,
-            outcomeDesc: "With a grinding screech, the rusted bolts shear off, opening the main conduit shaft.",
-            grantsBonusXP: 25
-          },
-          {
-            id: "p_path_squeeze",
-            label: "[Dexterity 11] Squeeze through narrow maintenance air-filter",
-            checkType: "dex",
-            checkValue: 11,
-            outcomeDesc: "You slip silently through the grease trap and drop behind the heavy gate.",
-            grantsBonusXP: 30
-          }
-        ]
+        completionAction: "ventilation_shaft:slip"
       },
       {
-        id: "p_s2",
+        id: "prologue_security_terminal",
         stageIndex: 2,
-        title: "Bypass Reinforced Hydraulic Blast Door",
-        description: "Hack the security terminal ICE or cut the hydraulic pressure lines to enter the inner vault chamber.",
+        title: "Bypass the Security Sub-Terminal",
+        description: "Slice the alarm sub-grid and open the route to the Heavy Blast Door.",
         objectiveType: "hack_terminal",
-        targetPOI: "Reinforced Hydraulic Blast Door",
+        targetPOI: "Security Sub-Terminal",
+        targetPOIId: "security_terminal",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "blast_door",
-        linkedPOISceneStepId: "door_approach",
-        operationalPaths: [
-          {
-            id: "p_path_hack",
-            label: "[Intelligence 11] Bypass ICE Firewall directly",
-            checkType: "int",
-            checkValue: 11,
-            outcomeDesc: "Your deck slices clean through the security nodes, downloading the crystal without sounding an alarm.",
-            grantsBonusXP: 40
-          },
-          {
-            id: "p_path_plasma",
-            label: "[Plasma Torch] Overload door actuator solenoid",
-            checkType: "none",
-            outcomeDesc: "Superheated plasma cuts the secondary locking pins, venting pressurized hydraulics.",
-            grantsBonusCredits: 50
-          }
-        ]
+        completionAction: "security_terminal:bypass"
       },
       {
-        id: "p_s3",
+        id: "prologue_blast_door",
         stageIndex: 3,
-        title: "Investigate the Obsidian Altar Anomaly",
-        description: "Examine the floating golden relic discovered behind the vault console and interact with its frequency matrix.",
+        title: "Open the Heavy Blast Door",
+        description: "Force the hydraulic valve while Vice and Tracker cover the corridor.",
         objectiveType: "interact_poi",
-        targetPOI: "Mysterious Relic Altar",
+        targetPOI: "Heavy Blast Door",
+        targetPOIId: "blast_door",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "relic_altar",
-        linkedPOISceneStepId: "intro",
-        operationalPaths: [
-          {
-            id: "p_path_scan",
-            label: "[Cyberdeck Scan] Analyze high-ether frequency signature",
-            checkType: "int",
-            checkValue: 10,
-            outcomeDesc: "You confirm the relic operates on raw cognitive bio-electricity before touching it.",
-            grantsBonusXP: 35
-          },
-          {
-            id: "p_path_touch",
-            label: "[Direct Contact] Reach out and touch the Relic to awaken Mindmancy",
-            checkType: "none",
-            outcomeDesc: "A blinding violet shockwave rearranges your synaptic cells and awakens hyper-consciousness.",
-            grantsBonusXP: 50
-          }
-        ]
+        completionAction: "blast_door:pry"
       },
       {
-        id: "p_s4",
+        id: "prologue_section_gate",
         stageIndex: 4,
-        title: "Repel Ares Strike Team Ambush",
-        description: "Engage the corporate enforcers that breached the vault sanctuary and avenge Tracker's sacrifice.",
+        title: "Transit to Shatter-Ridge Core",
+        description: "Use the Next Section Gate and complete the squad insertion briefing.",
+        objectiveType: "interact_poi",
+        targetPOI: "Next Section Gate (Transit)",
+        targetPOIId: "section_gate",
+        targetDistrict: "conduit09",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "section_gate:transit"
+      },
+      {
+        id: "prologue_security_checkpoint",
+        stageIndex: 5,
+        title: "Disable the Shatter-Ridge Security Checkpoint",
+        description: "Overclock the defensive grid and disable the checkpoint barrier.",
+        objectiveType: "hack_terminal",
+        targetPOI: "Shatter-Ridge Security Checkpoint",
+        targetPOIId: "shatter_ridge_security_post",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "shatter_ridge_security_post:gate"
+      },
+      {
+        id: "prologue_reactor_well",
+        stageIndex: 6,
+        title: "Cross the Shatter-Ridge Reactor Well",
+        description: "Inspect the reactor well, then proceed through the maintenance route to the Main Array.",
+        objectiveType: "interact_poi",
+        targetPOI: "Shatter-Ridge Reactor Well",
+        targetPOIId: "shatter_ridge_reactor_well",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "shatter_ridge_reactor_well:transit"
+      },
+      {
+        id: "prologue_core_array",
+        stageIndex: 7,
+        title: "Defend the Core Array",
+        description: "Destroy the autonomous security drones while Tracker bypasses the primary locks.",
+        objectiveType: "kill_target",
+        targetPOI: "Core Array Shatter-Ridge",
+        targetPOIId: "main_array_core",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "main_array_core:defended"
+      },
+      {
+        id: "prologue_vault_terminal",
+        stageIndex: 8,
+        title: "Hack the Sanctuary Terminal",
+        description: "Decrypt the primary cyber-vault and extract the Ares Data Crystal.",
+        objectiveType: "hack_terminal",
+        targetPOI: "Sanctuary Hacking Terminal",
+        targetPOIId: "terminal_hacking_puzzle",
+        targetDistrict: "data_vault",
+        targetItem: "Ares Data Crystal",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "terminal_hacking_puzzle:hacked"
+      },
+      {
+        id: "prologue_relic_altar",
+        stageIndex: 9,
+        title: "Survive the Relic Altar Ambush",
+        description: "Investigate the relic, awaken Mindmancy, and repel the Ares strike team.",
         objectiveType: "kill_target",
         targetPOI: "Mysterious Relic Altar",
-        targetDistrict: "conduit09",
-        targetCount: 3,
+        targetPOIId: "relic_altar",
+        targetDistrict: "data_vault",
+        targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "relic_altar:ambush_survived",
         linkedPOISceneId: "relic_altar",
-        linkedPOISceneStepId: "awakened_fury"
+        linkedPOISceneStepId: "intro"
       },
       {
-        id: "p_s5",
-        stageIndex: 5,
-        title: "Evacuate to Aurus Safehouse",
-        description: "Escape Conduit 09 with Vice and establish a safe base of operations in the Aurus District.",
-        objectiveType: "interact_poi",
+        id: "prologue_escape",
+        stageIndex: 10,
+        title: "Escape to the Aurus Safehouse",
+        description: "Resolve the captured officer's fate, salvage Tracker's gear, and escape with Vice to Aurus.",
+        objectiveType: "custom_choice",
         targetPOI: "Aurus Safehouse (The Hideout)",
+        targetPOIId: "hideout",
         targetDistrict: "aurus",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "prologue:escaped"
       }
     ],
     rewards: {

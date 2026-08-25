@@ -914,20 +914,16 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                         )}
 
                         {choice.checkType === "item" && (
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-4xs text-amber-300 font-bold uppercase">Required Item Name</label>
-                            <input
-                              type="text"
-                              value={choice.requiredItem || ""}
-                              onChange={e => {
-                                const nextChoices = [...(activeStep.choices || [])];
-                                nextChoices[chIdx].requiredItem = e.target.value;
-                                handleUpdateStep(activeStepId, { choices: nextChoices });
-                              }}
-                              className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200"
-                              placeholder="e.g. Encryption Keycard"
-                            />
-                          </div>
+                          <>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-4xs text-amber-300 font-bold uppercase">Required Item Name</label>
+                              <input type="text" value={choice.requiredItem || ""} onChange={e => { const nextChoices = [...(activeStep.choices || [])]; nextChoices[chIdx].requiredItem = e.target.value; handleUpdateStep(activeStepId, { choices: nextChoices }); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200" placeholder="e.g. Encryption Keycard" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-4xs text-amber-300 font-bold uppercase">Required Quantity</label>
+                              <input type="number" min="1" value={choice.requiredItemQuantity || 1} onChange={e => { const nextChoices = [...(activeStep.choices || [])]; nextChoices[chIdx].requiredItemQuantity = Math.max(1, Number(e.target.value)); handleUpdateStep(activeStepId, { choices: nextChoices }); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200 font-mono" />
+                            </div>
+                          </>
                         )}
 
                         <div className="flex flex-col gap-0.5">
@@ -947,6 +943,10 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                         <div className="flex flex-col gap-0.5">
                           <label className="text-4xs text-amber-300 font-bold uppercase">Reward Item</label>
                           <input value={choice.grantsItem || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsItem=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200" placeholder="Item name" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-amber-300 font-bold uppercase">Item Quantity</label>
+                          <input type="number" min="1" value={choice.grantsItemQuantity || 1} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsItemQuantity=Math.max(1,Number(e.target.value)); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200 font-mono" />
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <label className="text-4xs text-rose-300 font-bold uppercase">Restore HP</label>

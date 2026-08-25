@@ -95,6 +95,7 @@ export function activateQuest(state: GameState, questId: string): GameState {
   const quest = registry.find(item => item.id === questId);
   if (!quest || quest.status === "COMPLETED") return hydrated;
   if ((quest.minLevel || 1) > hydrated.level) return hydrated;
+  if (quest.requiredReputationFaction && (hydrated.reputations?.[quest.requiredReputationFaction] || 0) < (quest.requiredReputationValue || 0)) return hydrated;
   if (quest.prerequisiteQuestId) {
     const prerequisite = registry.find(item => item.id === quest.prerequisiteQuestId);
     if (!prerequisite || prerequisite.status !== "COMPLETED") return hydrated;

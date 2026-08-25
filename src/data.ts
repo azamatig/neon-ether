@@ -693,6 +693,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 75,
     type: "safehouse",
     buttons: [
+      "[SCENE:vice_retribution_briefing] Discuss Vice's Retribution",
       "Rest & Recover at Hideout",
       "Check Stash Inventory",
       "Manage Passive Server Work",
@@ -712,6 +713,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "social",
     buttons: [
       "[SCENE:outcast_briefing] Outcast Directive Briefing",
+      "[SCENE:drone_schematic_briefing] Review the Downed Courier Contract",
       "Talk to Agent Jax",
       "Approach Lost, Frightened Girl",
       "Order Spell-Enhanced Cocktail (-10¤)",
@@ -794,8 +796,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 40,
     type: "social",
     buttons: [
-      "Accept 'The Smuggler's Run' Side-Quest",
-      "Deliver Recovered Weapon Crate to Freight Hub",
+      "[SCENE:smugglers_briefing] Review Hijacked Shipment Contract",
       "Scavenge Shipping Containers"
     ]
   },
@@ -823,7 +824,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 70,
     type: "combat",
     buttons: [
-      "Scavenge Glowing Slime pools",
       "Search Discarded Sewer Grates"
     ]
   },
@@ -837,7 +837,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 80,
     type: "combat",
     buttons: [
-      "Raid Syndicate Caches (Triggers Combat!)",
       "Steal Crane Master Control Key (DEX Check)",
       "Scavenge Submerged Hull for Scrap Metal"
     ]
@@ -852,8 +851,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 20,
     type: "shop",
     buttons: [
-      "Talk to Dr. Marv (Accept Side-Quest: Cybernetic Harvest)",
-      "Deliver Neural Regulators to Dr. Marv",
+      "[SCENE:cybernetic_harvest_briefing] Discuss Neural Regulator Shortage",
       "Undergo Experimental Bio-Splice (STR check)"
     ]
   },
@@ -912,9 +910,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 25,
     type: "shop",
     buttons: [
-      "Inquire about 'Nouveau Heist' Side-Quest",
-      "Hack Nouveau Pressure Shields (INT check)",
-      "Loot Prototype Singularity Battery"
+      "Browse Nouveau Implant Catalog"
     ]
   },
   {
@@ -928,6 +924,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "social",
     buttons: [
       "[SCENE:hunt_for_vice_briefing] Review Cipher's Vice Trace",
+      "[SCENE:nouveau_heist_briefing] Plan the Nouveau Heist",
       "Talk to Cipher (VIP Deck - INT Check)",
       "Buy Round of Luxury Champagne (-30¤)",
       "Eavesdrop on Corporate Executives",
@@ -944,7 +941,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 40,
     type: "combat",
     buttons: [
-      "Ambush Security Patrols (Triggers Combat!)",
       "Hack Rebel Courier's Cyberdeck (INT Check)",
       "Search Wreckage for Cargo Pass"
     ]
@@ -963,6 +959,7 @@ export const MAP_POIS: MapPOI[] = [
     buttons: [
       "Talk to Priestess Morgana",
       "[SCENE:syndicate_briefing] Syndicate Catalyst Briefing",
+      "[SCENE:chem_weaver_briefing] Discuss Bio-Luminescent Reagents",
       "Train Mana Capacity (+20 Max Mana) (-80¤)",
       "Meditate with the Core (+25 Mana)",
       "Examine Technomantic Matrix"

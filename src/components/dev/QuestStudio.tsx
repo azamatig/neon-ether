@@ -1044,6 +1044,16 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                 When this quest is turned in, the selected quest will automatically activate in the player's log.
               </span>
             </div>
+
+            <div className="flex flex-col gap-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800">
+              <label className="text-3xs text-fuchsia-400 font-bold uppercase">Required Reputation</label>
+              <div className="grid grid-cols-2 gap-2">
+                <select value={questForm.requiredReputationFaction || ""} onChange={(e) => setQuestForm({ ...questForm, requiredReputationFaction: (e.target.value || undefined) as UnifiedQuest["requiredReputationFaction"] })} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-2xs text-slate-200">
+                  <option value="">No reputation gate</option><option value="streetOutlaws">Street Outlaws</option><option value="titanLogistics">Titan Logistics</option><option value="aresCorporate">Ares Corporate</option>
+                </select>
+                <input type="number" value={questForm.requiredReputationValue || 0} onChange={(e) => setQuestForm({ ...questForm, requiredReputationValue: Number(e.target.value) })} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-2xs text-slate-200" />
+              </div>
+            </div>
           </div>
         </div>
 

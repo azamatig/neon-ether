@@ -718,11 +718,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Explore the toxic waterways in Docks Region to collect 3 slime samples.",
         objectiveType: "collect_item",
         targetPOI: "Sludge Conduits",
+        targetPOIId: "sludge_conduits",
         targetDistrict: "docks",
         targetItem: "Glowing Slime",
         targetCount: 3,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "chem_weaver:slime_harvested",
+        linkedPOISceneId: "chem_weaver_harvest",
+        linkedPOISceneStepId: "harvest"
       },
       {
         id: "cw_s2",
@@ -731,11 +735,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Bring the 3 harvested samples to Priestess Morgana in Satoshi Square.",
         objectiveType: "talk_npc",
         targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOIId: "temple",
         targetDistrict: "satoshi",
         targetNPC: "Priestess Morgana",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "chem_weaver:delivered",
+        linkedPOISceneId: "chem_weaver_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -767,11 +775,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Defeat the Rust-Claw Orc band in Shatter Ridge and recover the Experimental Drone Chip.",
         objectiveType: "kill_target",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Experimental Drone Chip",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "drone:chip_recovered",
+        linkedPOISceneId: "drone_chip_recovery",
+        linkedPOISceneStepId: "ambush"
       },
       {
         id: "drone_s2",
@@ -780,11 +792,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Turn in the chip to Agent Jax at the Neon Abyss Bar for credits, or install it directly at home.",
         objectiveType: "talk_npc",
         targetPOI: "Neon Abyss Bar",
+        targetPOIId: "bar",
         targetDistrict: "conduit09",
         targetNPC: "Agent Jax",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "drone:resolved",
+        linkedPOISceneId: "drone_chip_resolution",
+        linkedPOISceneStepId: "choice"
       }
     ],
     rewards: {
@@ -816,11 +832,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Assault the smuggler warehouse at Rusty Anchor Shipyard and seize the Stolen Weapon Crate.",
         objectiveType: "kill_target",
         targetPOI: "Rusty Anchor Shipyard",
+        targetPOIId: "shipyard",
         targetDistrict: "docks",
         targetItem: "Stolen Weapon Crate",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "smugglers:crate_recovered",
+        linkedPOISceneId: "smugglers_shipyard_raid",
+        linkedPOISceneStepId: "raid"
       },
       {
         id: "smug_s2",
@@ -829,11 +849,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Hand over the recovered weapons to the Quartermaster at Titan Logistics Freight Hub.",
         objectiveType: "talk_npc",
         targetPOI: "Titan Logistics Freight Hub",
+        targetPOIId: "freight_hub",
         targetDistrict: "docks",
         targetNPC: "Titan Logistics Quartermaster",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "smugglers:crate_delivered",
+        linkedPOISceneId: "smugglers_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -865,11 +889,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Engage Downtown patrol units at the Highwalk Homicide Site to harvest processors.",
         objectiveType: "collect_item",
         targetPOI: "Highwalk Homicide Site",
+        targetPOIId: "homicide_site",
         targetDistrict: "downtown",
         targetItem: "Neural Regulator",
         targetCount: 2,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "harvest:regulators_acquired",
+        linkedPOISceneId: "cybernetic_harvest_patrol",
+        linkedPOISceneStepId: "ambush"
       },
       {
         id: "harv_s2",
@@ -878,11 +906,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Bring the 2 Neural Regulators to Dr. Marv's Cyber-Clinic at the Docks.",
         objectiveType: "talk_npc",
         targetPOI: "Dr. Marv's Cyber-Clinic",
+        targetPOIId: "marv_clinic",
         targetDistrict: "docks",
         targetNPC: "Dr. Marv",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "harvest:regulators_delivered",
+        linkedPOISceneId: "cybernetic_harvest_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -914,12 +946,16 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meet Cipher in Club Afterlife VIP Lounge to receive the security bypass keycard.",
         objectiveType: "talk_npc",
         targetPOI: "Club Afterlife VIP Lounge",
+        targetPOIId: "club_afterlife",
         targetDistrict: "downtown",
         targetNPC: "Cipher",
         targetItem: "VIP Afterlife Keycard",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:keycard_acquired",
+        linkedPOISceneId: "nouveau_heist_briefing",
+        linkedPOISceneStepId: "briefing"
       },
       {
         id: "nouveau_s2",
@@ -928,11 +964,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Crack the pressure shields in Nouveau Showroom (Downtown) and extract the battery.",
         objectiveType: "interact_poi",
         targetPOI: "Nouveau Cybernetic Showroom",
+        targetPOIId: "nouveau_chrome",
         targetDistrict: "downtown",
         targetItem: "Prototype Singularity Battery",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:battery_stolen",
+        linkedPOISceneId: "nouveau_showroom_heist",
+        linkedPOISceneStepId: "showroom"
       },
       {
         id: "nouveau_s3",
@@ -941,11 +981,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Return with the Singularity Battery to Cipher at Club Afterlife.",
         objectiveType: "talk_npc",
         targetPOI: "Club Afterlife VIP Lounge",
+        targetPOIId: "club_afterlife",
         targetDistrict: "downtown",
         targetNPC: "Cipher",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:battery_delivered",
+        linkedPOISceneId: "nouveau_heist_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -967,6 +1011,8 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
     giverPOI: "Aurus Safehouse (The Hideout)",
     minLevel: 4,
     prerequisiteQuestId: "rescue_vice",
+    requiredReputationFaction: "streetOutlaws",
+    requiredReputationValue: 80,
     status: "NOT_STARTED",
     log: [],
     stages: [
@@ -977,11 +1023,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Hack the server node at Shatter Ridge Corridors in Downtown Region.",
         objectiveType: "hack_terminal",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Encrypted Ares Ledger",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "vice:ledger_acquired",
+        linkedPOISceneId: "vice_ledger_hack",
+        linkedPOISceneStepId: "server"
       },
       {
         id: "vr_s2",
@@ -990,11 +1040,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Return to the Safehouse and give the ledger to Vice to seal her devotion.",
         objectiveType: "talk_npc",
         targetPOI: "Aurus Safehouse (The Hideout)",
+        targetPOIId: "hideout",
         targetDistrict: "aurus",
         targetNPC: "Vice",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "vice:ledger_delivered",
+        linkedPOISceneId: "vice_ledger_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {

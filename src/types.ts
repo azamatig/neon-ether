@@ -308,10 +308,12 @@ export interface POISceneChoice {
   checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "mana" | "item";
   checkValue?: number;
   requiredItem?: string;
+  requiredItemQuantity?: number;
   outcomeNarrative?: string;
   grantsXP?: number;
   grantsCredits?: number;
   grantsItem?: string;
+  grantsItemQuantity?: number;
   triggerCombatEncounterId?: string;
   unlockDistrictId?: string;
   unlockBaseId?: string;
@@ -429,6 +431,8 @@ export interface UnifiedQuest {
   giverPOI?: string;
   minLevel?: number;
   prerequisiteQuestId?: string;
+  requiredReputationFaction?: "streetOutlaws" | "titanLogistics" | "aresCorporate";
+  requiredReputationValue?: number;
   nextQuestId?: string;
   stages: QuestStage[];
   rewards: {

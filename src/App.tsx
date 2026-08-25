@@ -161,198 +161,7 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
     return q;
   };
 
-  // Legacy side quests below remain temporarily available while their authored
-  // definitions are migrated. The campaign chain is owned by DEFAULT_CAMPAIGN_QUESTS.
-  // 7. Chem-Weaver's Request (Side Quest)
-  const chemActive = state.activeQuests.some(q => q.includes("Chem-Weaver"));
-  const chemCompleted = state.completedQuests.some(q => q.includes("Chem-Weaver"));
-  if (chemActive || chemCompleted) {
-    const slimeCount = state.inventory.filter(i => i === "Glowing Slime").length;
-    const q = getOrCreate("chem_weaver_request", {
-      title: "Chem-Weaver's Request",
-      category: "Side Quest",
-      description: "Collect 3x samples of Glowing Slime from the sludge conduits underneath the Docks, and bring them to Priestess Morgana.",
-      objectives: [
-        { id: "collect_slimes", text: "Harvest 3x Glowing Slime samples from Docks", current: chemCompleted ? 3 : slimeCount, target: 3, completed: chemCompleted || slimeCount >= 3 },
-        { id: "deliver_slimes", text: "Deliver slimes to Priestess Morgana", current: chemCompleted ? 1 : 0, target: 1, completed: chemCompleted }
-      ],
-      rewards: [{ type: "credits", amount: 150 }, { type: "experience", amount: 90 }, { type: "maxMana", amount: 50 }]
-    });
-    q.objectives[0].current = chemCompleted ? 3 : slimeCount;
-    q.objectives[0].completed = chemCompleted || slimeCount >= 3;
-    q.objectives[1].current = chemCompleted ? 1 : 0;
-    q.objectives[1].completed = chemCompleted;
-    if (chemCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      q.log = [`Currently carrying ${slimeCount}/3 bio-active sludge capsules. Explore Sludge Conduits POI in Docks region.`];
-    }
-  }
-
-  // 8. Lost Drone Schematic (Side Quest)
-  const droneActive = state.activeQuests.some(q => q.includes("Drone"));
-  const droneCompleted = state.completedQuests.some(q => q.includes("Drone"));
-  if (droneActive || droneCompleted) {
-    const hasChip = state.inventory.includes("Experimental Drone Chip");
-    const q = getOrCreate("lost_drone_schematic", {
-      title: "The Lost Drone Schematic",
-      category: "Side Quest",
-      description: "Hunt Rogue Rust-Claw Orcs in Shatter Ridge (Downtown) to secure the Experimental Drone Chip. Bring it to Jax or install it in your Hideout mainframe.",
-      objectives: [
-        { id: "hunt_orcs", text: "Hunt Orcs and secure the Drone Chip", current: hasChip || droneCompleted ? 1 : 0, target: 1, completed: hasChip || droneCompleted },
-        { id: "resolve_chip", text: "Deliver to Agent Jax (+200¤) OR install in Hideout Security (+50% Shields)", current: droneCompleted ? 1 : 0, target: 1, completed: droneCompleted }
-      ],
-      rewards: [{ type: "credits", amount: 200 }, { type: "experience", amount: 100 }]
-    });
-    q.objectives[0].current = hasChip || droneCompleted ? 1 : 0;
-    q.objectives[0].completed = hasChip || droneCompleted;
-    q.objectives[1].current = droneCompleted ? 1 : 0;
-    q.objectives[1].completed = droneCompleted;
-    if (droneCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      if (hasChip) {
-        q.log = ["Experimental Drone Chip recovered! Choose to give it to Jax or install it in your Base Security Mainframe."];
-      } else {
-        q.log = ["Locate the rogue Rust-Claw Orc band in the highwalk passages of Shatter Ridge and recover the chip."];
-      }
-    }
-  }
-
-  // 9. Docks Contract: The Smuggler's Run (Side Quest)
-  const smugActive = state.activeQuests.some(q => q.includes("Smuggler's Run"));
-  const smugCompleted = state.completedQuests.some(q => q.includes("Smuggler's Run"));
-  if (smugActive || smugCompleted) {
-    const hasCrate = state.inventory.includes("Stolen Weapon Crate");
-    const q = getOrCreate("smugglers_run", {
-      title: "The Smuggler's Run",
-      category: "Side Quest",
-      description: "Recover the high-grade Stolen Weapon Crate from the Iron Anchor gang at the Rusty Anchor Shipyard, and deliver it back to Titan Logistics Freight Hub.",
-      objectives: [
-        { id: "defeat_smugglers", text: "Defeat the Iron Anchor smugglers at the Rusty Anchor Shipyard", current: hasCrate || smugCompleted ? 1 : 0, target: 1, completed: hasCrate || smugCompleted },
-        { id: "deliver_parts", text: "Deliver recovered Weapon Crate to Titan Logistics Freight Hub", current: smugCompleted ? 1 : 0, target: 1, completed: smugCompleted }
-      ],
-      rewards: [{ type: "credits", amount: 160 }, { type: "experience", amount: 100 }, { type: "item", itemName: "Vibroblade" }]
-    });
-    q.objectives[0].current = hasCrate || smugCompleted ? 1 : 0;
-    q.objectives[0].completed = hasCrate || smugCompleted;
-    q.objectives[1].current = smugCompleted ? 1 : 0;
-    q.objectives[1].completed = smugCompleted;
-    if (smugCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      if (hasCrate) {
-        q.log = ["Weapon crate secured! Proceed to the Titan Logistics Freight Hub at the Docks to deliver it."];
-      } else {
-        q.log = ["Interrogate the thugs or raid the stash inside the Rusty Anchor Shipyard."];
-      }
-    }
-  }
-
-  // 10. Side-Quest: Cybernetic Harvest (Side Quest)
-  const harvestActive = state.activeQuests.some(q => q.includes("Cybernetic Harvest") || q.includes("Neural Regulator"));
-  const harvestCompleted = state.completedQuests.some(q => q.includes("Cybernetic Harvest"));
-  if (harvestActive || harvestCompleted) {
-    const regCount = state.inventory.filter(i => i === "Neural Regulator").length;
-    const q = getOrCreate("cybernetic_harvest", {
-      title: "Cybernetic Harvest",
-      category: "Side Quest",
-      description: "Ambushes Ares patrols at the Highwalk Homicide Site in Downtown to harvest 2x Neural Regulators. Bring them back to Dr. Marv at his Docks Clinic.",
-      objectives: [
-        { id: "harvest_regulators", text: "Harvest 2x Neural Regulators from Downtown Patrols", current: harvestCompleted ? 2 : regCount, target: 2, completed: harvestCompleted || regCount >= 2 },
-        { id: "deliver_regulators", text: "Deliver regulators to Dr. Marv's Cyber-Clinic (Docks)", current: harvestCompleted ? 1 : 0, target: 1, completed: harvestCompleted }
-      ],
-      rewards: [{ type: "credits", amount: 250 }, { type: "experience", amount: 120 }, { type: "item", itemName: "Smart-Targeting Visor" }]
-    });
-    q.objectives[0].current = harvestCompleted ? 2 : regCount;
-    q.objectives[0].completed = harvestCompleted || regCount >= 2;
-    q.objectives[1].current = harvestCompleted ? 1 : 0;
-    q.objectives[1].completed = harvestCompleted;
-    if (harvestCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      q.log = [`Siphoned ${regCount}/2 Neural Regulators. Ambush patrols at Highwalk Homicide Site (Downtown).`];
-    }
-  }
-
-  // 11. Side-Quest: Nouveau Heist (Side Quest)
-  const heistActive = state.activeQuests.some(q => q.includes("Nouveau Heist") || q.includes("Prototype Singularity Battery"));
-  const heistCompleted = state.completedQuests.some(q => q.includes("Nouveau Heist"));
-  if (heistActive || heistCompleted) {
-    const hasCard = state.inventory.includes("VIP Afterlife Keycard");
-    const hasBattery = state.inventory.includes("Prototype Singularity Battery");
-    const q = getOrCreate("nouveau_heist", {
-      title: "Nouveau Heist",
-      category: "Side Quest",
-      description: "Formulate a plan with Cipher at Club Afterlife VIP Lounge to infiltrate the Nouveau Cybernetic Showroom in Downtown, bypass the shields, and secure the Prototype Singularity Battery.",
-      objectives: [
-        { id: "secure_keycard", text: "Secure VIP Keycard from Cipher or Club Afterlife", current: hasCard || hasBattery || heistCompleted ? 1 : 0, target: 1, completed: hasCard || hasBattery || heistCompleted },
-        { id: "crack_showroom", text: "Crack the Nouveau Showroom pressure shields to loot the Battery", current: hasBattery || heistCompleted ? 1 : 0, target: 1, completed: hasBattery || heistCompleted },
-        { id: "deliver_battery", text: "Bring the Prototype Singularity Battery to Cipher at Club Afterlife", current: heistCompleted ? 1 : 0, target: 1, completed: heistCompleted }
-      ],
-      rewards: [{ type: "credits", amount: 350 }, { type: "experience", amount: 150 }, { type: "item", itemName: "Unstable Plasma Core" }]
-    });
-    q.objectives[0].current = hasCard || hasBattery || heistCompleted ? 1 : 0;
-    q.objectives[0].completed = hasCard || hasBattery || heistCompleted;
-    q.objectives[1].current = hasBattery || heistCompleted ? 1 : 0;
-    q.objectives[1].completed = hasBattery || heistCompleted;
-    q.objectives[2].current = heistCompleted ? 1 : 0;
-    q.objectives[2].completed = heistCompleted;
-    if (heistCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      if (hasBattery) {
-        q.log = ["Prototype Singularity Battery secured! Deliver it back to Cipher in Club Afterlife."];
-      } else if (hasCard) {
-        q.log = ["VIP Keycard acquired. Head to Nouveau Cybernetic Showroom in Downtown and bypass their security."];
-      } else {
-        q.log = ["Meet with Cipher in the Downtown VIP Lounge of Club Afterlife."];
-      }
-    }
-  }
-
-  // 12. Legendary Companion Quest: Vice's Retribution (Unlocks at Union Rep >= 80)
-  const unionRepValue = state.reputations?.streetOutlaws ?? 50;
-  const viceQuestActive = unionRepValue >= 80 && !state.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
-  const viceQuestCompleted = state.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
-  
-  if (viceQuestActive || viceQuestCompleted) {
-    const q = getOrCreate("vice_retribution", {
-      title: "Vice's Retribution: Shatter Ridge Ledger",
-      category: "Side Quest",
-      description: "Unlock Vice's personal companion quest by reaching 80% Outcast Union reputation. Infiltrate the Ares secure server farm in Shatter Ridge (Downtown Region) to retrieve the Encrypted Ares Ledger and deliver it directly to Vice.",
-      objectives: [
-        { id: "find_ledger", text: "Retrieve the Encrypted Ares Ledger from Shatter Ridge Server", current: state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted ? 1 : 0, target: 1, completed: state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted },
-        { id: "deliver_ledger", text: "Hand over the ledger to Vice in the Aurus Safehouse", current: viceQuestCompleted ? 1 : 0, target: 1, completed: viceQuestCompleted }
-      ],
-      rewards: [
-        { type: "credits", amount: 400 },
-        { type: "experience", amount: 250 }
-      ],
-      log: ["Infiltrating Downtown server nodes to retrieve Ares black ledger files for Vice."]
-    });
-    
-    q.objectives[0].current = state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted ? 1 : 0;
-    q.objectives[0].completed = state.inventory.includes("Encrypted Ares Ledger") || viceQuestCompleted;
-    q.objectives[1].current = viceQuestCompleted ? 1 : 0;
-    q.objectives[1].completed = viceQuestCompleted;
-    
-    if (viceQuestCompleted) {
-      q.status = "COMPLETED";
-    } else {
-      q.status = "ACTIVE";
-      if (state.inventory.includes("Encrypted Ares Ledger")) {
-        q.log = ["Secured the Encrypted Ares Ledger from Shatter Ridge. Fast-travel home to hand it to Vice!"];
-      } else {
-        q.log = ["Breach the secure server farm at Shatter Ridge Corridors in Downtown Region."];
-      }
-    }
-  }
+  // Authored campaign and side quests are synchronized from the unified registry.
 
   // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
   const campaignRegistry = buildQuestCatalog(state.campaignQuestsRegistry || []);
@@ -4197,6 +4006,7 @@ function MainGame() {
             }
             if (linkedQuest && linkedQuest.status === "NOT_STARTED" && (
               (linkedQuest.minLevel || 1) > nextState.level ||
+              (linkedQuest.requiredReputationFaction && (nextState.reputations?.[linkedQuest.requiredReputationFaction] || 0) < (linkedQuest.requiredReputationValue || 0)) ||
               (linkedQuest.prerequisiteQuestId && prerequisite?.status !== "COMPLETED")
             )) {
               triggerToast(`Quest requirements are not met: ${linkedQuest.title}`);
@@ -7182,8 +6992,9 @@ function MainGame() {
                                         totalRoll = nextState.mana;
                                         isSuccess = nextState.mana >= (choice.checkValue || 0);
                                       } else if (choice.checkType === "item") {
-                                        totalRoll = nextState.inventory.includes(choice.requiredItem || "") ? 1 : 0;
-                                        isSuccess = totalRoll === 1;
+                                        const requiredQuantity = Math.max(1, choice.requiredItemQuantity || 1);
+                                        totalRoll = nextState.inventory.filter(item => item === (choice.requiredItem || "")).length;
+                                        isSuccess = totalRoll >= requiredQuantity;
                                       }
 
                                       if (!isSuccess) {
@@ -7208,8 +7019,11 @@ function MainGame() {
                                         if (choice.checkType === "credits") nextState.credits -= choice.checkValue || 0;
                                         if (choice.checkType === "mana") nextState.mana -= choice.checkValue || 0;
                                         if (choice.checkType === "item" && choice.consumeItem) {
-                                          const index = nextState.inventory.indexOf(choice.requiredItem || "");
-                                          if (index >= 0) nextState.inventory.splice(index, 1);
+                                          const requiredQuantity = Math.max(1, choice.requiredItemQuantity || 1);
+                                          for (let count = 0; count < requiredQuantity; count += 1) {
+                                            const index = nextState.inventory.indexOf(choice.requiredItem || "");
+                                            if (index >= 0) nextState.inventory.splice(index, 1);
+                                          }
                                         }
                                         triggerToast(`⚡ CHECK SUCCESS: ${totalRoll} vs ${choice.checkValue || 10}!`);
                                       }
@@ -7224,9 +7038,12 @@ function MainGame() {
                                       nextState.credits += choice.grantsCredits;
                                       triggerToast(`+${choice.grantsCredits}¤ Credits Granted`);
                                     }
-                                    if (choice.grantsItem && !nextState.inventory.includes(choice.grantsItem)) {
-                                      nextState.inventory = [choice.grantsItem, ...nextState.inventory];
-                                      triggerToast(`Item Acquired: ${choice.grantsItem}`);
+                                    if (choice.grantsItem) {
+                                      const quantity = Math.max(1, choice.grantsItemQuantity || 1);
+                                      if (quantity > 1 || !nextState.inventory.includes(choice.grantsItem)) {
+                                        nextState.inventory = [...Array(quantity).fill(choice.grantsItem), ...nextState.inventory];
+                                        triggerToast(`Item Acquired: ${choice.grantsItem}${quantity > 1 ? ` x${quantity}` : ""}`);
+                                      }
                                     }
                                     if (choice.grantsHp) nextState.hp = Math.min(nextState.maxHp, nextState.hp + choice.grantsHp);
                                     if (choice.grantsMana) nextState.mana = Math.min(nextState.maxMana, nextState.mana + choice.grantsMana);
@@ -7552,40 +7369,6 @@ function MainGame() {
                                       ) : null
                                     )}
 
-                                    {activeDialogue === "jax" && gameState.completedQuests.some(q => q.includes("Outcast")) && !gameState.activeQuests.some(q => q.includes("Drone Schematic")) && !gameState.completedQuests.some(q => q.includes("Drone Schematic")) && (
-                                      <button
-                                        onClick={() => {
-                                          let next = { ...gameState };
-                                          next.activeQuests.push("Side Quest: The Lost Drone Schematic - Hunt Rogue Rust-Claw Orcs in Shatter Ridge (Downtown) to recover the Experimental Drone Chip.");
-                                          setGameState(next);
-                                          triggerToast("ACCEPTED QUEST: DRONE SCHEMATIC");
-                                          setActiveDialogue(null);
-                                        }}
-                                        className="bg-blue-950 text-blue-300 border border-blue-500/30 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-blue-900"
-                                      >
-                                        Inquire about Lost Drone Chip
-                                      </button>
-                                    )}
-
-                                    {activeDialogue === "jax" && gameState.inventory.includes("Experimental Drone Chip") && (
-                                      <button
-                                        onClick={() => {
-                                          let next = { ...gameState };
-                                          next.inventory = next.inventory.filter(i => i !== "Experimental Drone Chip");
-                                          next.credits += 200;
-                                          next.experience += 100;
-                                          next.activeQuests = next.activeQuests.filter(q => !q.includes("Drone"));
-                                          next.completedQuests.push("Side Quest: The Lost Drone Schematic (Delivered to Jax)");
-                                          setGameState(next);
-                                          triggerToast("COMPLETED: DRONE SCHEMATIC (+200¤)");
-                                          setActiveDialogue(null);
-                                        }}
-                                        className="bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-emerald-400 animate-pulse"
-                                      >
-                                        Deliver Drone Chip to Jax (+200¤)
-                                      </button>
-                                    )}
-
                                     {activeDialogue === "aria" && !gameState.completedQuests.some(q => q.includes("Corporate Hunt")) && (
                                       gameState.inventory.includes("Acid Beast Core") ? (
                                         <button
@@ -7651,50 +7434,6 @@ function MainGame() {
                                           className="bg-cyan-950 text-cyan-400 border border-cyan-500/30 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
                                         >
                                           Accept Initiation
-                                        </button>
-                                      ) : null
-                                    )}
-
-                                    {activeDialogue === "morgana" && gameState.completedQuests.some(q => q.includes("Syndicate Catalyst")) && (
-                                      !gameState.activeQuests.some(q => q.includes("Chem-Weaver")) && !gameState.completedQuests.some(q => q.includes("Chem-Weaver")) ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.activeQuests.push("Side Quest: Chem-Weaver's Request - Retrieve 3x Glowing Slime samples from the Docks Sludge Conduits.");
-                                            setGameState(next);
-                                            triggerToast("ACCEPTED QUEST: CHEM-WEAVER'S REQUEST");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-purple-950 text-purple-300 border border-purple-500/40 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-purple-900 animate-pulse"
-                                        >
-                                          Accept Side Quest: Chem-Weaver's Request
-                                        </button>
-                                      ) : gameState.activeQuests.some(q => q.includes("Chem-Weaver")) && gameState.inventory.filter(i => i === "Glowing Slime").length >= 3 ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.credits += 150;
-                                            next.experience += 90;
-                                            next.maxMana += 50;
-                                            next.mana = next.maxMana;
-                                            // remove 3 slimes
-                                            let count = 0;
-                                            next.inventory = next.inventory.filter(item => {
-                                              if (item === "Glowing Slime" && count < 3) {
-                                                count++;
-                                                return false;
-                                              }
-                                              return true;
-                                            });
-                                            next.activeQuests = next.activeQuests.filter(q => !q.includes("Chem-Weaver"));
-                                            next.completedQuests.push("Side Quest: Chem-Weaver's Request (Completed)");
-                                            setGameState(next);
-                                            triggerToast("COMPLETED: CHEM-WEAVER'S REQUEST (+150¤ +50 Max Mana!)");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-emerald-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-emerald-400"
-                                        >
-                                          Deliver 3x Glowing Slimes
                                         </button>
                                       ) : null
                                     )}
@@ -8971,56 +8710,6 @@ function MainGame() {
                                       
                                       // ---- MAIN QUEST & SIDE QUEST DYNAMIC BUTTONS ----
                                       if (gameState) {
-                                        const activeQ = gameState.activeQuests || [];
-                                         const inv = gameState.inventory || [];
-                                         const skills = gameState.skills || {};
-                                         const isMindmancer = gameState.mindmancerUnlocked || (skills.mindmancer && skills.mindmancer >= 1);
-
-                                         // 2. Drone Schematic Side Quest at Shatter Ridge & Bar
-                                         if (activePOIView === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
-                                           if (!inv.includes("Experimental Drone Chip")) {
-                                             btns.push("Hunt Rust-Claw Orcs for Drone Chip (Side Quest)");
-                                           } else {
-                                             btns.push("Install Chip in Base Security Grid");
-                                           }
-                                         }
-                                         if (activePOIView === "bar" && activeQ.some(q => q.includes("Drone Schematic")) && inv.includes("Experimental Drone Chip")) {
-                                           btns.push("Deliver Drone Chip to Jax");
-                                         }
-
-                                         // 3. Chem-Weaver's Request Side Quest at Sludge Conduits & Temple
-                                         if (activePOIView === "sludge_conduits" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-                                           const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-                                           if (slimesCount < 3) {
-                                             btns.push("Harvest Glowing Slime pool (Side Quest)");
-                                           }
-                                         }
-                                         if (activePOIView === "temple" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-                                           const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-                                           if (slimesCount >= 3) {
-                                             btns.push("Deliver 3x Slimes to Priestess Morgana");
-                                           }
-                                         }
-
-                                         // 8. Vice's Retribution (Legendary Companion Quest)
-                                         const hasLedger = inv.includes("Encrypted Ares Ledger");
-                                         const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
-                                         if (isViceQuestActive) {
-                                           if (activePOIView === "shatter_ridge") {
-                                             if (!hasLedger) {
-                                               btns.push("💻 Hack Ares Secure Server Farm (INT Check)");
-                                               if (isMindmancer) {
-                                                 btns.push("🔮 [Mindmancer Skill] Psychic Tunnel through Security Firewall");
-                                               }
-                                             } else {
-                                               btns.push("🔒 Encrypted Ares Ledger already secured");
-                                             }
-                                           }
-                                           if (activePOIView === "hideout" && hasLedger) {
-                                             btns.push("🤝 Deliver Encrypted Ledger directly to Vice");
-                                           }
-                                         }
-
                                          // 9. DYNAMIC CAMPAIGN QUEST DIRECTOR OPERATIONAL HOOKS
                                          if (gameState?.campaignQuestsRegistry && gameState?.campaignQuestsRegistry.length > 0) {
                                            const currentPoiObj = MAP_POIS.find(p => p.id === activePOIView);

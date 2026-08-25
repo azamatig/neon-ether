@@ -5531,6 +5531,7 @@ function MainGame() {
                                     handleExecuteAction(actionText);
                                   }}
                                   completedActions={gameState.completedPOIActions || []}
+                                  scannerMode
                                 />
                               );
                             }

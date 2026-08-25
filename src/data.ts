@@ -587,12 +587,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 15,
     y: 80,
     type: "quest",
-    buttons: [
-      "Slip through Vent (DEX Check)",
-      "Talk to Vice & Tracker",
-      "Scavenge Rusted Emergency Locker (Find Cyber-Ammo & Health Stimpack)",
-      "Dismantle ventilation casing (Acquire Carbon Fiber Armor Plates)"
-    ]
+    buttons: ["[SCENE:prologue_ventilation] Open Ventilation Breach Scene"]
   },
   {
     id: "security_terminal",
@@ -603,12 +598,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 45,
     y: 55,
     type: "quest",
-    buttons: [
-      "Bypass Sub-Terminal (INT Check)",
-      "Search terminal wreckage for scrap",
-      "Hack Secure Weapons Locker (Acquire Tactical Cyber-SMG!)",
-      "Siphon auxiliary thermal battery (Recover +35 Mana)"
-    ]
+    buttons: ["[SCENE:prologue_security_terminal] Open Security Terminal Scene"]
   },
   {
     id: "blast_door",
@@ -619,12 +609,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 75,
     y: 40,
     type: "quest",
-    buttons: [
-      "Pry Open Valve (STR Check)",
-      "Banter with Vice and Tracker",
-      "Raid security guard barracks (Loot Nano Med-Stim & Flak Guard Armor)",
-      "Interface with corporate supply bin (Extract Energy Batteries)"
-    ]
+    buttons: ["[SCENE:prologue_blast_door] Open Heavy Blast Door Scene"]
   },
   {
     id: "section_gate",
@@ -635,9 +620,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 90,
     y: 20,
     type: "quest",
-    buttons: [
-      "Proceed to Shatter-Ridge Core (Transit)"
-    ]
+    buttons: ["[SCENE:prologue_section_gate] Open Shatter-Ridge Transit Scene"]
   },
 
   // ---- MAP 2: CORE ARRAY SHATTER-RIDGE ----
@@ -650,12 +633,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 20,
     y: 70,
     type: "quest",
-    buttons: [
-      "Overclock Security Gate (INT Check)",
-      "Scavenge Security Chest (Find Exo-Plated Mesh Armor & Nano Med-Stim)",
-      "Pep-Talk Vice & Tracker (Inspiration Dialogue)",
-      "Move to Reactor Well (Proceed)"
-    ]
+    buttons: ["[SCENE:prologue_security_checkpoint] Open Security Checkpoint Scene"]
   },
   {
     id: "shatter_ridge_reactor_well",
@@ -666,12 +644,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 50,
     y: 45,
     type: "quest",
-    buttons: [
-      "Pull Cargo Lever (STR Check)",
-      "Salvage Bio-Reactor Core (Find Smart-Targeting Visor)",
-      "Consult Squad on Tactics",
-      "Proceed to Main Array (Transit)"
-    ]
+    buttons: ["[SCENE:prologue_reactor_well] Open Reactor Well Scene"]
   },
   {
     id: "main_array_core",
@@ -682,9 +655,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 80,
     y: 30,
     type: "combat",
-    buttons: [
-      "Defend Core Array (Triggers Combat!)"
-    ]
+    buttons: ["[SCENE:prologue_core_array] Open Core Array Defense Scene"]
   },
 
   // ---- MAP 3: DATA VAULT SANCTUARY ----
@@ -697,9 +668,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 35,
     y: 60,
     type: "quest",
-    buttons: [
-      "Initiate Terminal Hack (Mini-Game)"
-    ]
+    buttons: ["[SCENE:prologue_vault_terminal] Open Sanctuary Terminal Scene"]
   },
   {
     id: "relic_altar",
@@ -710,9 +679,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 75,
     y: 40,
     type: "quest",
-    buttons: [
-      "Activate Mysterious Relic"
-    ]
+    buttons: ["[SCENE:relic_altar] Open Relic Altar Scene"]
   },
 
   // ---- CHAPTER 1: AURUS DISTRICT ----
@@ -1196,7 +1163,7 @@ export function getInitialState(archetype: Archetype): GameState {
     maxMana: archetype.maxMana,
     credits: archetype.credits,
     party: ["Vice", "Tracker"],
-    activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
+    activeQuests: [], // Compatibility field; authored quest status lives in campaignQuestsRegistry.
     completedQuests: [],
     structuredQuests: [
       {

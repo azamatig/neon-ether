@@ -1,14 +1,185 @@
 import { POIInteractiveEvent } from "./types";
 
 export const DEFAULT_POI_INTERACTIVE_SCENES: Record<string, POIInteractiveEvent> = {
+  prologue_ventilation: {
+    id: "prologue_ventilation",
+    poiId: "ventilation_shaft",
+    poiName: "Ventilation Shaft (Entry Point)",
+    districtId: "conduit09",
+    title: "CONDUIT 09: VENTILATION BREACH",
+    initialStepId: "entry",
+    linkedQuestId: "prologue",
+    linkedStageId: "prologue_ventilation",
+    steps: {
+      entry: {
+        id: "entry", stepTitle: "VENTILATION SHAFT", bannerTitle: "VARIABLE-FREQUENCY ROTOR ARRAY",
+        bannerImage: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800",
+        narrativeText: "A massive circular shaft blocks the insertion route. Heavy fan blades leave only a half-second opening. Vice watches the patrol feed while Tracker calculates the rotor cycle.",
+        companions: [
+          { id: "vice_vent", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "The fan cycle drops for half a second. Move cleanly, rookie." },
+          { id: "tracker_vent", name: "Tracker", role: "Electronic Warfare", avatar: "📟", color: "amber", text: "Patrol drones are scanning this sector. Pick a method." }
+        ],
+        choices: [
+          { id: "vent_dex", label: "Slip through Vent [DEX 23]", checkType: "dex", checkValue: 23, grantsXP: 25, completionAction: "ventilation_shaft:slip", targetPOIId: "security_terminal", outcomeNarrative: "You cross during the rotor lull and drop into the Security Sub-Terminal.", failureNarrative: "The rotor clips your armor and pins you inside the shaft.", failureHpDamage: 20, failureTargetStepId: "emergency", variant: "cyan" },
+          { id: "vent_locker", label: "Scavenge Rusted Emergency Locker", grantsItem: "Nano Med-Stim (Heal)", grantsHp: 15, outcomeNarrative: "You recover a med-stim and patch the damage to your armor.", targetStepId: "entry", variant: "emerald" },
+          { id: "vent_casing", label: "Dismantle Ventilation Casing", grantsItem: "Carbon Fiber Armor Plates", outcomeNarrative: "The aerospace casing yields a usable carbon-fiber plate.", targetStepId: "entry", variant: "amber" }
+        ]
+      },
+      emergency: {
+        id: "emergency", stepTitle: "EMERGENCY ROTOR OVERRIDE", bannerTitle: "FAN BLADES INTERCEPTED",
+        bannerImage: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800",
+        narrativeText: "The failed crossing has jammed you between the blades. Alarms are rising; override the rotor before security arrives.",
+        choices: [
+          { id: "vent_str", label: "Force Fan Blades [STR 15]", checkType: "str", checkValue: 15, completionAction: "ventilation_shaft:slip", targetPOIId: "security_terminal", outcomeNarrative: "You wrench the hydraulic rotor to a stop and force your way through.", failureNarrative: "The coupling snaps and tears into your armor.", failureHpDamage: 15, failureTargetStepId: "emergency", variant: "rose" },
+          { id: "vent_int", label: "Hack Fan Console [INT 16]", checkType: "int", checkValue: 16, completionAction: "ventilation_shaft:slip", targetPOIId: "security_terminal", outcomeNarrative: "Your loop-bypass spins the blades down in complete silence.", failureNarrative: "Neural feedback burns through the relay.", failureHpDamage: 10, failureTargetStepId: "emergency", variant: "cyan" },
+          { id: "vent_emp", label: "Trigger Emergency EMP Burst", completionAction: "ventilation_shaft:slip", targetPOIId: "security_terminal", failureHpDamage: 10, outcomeNarrative: "The EMP destroys the rotor controller and throws you into the next chamber.", variant: "purple" }
+        ]
+      }
+    }
+  },
+  prologue_security_terminal: {
+    id: "prologue_security_terminal", poiId: "security_terminal", poiName: "Security Sub-Terminal", districtId: "conduit09",
+    title: "CONDUIT 09: SECURITY SUB-TERMINAL", initialStepId: "console", linkedQuestId: "prologue", linkedStageId: "prologue_security_terminal",
+    steps: { console: {
+      id: "console", stepTitle: "OUTER PERIMETER SUB-GRID", bannerTitle: "ARES SECURITY SUB-TERMINAL",
+      bannerImage: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "A buzzing corporate terminal bridges the outer alarm network. Its copper motherboard and auxiliary battery remain exposed.",
+      companions: [{ id: "tracker_terminal", name: "Tracker", role: "Electronic Warfare", avatar: "📟", color: "amber", text: "Bypass the firewall and the blast-door corridor goes blind." }],
+      choices: [
+        { id: "terminal_bypass", label: "Bypass Sub-Terminal [INT 23]", checkType: "int", checkValue: 23, grantsXP: 25, grantsItem: "Rusted Circuitry", completionAction: "security_terminal:bypass", targetPOIId: "blast_door", outcomeNarrative: "The alarm subnet collapses and the route to the blast door opens.", failureNarrative: "The firewall drains your deck, but the emergency shunt still opens the route.", failureManaDamage: 15, failureTargetStepId: "forced_exit", variant: "cyan" },
+        { id: "terminal_scrap", label: "Search Terminal Wreckage", grantsItem: "Rusted Circuitry", outcomeNarrative: "You recover recyclable copper circuitry.", targetStepId: "console", variant: "amber" },
+        { id: "terminal_locker", label: "Hack Secure Weapons Locker", grantsItem: "Tactical Cyber-SMG", outcomeNarrative: "The locker releases a compact tactical SMG.", targetStepId: "console", variant: "rose" },
+        { id: "terminal_battery", label: "Siphon Auxiliary Thermal Battery", grantsMana: 35, outcomeNarrative: "The thermal capacitor restores your cognitive power reserve.", targetStepId: "console", variant: "purple" }
+      ]
+    }, forced_exit: {
+      id: "forced_exit", stepTitle: "EMERGENCY SHUNT", bannerTitle: "FIREWALL BACKFIRE",
+      bannerImage: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "The firewall burns out, but Tracker forces the transit shunt. The Heavy Blast Door is now accessible.",
+      choices: [{ id: "terminal_forced_continue", label: "Proceed to Heavy Blast Door", completionAction: "security_terminal:bypass", targetPOIId: "blast_door", variant: "emerald" }]
+    }}
+  },
+  prologue_blast_door: {
+    id: "prologue_blast_door", poiId: "blast_door", poiName: "Heavy Blast Door", districtId: "conduit09",
+    title: "CONDUIT 09: HEAVY BLAST DOOR", initialStepId: "door", linkedQuestId: "prologue", linkedStageId: "prologue_blast_door",
+    steps: { door: {
+      id: "door", stepTitle: "HYDRAULIC SECURITY SEAL", bannerTitle: "TITANIUM BLAST DOOR",
+      bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "A titanium bulkhead blocks the core route. Its auxiliary hydraulic valve can be forced while the squad covers the corridor.",
+      companions: [{ id: "vice_door", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "Put your weight into the valve. Tracker will cut the latch if your servos fail." }],
+      choices: [
+        { id: "door_pry", label: "Pry Open Valve [STR 23]", checkType: "str", checkValue: 23, grantsXP: 25, completionAction: "blast_door:pry", targetPOIId: "section_gate", outcomeNarrative: "The hydraulic valve turns and the titanium doors hiss open.", failureNarrative: "Your servos buckle; Tracker cuts the latch after the strain damages you.", failureHpDamage: 10, failureTargetStepId: "tracker_cut", variant: "rose" },
+        { id: "door_barracks", label: "Raid Security Guard Barracks", grantsItem: "Tactical Flak Armor", outcomeNarrative: "You recover flak armor from an abandoned shift locker.", targetStepId: "door", variant: "amber" },
+        { id: "door_supply", label: "Interface with Corporate Supply Bin", grantsCredits: 45, grantsMana: 30, outcomeNarrative: "The cabinet dispenses battery cells and corporate credit vouchers.", targetStepId: "door", variant: "cyan" }
+      ]
+    }, tracker_cut: {
+      id: "tracker_cut", stepTitle: "TRACKER OVERRIDE", bannerTitle: "LATCH CUT OPEN",
+      bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Tracker's plasma cutter melts the failed latch. The transit gate beyond is clear.",
+      choices: [{ id: "door_continue", label: "Continue to Section Gate", completionAction: "blast_door:pry", targetPOIId: "section_gate", variant: "emerald" }]
+    }}
+  },
+  prologue_section_gate: {
+    id: "prologue_section_gate", poiId: "section_gate", poiName: "Next Section Gate (Transit)", districtId: "conduit09",
+    title: "TRANSIT: SHATTER-RIDGE INSERTION", initialStepId: "transit", linkedQuestId: "prologue", linkedStageId: "prologue_section_gate",
+    steps: { transit: {
+      id: "transit", stepTitle: "DISTRICT TRANSIT", bannerTitle: "SHATTER-RIDGE CORE ACCESS",
+      bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Hydraulic gears release the section seal. Beyond it lies the fortified Shatter-Ridge checkpoint.",
+      companions: [
+        { id: "vice_transit", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "Once this gate closes there is no clean retreat." },
+        { id: "tracker_transit", name: "Tracker", role: "Electronic Warfare", avatar: "📟", color: "amber", text: "The defensive barrier is the first priority." }
+      ],
+      choices: [{ id: "transit_enter", label: "Proceed to Shatter-Ridge Core", completionAction: "section_gate:transit", unlockDistrictId: "shatter_ridge_core", targetPOIId: "shatter_ridge_security_post", outcomeNarrative: "The squad seals the hatch and enters Shatter-Ridge Core.", variant: "emerald" }]
+    }}
+  },
+  prologue_security_checkpoint: {
+    id: "prologue_security_checkpoint", poiId: "shatter_ridge_security_post", poiName: "Shatter-Ridge Security Checkpoint", districtId: "shatter_ridge_core",
+    title: "SHATTER-RIDGE SECURITY CHECKPOINT", initialStepId: "checkpoint", linkedQuestId: "prologue", linkedStageId: "prologue_security_checkpoint",
+    steps: { checkpoint: {
+      id: "checkpoint", stepTitle: "DEFENSIVE CYBER-BARRIER", bannerTitle: "SHATTER-RIDGE CHECKPOINT",
+      bannerImage: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "A fortified cyber-barrier guards the lower catwalk. Corporate lockers and active tripwires line the checkpoint.",
+      choices: [
+        { id: "checkpoint_hack", label: "Overclock Security Gate [INT 16]", checkType: "int", checkValue: 16, grantsXP: 25, completionAction: "shatter_ridge_security_post:gate", targetPOIId: "shatter_ridge_reactor_well", outcomeNarrative: "The capacitors overload and melt the defensive beam nodes.", failureNarrative: "Feedback burns through your deck before the barrier finally collapses.", failureHpDamage: 10, failureManaDamage: 15, failureTargetStepId: "checkpoint_forced", variant: "cyan" },
+        { id: "checkpoint_chest", label: "Scavenge Security Chest", grantsItem: "Exo-Plated Mesh Armor", outcomeNarrative: "You recover premium mesh armor from the checkpoint locker.", targetStepId: "checkpoint", variant: "amber" }
+      ]
+    }, checkpoint_forced: {
+      id: "checkpoint_forced", stepTitle: "BARRIER COLLAPSED", bannerTitle: "GRID FEEDBACK DISCHARGE",
+      bannerImage: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "The grid shocks your cortex, but its capacitors burn out. The Reactor Well route is open.",
+      choices: [{ id: "checkpoint_continue", label: "Move to Reactor Well", completionAction: "shatter_ridge_security_post:gate", targetPOIId: "shatter_ridge_reactor_well", variant: "emerald" }]
+    }}
+  },
+  prologue_reactor_well: {
+    id: "prologue_reactor_well", poiId: "shatter_ridge_reactor_well", poiName: "Shatter-Ridge Reactor Well", districtId: "shatter_ridge_core",
+    title: "SHATTER-RIDGE REACTOR WELL", initialStepId: "well", linkedQuestId: "prologue", linkedStageId: "prologue_reactor_well",
+    steps: { well: {
+      id: "well", stepTitle: "BIO-COOLANT REACTOR", bannerTitle: "TOXIC REACTOR WELL",
+      bannerImage: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Toxic coolant boils below a maintenance catwalk. A cargo crane and exposed telemetry core can be salvaged before the squad advances.",
+      choices: [
+        { id: "reactor_lever", label: "Pull Cargo Lever [STR 15]", checkType: "str", checkValue: 15, grantsXP: 25, grantsItem: "Unstable Plasma Core", outcomeNarrative: "The crane lowers a sealed cargo crate onto the catwalk.", failureNarrative: "The seized coupling snaps and showers you with sparks.", failureHpDamage: 15, failureTargetStepId: "well", targetStepId: "well", variant: "rose" },
+        { id: "reactor_core", label: "Salvage Bio-Reactor Core", grantsItem: "Smart-Targeting Visor", outcomeNarrative: "You extract the reactor's ocular telemetry analyzer.", targetStepId: "well", variant: "cyan" },
+        { id: "reactor_continue", label: "Proceed to Main Array", completionAction: "shatter_ridge_reactor_well:transit", targetPOIId: "main_array_core", outcomeNarrative: "The squad climbs into the cavernous Core Array hangar.", variant: "emerald" }
+      ]
+    }}
+  },
+  prologue_core_array: {
+    id: "prologue_core_array", poiId: "main_array_core", poiName: "Core Array Shatter-Ridge", districtId: "shatter_ridge_core",
+    title: "CORE ARRAY DEFENSE", initialStepId: "ambush", linkedQuestId: "prologue", linkedStageId: "prologue_core_array",
+    steps: { ambush: {
+      id: "ambush", stepTitle: "AUTONOMOUS DEFENSE GRID", bannerTitle: "SECURITY DRONES DEPLOYED",
+      bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Tracker's key is rejected. Three autonomous security drones descend between the blue server columns and charge their laser cannons.",
+      companions: [{ id: "vice_core", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "Defend Tracker. I will hold the left firing lane." }],
+      choices: [{ id: "core_combat", label: "Defend Core Array", combat: { enemyName: "3x Autonomous Security Drones", enemyHp: 130, enemyShields: 30, turnLog: "Three security drones descend from the grid ceiling and charge their laser cannons.", victorySceneId: "prologue_core_transit", victoryCompletionAction: "main_array_core:defended" }, outcomeNarrative: "The autonomous defense grid engages.", variant: "rose" }]
+    }}
+  },
+  prologue_core_transit: {
+    id: "prologue_core_transit", poiId: "main_array_core", poiName: "Core Array Shatter-Ridge", districtId: "shatter_ridge_core",
+    title: "TRANSIT: DATA VAULT SANCTUARY", initialStepId: "lift", linkedQuestId: "prologue", linkedStageId: "prologue_core_array",
+    steps: { lift: {
+      id: "lift", stepTitle: "CORE ARRAY SECURED", bannerTitle: "INDUSTRIAL LIFT TO DATA VAULT",
+      bannerImage: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "The final drone crashes between the server columns. Vice opens the industrial lift before Ares can seal the sanctuary.",
+      companions: [{ id: "vice_lift", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "Move. The database crystal is one level below us." }],
+      choices: [{ id: "lift_descend", label: "Descend into Data Vault Sanctuary", unlockDistrictId: "data_vault", targetPOIId: "terminal_hacking_puzzle", outcomeNarrative: "The lift descends into the primary Ares data sanctuary.", variant: "emerald" }]
+    }}
+  },
+  prologue_vault_terminal: {
+    id: "prologue_vault_terminal", poiId: "terminal_hacking_puzzle", poiName: "Sanctuary Hacking Terminal", districtId: "data_vault",
+    title: "DATA VAULT SANCTUARY", initialStepId: "terminal", linkedQuestId: "prologue", linkedStageId: "prologue_vault_terminal",
+    steps: { terminal: {
+      id: "terminal", stepTitle: "PRIMARY CYBER-VAULT", bannerTitle: "ARES DATABASE CRYSTAL TERMINAL",
+      bannerImage: "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Hexadecimal encryption streams cycle across the primary vault terminal. The Ares Data Crystal is locked behind its ICE matrix.",
+      companions: [{ id: "vice_vault", name: "Vice", role: "Tactical Leader", avatar: "🔫", color: "rose", text: "Hurry up. Their strike teams are already moving." }],
+      choices: [{ id: "vault_hack", label: "Initiate Terminal Hack", triggerHackingPuzzleType: "sanctuary", outcomeNarrative: "You connect your cyberdeck to the primary ICE matrix.", variant: "cyan" }]
+    }}
+  },
+  prologue_escape: {
+    id: "prologue_escape", poiId: "relic_altar", poiName: "Mysterious Relic Altar", districtId: "data_vault",
+    title: "PROLOGUE FINALE: ESCAPE", initialStepId: "officer", linkedQuestId: "prologue", linkedStageId: "prologue_escape",
+    steps: { officer: {
+      id: "officer", stepTitle: "CAPTURED ARES OFFICER", bannerTitle: "TRACKER'S BETRAYAL EXPOSED",
+      bannerImage: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800",
+      narrativeText: "Tracker lies dead beside the breached altar. His decrypted datapad proves he intended to abandon the squad as corporate scapegoats. A captured Ares officer has opened the service tunnels. Decide his fate and escape with Vice.",
+      companions: [{ id: "vice_escape", name: "Vice", role: "Wounded Tactical Leader", avatar: "🔫", color: "rose", text: "The blast doors are open and now we know the truth. What happens to the witness, rookie?" }],
+      choices: [
+        { id: "escape_execute", label: "[Double Tap] Execute the Officer", completionAction: "prologue:escaped", completeQuestId: "prologue", clearParty: true, unlockDistrictId: "aurus", targetPOIId: "hideout", outcomeNarrative: "You eliminate the witness, salvage Tracker's gear, and escape with Vice into the Aurus slums.", variant: "rose" },
+        { id: "escape_mind", label: "[Mindmance] Subjugate and Wipe Memory", completionAction: "prologue:escaped", completeQuestId: "prologue", clearParty: true, grantsMindmancerSkill: 1, unlockDistrictId: "aurus", targetPOIId: "hideout", outcomeNarrative: "You erase the officer's memory and escape through the service tunnels with Vice.", variant: "purple" },
+        { id: "escape_sedate", label: "[Sedate] Inject Sedative and Flee", completionAction: "prologue:escaped", completeQuestId: "prologue", clearParty: true, unlockDistrictId: "aurus", targetPOIId: "hideout", outcomeNarrative: "The officer collapses under the sedative. You take Tracker's gear and escape to Aurus.", variant: "emerald" }
+      ]
+    }}
+  },
   relic_altar: {
     poiId: "relic_altar",
     poiName: "Mysterious Relic Altar",
-    districtId: "conduit09",
+    districtId: "data_vault",
     title: "ANOMALY SEQUENCE: OBSIDIAN ALTAR",
     initialStepId: "intro",
     linkedQuestId: "prologue",
-    linkedStageId: "p_s3",
+    linkedStageId: "prologue_relic_altar",
     steps: {
       intro: {
         id: "intro",
@@ -304,152 +475,17 @@ export const DEFAULT_POI_INTERACTIVE_SCENES: Record<string, POIInteractiveEvent>
           {
             id: "opt_combat_start",
             label: "🔮 [Wield the Relic's Mindmancy] Engage Ambushers",
-            targetStepId: "combat",
-            triggerCombatEncounterId: "ares_ambush",
+            unlockMindmancer: true,
+            maxHpDelta: -25,
+            combat: {
+              enemyName: "Ares Corporate Enforcers (Ambush)",
+              enemyHp: 160,
+              enemyShields: 20,
+              turnLog: "Ares Corporate Enforcers breach the sanctuary and open fire.",
+              victorySceneId: "prologue_escape",
+              victoryCompletionAction: "relic_altar:ambush_survived"
+            },
             variant: "purple"
-          }
-        ]
-      }
-    }
-  },
-
-  ventilation_shaft: {
-    poiId: "ventilation_shaft",
-    poiName: "Level B4 Ventilation Shaft",
-    districtId: "conduit09",
-    title: "CONDUIT 09 INFILTRATION CHUTE",
-    initialStepId: "entry",
-    linkedQuestId: "prologue",
-    linkedStageId: "p_s1",
-    steps: {
-      entry: {
-        id: "entry",
-        badgeLabel: "SUB-SURFACE SECTOR ACCESS",
-        stepTitle: "CONDUIT 09 PERIMETER",
-        bannerTitle: "RUSTED VENTILATION CHUTE & EXHAUST GRATE",
-        bannerImage: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=800",
-        narrativeText: "The air in the maintenance shaft is thick with steam and ionized exhaust. A heavy reinforced steel grating blocks the duct opening into Ares Biotech's server vaults. Vice and Tracker wait behind you, checking laser charges.",
-        companions: [
-          {
-            id: "vice_vent",
-            name: "Vice",
-            role: "Point Scout",
-            avatar: "🔫",
-            color: "rose",
-            text: "Screws are rusted tight. Either pry it open with raw leverage, or squeeze through the narrow air scrubber bypass."
-          },
-          {
-            id: "tracker_vent",
-            name: "Tracker",
-            role: "Combat Hacker",
-            avatar: "📟",
-            color: "amber",
-            text: "Ares surveillance drones cycle every four minutes. Whatever you do, make it quick."
-          }
-        ],
-        choices: [
-          {
-            id: "v_pry",
-            label: "🔧 [Strength 10] Pry open the grating with your crowbar",
-            checkType: "str",
-            checkValue: 10,
-            outcomeNarrative: "With a grinding screech, the rusted bolts shear off, opening the main conduit shaft.",
-            grantsXP: 25,
-            targetPOIId: "blast_door",
-            variant: "cyan"
-          },
-          {
-            id: "v_squeeze",
-            label: "🏃 [Dexterity 11] Squeeze through narrow maintenance air-filter",
-            checkType: "dex",
-            checkValue: 11,
-            outcomeNarrative: "You slip silently through the grease trap and drop behind the heavy gate.",
-            grantsXP: 30,
-            targetPOIId: "blast_door",
-            variant: "emerald"
-          },
-          {
-            id: "v_banter",
-            label: "💬 [Squad Check-In] Talk with Vice and Tracker",
-            targetStepId: "squad_banter",
-            variant: "amber"
-          }
-        ]
-      },
-      squad_banter: {
-        id: "squad_banter",
-        badgeLabel: "SQUAD COMMS ACTIVE",
-        stepTitle: "INFILTRATION HUD CHATTER",
-        bannerTitle: "SQUAD BRIEFING // SECTOR CONDUIT",
-        bannerImage: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800",
-        narrativeText: "Vice adjusts her holographic tactical visor, scanning the blueprint coordinates of Ares Sector 9.",
-        companions: [
-          {
-            id: "vice_plan",
-            name: "Vice",
-            role: "Point Scout",
-            avatar: "🔫",
-            color: "rose",
-            text: "Our payday is on that central datapad. Stick close, watch the corners, and don't touch anything glowing unless you want to lose a limb."
-          }
-        ],
-        choices: [
-          {
-            id: "v_return",
-            label: "↩️ Return to Grate Entry",
-            targetStepId: "entry",
-            variant: "cyan"
-          }
-        ]
-      }
-    }
-  },
-
-  blast_door: {
-    poiId: "blast_door",
-    poiName: "Reinforced Hydraulic Blast Door",
-    districtId: "conduit09",
-    title: "LEVEL B4 SECURITY GATEWAY",
-    initialStepId: "door_approach",
-    linkedQuestId: "prologue",
-    linkedStageId: "p_s2",
-    steps: {
-      door_approach: {
-        id: "door_approach",
-        badgeLabel: "HEAVY BULKHEAD SECURED",
-        stepTitle: "BULKHEAD FIREWALL ACTIVE",
-        bannerTitle: "ARES BIOTECH HEAVY TITANIUM BLAST GATE",
-        bannerImage: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800",
-        narrativeText: "A four-inch solid titanium blast door bars the entrance to the inner sanctuary. Hydraulic pistons hiss as emergency locking clamps clamp into the floor. The terminal pedestal hums with an orange access lock.",
-        companions: [
-          {
-            id: "tracker_door",
-            name: "Tracker",
-            role: "Combat Hacker",
-            avatar: "📟",
-            color: "amber",
-            text: "The bypass chip has an encrypted hash loop. Slice into the ICE node or burn the hydraulic pressure lines."
-          }
-        ],
-        choices: [
-          {
-            id: "bd_hack",
-            label: "💻 [Intelligence 11] Hack security terminal ICE subroutine",
-            checkType: "int",
-            checkValue: 11,
-            outcomeNarrative: "You inject a polymorphic brute-force packet. The status lights turn from flashing crimson to steady emerald, and the door groans open.",
-            grantsXP: 40,
-            targetPOIId: "relic_altar",
-            variant: "cyan"
-          },
-          {
-            id: "bd_plasma",
-            label: "🔥 [Plasma Torch] Overload door actuator solenoid",
-            checkType: "none",
-            outcomeNarrative: "Superheated blue plasma cuts the secondary locking pins. The door slams down, clearing your passage.",
-            grantsCredits: 50,
-            targetPOIId: "relic_altar",
-            variant: "rose"
           }
         ]
       }

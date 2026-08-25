@@ -62,7 +62,7 @@ import { GameProvider, useGame } from "./context/GameContext";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward, POIInteractiveEvent, POISceneStep, POISceneChoice, POICompanionDialogue, CustomPOIData } from "./types";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "./poiScenesData";
-import { DEFAULT_CAMPAIGN_QUESTS } from "./questsData";
+import { buildQuestCatalog, completeQuest, hydrateQuestSystem, synchronizeQuestProgress } from "./questEngine";
 import vicePortrait from "./assets/characters/vice/vice_portrait.png";
 import viceBody from "./assets/characters/vice/vice_body.png";
 import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
@@ -161,26 +161,8 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
     return q;
   };
 
-  // 1. Prologue
-  const prologueActive = state.activeQuests.some(q => q.includes("Prologue"));
-  const prologueCompleted = state.completedQuests.some(q => q.includes("Prologue"));
-  if (prologueActive || prologueCompleted) {
-    const q = getOrCreate("prologue", {
-      title: "Subsurface AI Catacombs",
-      category: "Main Quest",
-      description: "Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech.",
-      objectives: [{ id: "hack_terminal", text: "Hack cyber-vault terminal and retrieve crystals", current: prologueCompleted ? 1 : 0, target: 1, completed: prologueCompleted }],
-      rewards: [{ type: "credits", amount: 150 }, { type: "experience", amount: 100 }]
-    });
-    if (prologueCompleted) {
-      q.status = "COMPLETED";
-      q.objectives[0].current = 1;
-      q.objectives[0].completed = true;
-    } else {
-      q.status = "ACTIVE";
-    }
-  }
-
+  // Legacy quests below remain temporarily available while their authored
+  // definitions are migrated. Prologue is fully owned by DEFAULT_CAMPAIGN_QUESTS.
   // 2. Outcast Directive
   const outcastActive = state.activeQuests.some(q => q.includes("Outcast") || q.includes("Technical Signal Core"));
   const outcastCompleted = state.completedQuests.some(q => q.includes("Outcast"));
@@ -516,12 +498,12 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
   }
 
   // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
-  const campaignRegistry = state.campaignQuestsRegistry || [];
+  const campaignRegistry = buildQuestCatalog(state.campaignQuestsRegistry || []);
   for (const customQ of campaignRegistry) {
     const isCompleted = state.completedQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
     const isActive = state.activeQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
 
-    if (isActive || isCompleted) {
+    if (isActive || isCompleted || customQ.status !== "NOT_STARTED") {
       const q = getOrCreate(customQ.id, {
         title: customQ.title,
         category: (customQ.category === "Main Quest" ? "Main Quest" : "Side Quest") as any,
@@ -540,10 +522,20 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
         ]
       });
 
-      if (isCompleted) {
+      q.title = customQ.title;
+      q.description = customQ.description;
+      q.category = customQ.category === "Main Quest" ? "Main Quest" : "Side Quest";
+      q.objectives = (customQ.stages || []).map((s, idx) => ({
+        id: s.id || `stage_${idx}`,
+        text: s.title + (s.description ? `: ${s.description}` : ""),
+        current: isCompleted ? (s.targetCount || 1) : (s.currentCount || 0),
+        target: s.targetCount || 1,
+        completed: isCompleted || s.completed || (s.currentCount >= (s.targetCount || 1))
+      }));
+      if (isCompleted || customQ.status === "COMPLETED") {
         q.status = "COMPLETED";
       } else {
-        q.status = "ACTIVE";
+        q.status = isActive ? "ACTIVE" : customQ.status;
       }
       if (customQ.narrativeBriefing) {
         q.log = [customQ.narrativeBriefing];
@@ -1497,9 +1489,11 @@ function MainGame() {
         if (!currentStage) return;
         
         const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
+        const targetPoiIdLower = (currentStage.targetPOIId || "").toLowerCase();
         const targetDistrictLower = (currentStage.targetDistrict || "").toLowerCase();
         
         const matchesThisPOI = 
+          (targetPoiIdLower && targetPoiIdLower === currentPoiId) ||
           (targetPoiLower && (currentPoiName.includes(targetPoiLower) || currentPoiId.includes(targetPoiLower) || targetPoiLower.includes(currentPoiId))) ||
           (!targetPoiLower && targetDistrictLower && targetDistrictLower === currentDistrict);
           
@@ -1918,6 +1912,7 @@ function MainGame() {
       nextState.poi = "Mysterious Relic Altar";
       setActivePOIView("relic_altar");
       nextState.inventory.push("Ares Data Crystal");
+      nextState.completedPOIActions = [...(nextState.completedPOIActions || []), "terminal_hacking_puzzle:hacked"];
       nextState.experience += 50;
       setActivePopup({
         title: "DATABASE COPIED",
@@ -2813,6 +2808,27 @@ function MainGame() {
     }
   }, [gameState?.companions, gameState?.baseNPCs]);
 
+  // Quest definitions authored in Quest Studio own progression. World handlers
+  // only emit stable completedPOIActions event keys consumed by the quest engine.
+  useEffect(() => {
+    if (!gameState) return;
+    const synchronized = synchronizeQuestProgress(gameState);
+    const progressSignature = (state: GameState) => JSON.stringify(
+      (state.campaignQuestsRegistry || []).map(q => [
+        q.id,
+        q.status,
+        q.stages.map(stage => [stage.id, stage.currentCount, stage.completed])
+      ])
+    );
+    if (progressSignature(gameState) !== progressSignature(synchronized)) {
+      setGameState(synchronized);
+    }
+  }, [
+    gameState?.completedPOIActions?.join("|"),
+    gameState?.inventory.join("|"),
+    gameState?.campaignQuestsRegistry?.map(q => q.stages.map(stage => stage.completionAction || "").join(",")).join("|")
+  ]);
+
   // Scroll to latest logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2851,7 +2867,7 @@ function MainGame() {
       // Clean migration of old state variables
       const isBlade = state.archetype === "Cyber-Blade";
       const isMage = state.archetype === "Techno-Mage";
-      const migratedState: GameState = {
+      const migratedState: GameState = hydrateQuestSystem({
         district: "aurus",
         poi: "Main Headquarters (The Hideout)",
         hp: 100,
@@ -2891,7 +2907,7 @@ function MainGame() {
           trinket: null
         },
         ...state
-      };
+      });
 
       // Migrate old weapon slot if exists
       if (migratedState.equipment && (migratedState.equipment as any).weapon) {
@@ -3104,7 +3120,7 @@ function MainGame() {
 
     setGameState(prev => {
       // If gameState is not loaded (e.g. from main menu), initialize with the Cyber-Blade archetype
-      const current = prev || getInitialState(ARCHETYPES[0]);
+      const current = hydrateQuestSystem(prev || getInitialState(ARCHETYPES[0]));
       
       return {
         ...current,
@@ -3264,7 +3280,7 @@ function MainGame() {
   // Deploy fresh agent from archetype select
   const handleDeployAgent = async () => {
     setIsLoading(true);
-    const initial = getInitialState(selectedArchetype);
+    const initial = hydrateQuestSystem(getInitialState(selectedArchetype));
     
     // Set custom properties
     initial.playerName = customName.trim() || "Kaelen";
@@ -3757,7 +3773,8 @@ function MainGame() {
         const stageId = parts[1];
         const pathId = parts[2];
 
-        const registry = nextState.campaignQuestsRegistry || [];
+        const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+        nextState.campaignQuestsRegistry = registry;
         const quest = registry.find(q => q.id === questId);
         if (quest) {
           const stage = quest.stages?.find(s => s.id === stageId || !s.completed);
@@ -4191,22 +4208,15 @@ function MainGame() {
 
         narrative += `\n\n★ THREAT EXTERMINATED: ${combat.enemyName} collasped with heavy spark leaks. You recover +${rewardC}¤ and earn +${expGained} XP!`;
 
-        // Check Prologue map transitions on combat victory
-        if (combat.enemyName.includes("Security Drones") || combat.enemyName.includes("Autonomous Security Drones")) {
-          setSquadDialogue({
-            sceneId: "transit_ridge_to_vault",
-            nodeId: "start"
-          });
-          narrative += `\n\n🛡️ SECURITY BYPASSED: The final security drone sparks and explodes! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector!' Talk to your squad to initiate the transition briefing.`;
+        // Authored scenes can declaratively control post-combat progression.
+        if (combat.victorySceneId) {
+          if (combat.victoryCompletionAction) {
+            nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), combat.victoryCompletionAction]));
+          }
+          setActiveDialogue(combat.victorySceneId);
+          const victoryScene = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) }[combat.victorySceneId];
+          if (victoryScene) setRelicStep(victoryScene.initialStepId as any);
         }
-        else if (combat.enemyName.includes("Corporate Enforcers") || combat.enemyName.includes("Ambush")) {
-          nextState.poi = "Mysterious Relic Altar";
-          setActivePOIView("relic_altar");
-          setActiveDialogue("post_combat_tracker");
-          nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
-          narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
-        }
-
         // Check Quest item collection
         if (combat.enemyName === "Toxic Sludge Behemoth" && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
           nextState.inventory.push("Acid Beast Core");
@@ -4372,12 +4382,8 @@ function MainGame() {
           const scene = allScenes[sceneId];
           if (scene) {
             const startStep = stepId || scene.initialStepId;
-            nextState.activePOIScene = {
-              sceneId: scene.id,
-              currentStepId: startStep,
-              history: [startStep],
-              variables: {}
-            };
+            setActiveDialogue(sceneId);
+            setRelicStep(startStep as any);
             setGameState(nextState);
             setLogs(prev => [
               ...prev,
@@ -4404,7 +4410,8 @@ function MainGame() {
           const stageId = match[2].trim();
           const pathId = match[3] ? match[3].trim() : undefined;
 
-          const registry = nextState.campaignQuestsRegistry || DEFAULT_CAMPAIGN_QUESTS;
+          const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+          nextState.campaignQuestsRegistry = registry;
           const quest = registry.find(q => q.id === questId);
           const stage = quest?.stages?.find(s => s.id === stageId);
 
@@ -4415,12 +4422,8 @@ function MainGame() {
               const scene = allScenes[stage.linkedPOISceneId];
               if (scene) {
                 const startStep = stage.linkedPOISceneStepId || scene.initialStepId;
-                nextState.activePOIScene = {
-                  sceneId: scene.id,
-                  currentStepId: startStep,
-                  history: [startStep],
-                  variables: {}
-                };
+                setActiveDialogue(stage.linkedPOISceneId);
+                setRelicStep(startStep as any);
                 setGameState(nextState);
                 setIsLoading(false);
                 return;
@@ -4435,12 +4438,8 @@ function MainGame() {
                   const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
                   const scene = allScenes[path.linkedPOISceneId];
                   if (scene) {
-                    nextState.activePOIScene = {
-                      sceneId: scene.id,
-                      currentStepId: scene.initialStepId,
-                      history: [scene.initialStepId],
-                      variables: {}
-                    };
+                    setActiveDialogue(path.linkedPOISceneId);
+                    setRelicStep(scene.initialStepId as any);
                     setGameState(nextState);
                     setIsLoading(false);
                     return;
@@ -4748,453 +4747,7 @@ function MainGame() {
         }
       }
       
-      // ---- PROLOGUE MAP 1: SUBSURFACE AI CATACOMBS (CONDUIT 09) ----
-      
-      // Ventilation Shaft
-      else if (cleanAction.includes("slip through vent")) {
-        const dex = nextState.attributes?.dex || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + dex;
-        if (roll >= 23) {
-          nextState.experience += 25;
-          nextState.completedPOIActions.push("ventilation_shaft:slip");
-          narrative = `🎯 DEX CHECK SUCCESS (Roll: ${roll} vs 23): You calibrate your speed servos perfectly, sliding through the spinning blades during the sub-second frequency lull! Vice whispers: 'Damn, kid. Clean slip.' Earned +25 XP.`;
-          nextState.poi = "Security Sub-Terminal";
-          setActivePOIView("security_terminal");
-          setActivePopup({
-            title: "SLIPPED THROUGH VENTILATION",
-            subtitle: "DEX CHECK SUCCESS",
-            type: "transit",
-            text: `You calibrated your speed servos perfectly (Roll: ${roll} vs 23) and slipped safely through the giant spinning rotor blades! You drop down into the glowing monitoring sub-station. Earned +25 XP.`
-          });
-        } else {
-          const dmg = 20;
-          nextState.hp = Math.max(10, nextState.hp - dmg);
-          nextState.experience += 10;
-          setVentFailed(true);
-          narrative = `⚠️ DEX CHECK FAILURE (Roll: ${roll} vs 23): The heavy spinning fan blade strikes your back chassis! Sparks fly as you are pinned inside the duct. Dealt ${dmg} kinetic damage. Alarms begin to beep softly! You are STUCK in the ventilation shaft. You must choose an emergency override response immediately before security arrives.`;
-          setActivePopup({
-            title: "FAN BLADES INTERCEPTED",
-            subtitle: "DEX CHECK FAILURE",
-            type: "check_failure",
-            text: `The massive spinning fan blade strikes your back chassis (Roll: ${roll} vs 23)! Sparks fly as you are pinned inside the duct. You suffered 20 kinetic damage. Solve the lockdown immediately!`
-          });
-        }
-      }
-      else if (cleanAction.includes("force fan blades (str check)") || cleanAction.includes("force fan")) {
-        const str = nextState.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + str;
-        nextState.completedPOIActions.push("ventilation_shaft:slip");
-        if (roll >= 15) {
-          narrative = `💥 STR CHECK SUCCESS (Roll: ${roll} vs 15): With a guttural growl, you wrench the auxiliary hydraulic shaft. The massive blades halt with a screeching metallic tear! You scramble through, but the noise was immense! Alarm beacons begin to spin.`;
-          nextState.poi = "Security Sub-Terminal";
-          setActivePOIView("security_terminal");
-          setVentFailed(false);
-          
-          // Trigger alarm combat!
-          nextState.combatState = {
-            enemyName: "Ares Sentry Drone (Alerted)",
-            enemyHp: 40,
-            enemyMaxHp: 40,
-            enemyShields: 10,
-            enemyMaxShields: 10,
-            isActive: true,
-            turnLog: "The screeching fan tear has alerted the nearby sector! A rapid sentry drone deploys from the ceiling vents with guns hot!"
-          };
-          setActivePopup({
-            title: "FAN BLADES WRENCHED",
-            subtitle: "STR CHECK SUCCESS",
-            type: "check_success",
-            text: `With raw strength (Roll: ${roll} vs 15), you wrenched the hydraulic rotor! The blade screeched and seized, letting you scramble through. However, the deafening noise has alerted an autonomous security patrol! Prepare for combat!`
-          });
-        } else {
-          narrative = `❌ STR CHECK FAILURE (Roll: ${roll} vs 15): You attempt to force the rotor, but the titanium alloy is too rigid! The blades spin faster, tearing into your cybernetics for 15 damage and sounding the sector alarms! Sentry units are converging!`;
-          nextState.hp = Math.max(10, nextState.hp - 15);
-          nextState.poi = "Security Sub-Terminal";
-          setActivePOIView("security_terminal");
-          setVentFailed(false);
-          
-          nextState.combatState = {
-            enemyName: "Ares Security Drone (Group Ambush)",
-            enemyHp: 50,
-            enemyMaxHp: 50,
-            enemyShields: 15,
-            enemyMaxShields: 15,
-            isActive: true,
-            turnLog: "Alarms are blaring! You fall out of the ventilation shaft right in front of an alerted security patrol!"
-          };
-          setActivePopup({
-            title: "ROTOR OVERRIDE FAILURE",
-            subtitle: "STR CHECK FAILURE",
-            type: "check_failure",
-            text: `The titanium blade was too rigid (Roll: ${roll} vs 15)! Your arm joints suffered 15 fatigue damage, and sector alarms have been triggered. Hostile units are converging on your position!`
-          });
-        }
-      }
-      else if (cleanAction.includes("trigger emp burst") || cleanAction.includes("emp explosion")) {
-        nextState.completedPOIActions.push("ventilation_shaft:slip");
-        narrative = `⚡ LOUD EMP EXPLOSION: You override your cyberdeck battery, releasing a raw, unstable EMP blast! The ventilation fan sparks violently and explodes in a shower of blue fire. You are thrown forward into the Security Sub-Terminal, taking 10 damage from the shockwave. The blast has completely fried the sector's grid, sounding emergency sirens!`;
-        nextState.hp = Math.max(10, nextState.hp - 10);
-        nextState.poi = "Security Sub-Terminal";
-        setActivePOIView("security_terminal");
-        setVentFailed(false);
-        
-        nextState.combatState = {
-          enemyName: "Alerted Patrol Guard (EMP Intercept)",
-          enemyHp: 45,
-          enemyMaxHp: 45,
-          enemyShields: 10,
-          enemyMaxShields: 10,
-          isActive: true,
-          turnLog: "The EMP explosion blacked out the corridor! Alerted patrol guards breach the entrance with sub-machine railguns flashing!"
-        };
-        setActivePopup({
-          title: "EMP BLAST OVERRIDE",
-          subtitle: "SYSTEM GRID OVERLOAD",
-          type: "check_failure",
-          text: "You overloaded your cyberdeck's cognitive battery cell, releasing a blind high-frequency EMP blast! The rotor exploded in blue sparks, blowing you into the sub-station with 10 damage. A heavy security patrol has breached the darkened intersection!"
-        });
-      }
-      else if (cleanAction.includes("hack fan console (int check)") || cleanAction.includes("hack fan")) {
-        const intVal = nextState.attributes?.int || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
-        nextState.completedPOIActions.push("ventilation_shaft:slip");
-        if (roll >= 16) {
-          narrative = `💾 INT CHECK SUCCESS (Roll: ${roll} vs 16): You patch your neural link directly into the exposed fan relay. Executing a quiet loop-bypass script, the heavy blades spin down to a complete, silent halt. You slide through safely. Vice pats your shoulder: 'Smart hack, rookie.'`;
-          nextState.poi = "Security Sub-Terminal";
-          setActivePOIView("security_terminal");
-          setVentFailed(false);
-          setActivePopup({
-            title: "CONSOLE RELAY OVERRIDE",
-            subtitle: "INT CHECK SUCCESS",
-            type: "check_success",
-            text: `You bypassed the local airlock controller relay (Roll: ${roll} vs 16)! The blades spun down to a silent, complete halt, letting you slide through with perfect stealth.`
-          });
-        } else {
-          narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 16): Your override script causes a short circuit! A small pop sounds, and the fan controller starts burning. You take 10 kinetic damage, and the sparks alert a security drone!`;
-          nextState.hp = Math.max(10, nextState.hp - 10);
-          nextState.poi = "Security Sub-Terminal";
-          setActivePOIView("security_terminal");
-          setVentFailed(false);
-          
-          nextState.combatState = {
-            enemyName: "Ares Sentry Drone (Short-Circuit Alert)",
-            enemyHp: 40,
-            enemyMaxHp: 40,
-            enemyShields: 5,
-            enemyMaxShields: 5,
-            isActive: true,
-            turnLog: "The burning fan controller sounds a local short-circuit alarm! A patrol drone hovers down to investigate!"
-          };
-          setActivePopup({
-            title: "RELAY FIREWALL FAULT",
-            subtitle: "INT CHECK FAILURE",
-            type: "check_failure",
-            text: `A severe short-circuit feedback shocked your neural deck (Roll: ${roll} vs 16), dealing 10 damage. The burning relay console triggered a silent short-circuit alarm, summoning an investigation drone!`
-          });
-        }
-      }
-      else if (nextState.district === "conduit09" && (cleanAction.includes("talk to vice") || cleanAction.includes("talk to tracker") || cleanAction.includes("banter"))) {
-        setSquadDialogue({ sceneId: "banter", nodeId: "start" });
-        setIsLoading(false);
-        return;
-      }
-      else if (cleanAction.includes("scavenge rusted emergency locker") || cleanAction.includes("emergency locker")) {
-        nextState.inventory.push("Cyber-Ammo");
-        nextState.inventory.push("Nano Med-Stim (Heal)");
-        nextState.hp = Math.min(nextState.maxHp, nextState.hp + 15);
-        nextState.completedPOIActions.push("ventilation_shaft:scavenge");
-        narrative = `🔍 EMERGENCY SUPPLIES SCAVENGED: You crack open a rusty corporate locker on the ventilation catwalk! Inside you find a box of high-density Cyber-Ammo (+6 Gun Damage) and a Nano Med-Stim (Heal) (+60 HP). You also patch your minor armor scrapings, restoring +15 HP!`;
-        setActivePopup({
-          title: "EMERGENCY SUPPLIES SCAVENGED",
-          subtitle: "CONDUIT 09 LOCKER LOOT",
-          type: "loot",
-          text: "You cracked open a rusty emergency locker on the catwalk. Inside, you secured high-density Cyber-Ammo (+6 Gun Damage), a Nano Med-Stim (Heal) (+60 HP), and patched your armor scrapings (+15 HP)!"
-        });
-      }
-      else if (cleanAction.includes("dismantle ventilation casing") || cleanAction.includes("ventilation casing")) {
-        nextState.inventory.push("Carbon Fiber Armor Plates");
-        nextState.completedPOIActions.push("ventilation_shaft:casing");
-        narrative = `🛠️ CASING SALVAGED: Using a laser-ratchet, you carefully unscrew and dismantle the lightweight, carbon-reinforced ventilation housing. This is high-grade aerospace defense plating! You acquire Carbon Fiber Armor Plates (Grants +30 starting Combat Shields).`;
-        setActivePopup({
-          title: "CASING DISMANTLED",
-          subtitle: "CATWALK METAL RECOVERED",
-          type: "loot",
-          text: "Using a laser-ratchet, you dismantled the carbon-reinforced ventilation casing. You salvaged a piece of premium Carbon Fiber Armor Plates (+30 starting Combat Shields)!"
-        });
-      }
-
-      // Security Sub-Terminal
-      else if (cleanAction.includes("bypass sub-terminal")) {
-        const intVal = nextState.attributes?.int || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + intVal;
-        nextState.completedPOIActions.push("security_terminal:bypass");
-        if (roll >= 23) {
-          nextState.experience += 25;
-          nextState.inventory.push("Rusted Circuitry");
-          narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 23): You slice the alarm sub-grid gracefully, rendering the outer perimeter completely blind! You salvage a piece of valuable 'Rusted Circuitry' copper scrap from the motherboard. Tracker grunts: 'Efficient work.' Earned +25 XP.`;
-          nextState.poi = "Heavy Blast Door";
-          setActivePOIView("blast_door");
-          setActivePopup({
-            title: "SUB-TERMINAL BYPASSED",
-            subtitle: "INT CHECK SUCCESS",
-            type: "transit",
-            text: `You sliced the alarm sub-grid with stealth precision (Roll: ${roll} vs 23), rendering local cameras completely blind! You salvaged a piece of 'Rusted Circuitry' copper scrap. Transiting to the Heavy Blast Door. Earned +25 XP.`
-          });
-        } else {
-          nextState.mana = Math.max(0, nextState.mana - 15);
-          nextState.experience += 10;
-          narrative = `⚠️ INT CHECK FAILURE (Roll: ${roll} vs 23): An electrostatic firewall feedback discharges directly into your deck! Your mana flow drops by -15. But you force an emergency override to clear the block. Earned +10 XP.`;
-          nextState.poi = "Heavy Blast Door";
-          setActivePOIView("blast_door");
-          setActivePopup({
-            title: "SUB-GRID FIREWALL BACKFIRE",
-            subtitle: "INT CHECK FAILURE",
-            type: "check_failure",
-            text: `An electrostatic firewall backfired directly into your cyberdeck (Roll: ${roll} vs 23)! Your mana pool dropped by -15. However, you successfully forced an emergency transit shunt to the Heavy Blast Door.`
-          });
-        }
-      }
-      else if (cleanAction.includes("search terminal wreckage")) {
-        nextState.completedPOIActions.push("security_terminal:wreckage");
-        if (Math.random() > 0.4) {
-          nextState.inventory.push("Rusted Circuitry");
-          narrative = "🔍 SCAVENGE SUCCESS: You unscrew the auxiliary panel and slide out a piece of copper 'Rusted Circuitry' scrap! This can be recycled at the Apex Armory.";
-          setActivePopup({
-            title: "WRECKAGE SALVAGED",
-            subtitle: "TERMINAL SCRAP ACQUIRED",
-            type: "loot",
-            text: "You unscrewed the charred sub-terminal motherboard panel and safely extracted a piece of recyclable 'Rusted Circuitry' copper scrap!"
-          });
-        } else {
-          narrative = "🔍 SCAVENGE EMPTY: The sub-terminal circuits are completely charred and useless.";
-          setActivePopup({
-            title: "WRECKAGE STRIPPED",
-            subtitle: "SCAVENGE ENCOUNTERED EMPTY",
-            type: "check_failure",
-            text: "The sub-terminal circuits are completely melted and charred of anything recyclable."
-          });
-        }
-      }
-      else if (cleanAction.includes("hack secure weapons locker") || cleanAction.includes("weapons locker")) {
-        nextState.inventory.push("Tactical Cyber-SMG");
-        nextState.completedPOIActions.push("security_terminal:locker");
-        narrative = `🔓 WEAPONS LOCKER OVERRIDDEN: You link your cyberdeck directly to the armory cabinet's heavy locking pins. Following a brief bypass, the door swings open to reveal a polished, matte-black Tactical Cyber-SMG! You now have a lethal firearm in your equipment deck.`;
-        setActivePopup({
-          title: "ARMORY ACCESS UNLOCKED",
-          subtitle: "WEAPONS LOCKER BYPASS",
-          type: "loot",
-          text: "You bypassed the secure weapons locker mainframe interface! Inside, you secured a pristine, matte-black Tactical Cyber-SMG! [Your basic combat range is expanded to 3, and base combat damage is increased to 24!]"
-        });
-      }
-      else if (cleanAction.includes("siphon auxiliary thermal battery") || cleanAction.includes("thermal battery")) {
-        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 35);
-        nextState.completedPOIActions.push("security_terminal:battery");
-        narrative = `⚡ POWER RECOVERED: You stick direct conductive copper lead clips into the humming sub-grid thermal battery cell. A warm, blue wave of raw electrostatic currents surge back into your cognitive deck, restoring +35 Mana!`;
-        setActivePopup({
-          title: "THERMAL CELL ENERGY SIPHONED",
-          subtitle: "AUXILIARY CONDENSER SIPHON",
-          type: "loot",
-          text: "You connected direct conductive clamps to the battery capacitor. A high-voltage electrostatic wave surged back into your cognitive deck, restoring +35 Mana!"
-        });
-      }
-
-      // Heavy Blast Door
-      else if (cleanAction.includes("pry open valve") || cleanAction.includes("pry open door")) {
-        const strVal = nextState.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + strVal;
-        nextState.completedPOIActions.push("blast_door:pry");
-        if (roll >= 23) {
-          nextState.experience += 25;
-          narrative = `🎯 STR CHECK SUCCESS (Roll: ${roll} vs 23): You grip the mechanical hydraulic valve and twist it with raw hydraulic force! The massive titanium doors hiss open. Vice nods: 'Whoa. Mind your power limits, brute!' Earned +25 XP.`;
-          nextState.poi = "Next Section Gate (Transit)";
-          setActivePOIView("section_gate");
-          setActivePopup({
-            title: "BLAST GATE VALVE PRYED",
-            subtitle: "STR CHECK SUCCESS",
-            type: "transit",
-            text: `You twisted the heavy hydraulic rotary valve with extreme physical force (Roll: ${roll} vs 23)! The thick blast doors hiss open. Proceeding to the transit gate section. Earned +25 XP.`
-          });
-        } else {
-          const dmg = 10;
-          nextState.hp = Math.max(10, nextState.hp - dmg);
-          nextState.experience += 10;
-          narrative = `⚠️ STR CHECK FAILURE (Roll: ${roll} vs 23): Your hydraulic servos scream under the strain! You suffer ${dmg} points of internal system fatigue. Tracker steps up and uses his manual heavy cutter to melt the latch. Earned +10 XP.`;
-          nextState.poi = "Next Section Gate (Transit)";
-          setActivePOIView("section_gate");
-          setActivePopup({
-            title: "VALVE COUPLING STUCK",
-            subtitle: "STR CHECK FAILURE",
-            type: "check_failure",
-            text: `Your joints failed to budge the rusted hydraulic valve (Roll: ${roll} vs 23), suffering 10 physical fatigue damage. Tracker was forced to use his heavy plasma cutter to bypass the seal. Transited to the Next Section Gate.`
-          });
-        }
-      }
-      else if (cleanAction.includes("raid security guard barracks") || cleanAction.includes("guard barracks")) {
-        nextState.inventory.push("Nano Med-Stim (Heal)");
-        nextState.inventory.push("Tactical Flak Armor");
-        nextState.completedPOIActions.push("blast_door:barracks");
-        narrative = `🎒 BARRACKS LOOTED: You slip into an abandoned security guard shift-room. You pry open a steel footlocker and find a fresh Nano Med-Stim (Heal) (+60 HP) and a heavy, high-tech piece of Tactical Flak Armor (+45 starting Combat Shields)!`;
-        setActivePopup({
-          title: "SECURITY BARRACKS LOOTED",
-          subtitle: "GUARD ROOM SEARCH",
-          type: "loot",
-          text: "You broke into the abandoned barracks shift footlocker. You salvaged a Nano Med-Stim (Heal) (+60 HP) and heavy Tactical Flak Armor (+45 starting Combat Shields)!"
-        });
-      }
-      else if (cleanAction.includes("interface with corporate supply bin") || cleanAction.includes("supply bin")) {
-        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 30);
-        nextState.credits += 45;
-        nextState.completedPOIActions.push("blast_door:bin");
-        narrative = `💰 CASH & BATTERIES DISCOVERED: You jack into an encrypted Ares corporate supply locker. The terminal unlocks, dispensing direct battery cells (+30 Mana) and a secure voucher credit-chip worth +45¤!`;
-        setActivePopup({
-          title: "SUPPLY BIN ACCESS OVERRIDDEN",
-          subtitle: "SECURE FILES RAIDED",
-          type: "loot",
-          text: "You sliced the corporate supply cabinet security deck. It dispensed high-capacity battery units (+30 Mana) and secure union credit vouchers worth +45¤!"
-        });
-      }
-
-      // Next Section Gate (Transit to Map 2)
-      else if (cleanAction.includes("proceed to shatter-ridge core")) {
-        setSquadDialogue({
-          sceneId: "transit_conduit_to_ridge",
-          nodeId: "start"
-        });
-        narrative = "🚀 TRANSITING DISTRICT: Hydraulic gears spin as you release the latch on the heavy transit seal door. Vesper, Vice, and Tracker gather to outline their insertion strategy.";
-      }
-
-      // ---- PROLOGUE MAP 2: SHATTER-RIDGE CORE ----
-      else if (cleanAction.includes("overclock security gate") || cleanAction.includes("overclock gate")) {
-        const intVal = nextState.attributes?.int || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + Math.floor(intVal / 4);
-        nextState.completedPOIActions.push("shatter_ridge_security_post:gate");
-        if (roll >= 16) {
-          nextState.experience += 25;
-          narrative = `🎯 INT CHECK SUCCESS (Roll: ${roll} vs 16): You overclock the security gate grid capacitors, causing a localized power short-circuit that melts the security beam nodes! Earned +25 XP.`;
-          setActivePopup({
-            title: "GATE COUPLINGS MELTED",
-            subtitle: "INT CHECK SUCCESS",
-            type: "check_success",
-            text: `You overclocked the security gate capacitors perfectly (Roll: ${roll} vs 16)! A surge of high-voltage sparks melted the defensive beam grids, disabling the alarm tripwires permanently. Earned +25 XP.`
-          });
-        } else {
-          nextState.mana = Math.max(0, nextState.mana - 15);
-          nextState.hp = Math.max(10, nextState.hp - 10);
-          narrative = `❌ INT CHECK FAILURE (Roll: ${roll} vs 16): The security gate console registers unauthorized decryption! An electrostatic feedback shock drains -15 Mana and deals 10 damage before you force-shut the grid down.`;
-          setActivePopup({
-            title: "GATE RESISTOR SHOCK",
-            subtitle: "INT CHECK FAILURE",
-            type: "check_failure",
-            text: `Decryption attempt failed (Roll: ${roll} vs 16)! A feedback wave surged into your cortex, dealing 10 physical shock damage and draining -15 Mana before you successfully shut down the local subnet alarm nodes.`
-          });
-        }
-      }
-      else if (cleanAction.includes("scavenge security chest") || cleanAction.includes("security chest")) {
-        nextState.inventory.push("Exo-Plated Mesh Armor");
-        nextState.inventory.push("Nano Med-Stim (Heal)");
-        nextState.completedPOIActions.push("shatter_ridge_security_post:scavenge");
-        narrative = `🔍 CHEST SECURED: You crack open a steel corporate chest behind the guard barrier. Inside, you salvage Exo-Plated Mesh Armor (+40 Max HP, +30 Shields, +4 Str) and a Nano Med-Stim (Heal) (+60 HP)!`;
-        setActivePopup({
-          title: "SECURITY CHEST UNLOCKED",
-          subtitle: "SCAVENGE SUCCESS",
-          type: "loot",
-          text: "You broke into the steel corporate security locker! Inside, you secured premium Exo-Plated Mesh Armor (+40 Max HP, +30 Shields, +4 Str) and a fresh Nano Med-Stim (Heal) (+60 HP)!"
-        });
-      }
-      else if (cleanAction.includes("pep-talk") || cleanAction.includes("pep talk") || cleanAction.includes("inspiration dialogue")) {
-        setSquadDialogue({ sceneId: "peptalk", nodeId: "start" });
-        setIsLoading(false);
-        return;
-      }
-      else if (cleanAction.includes("move to reactor well") || cleanAction.includes("reactor well")) {
-        nextState.poi = "Shatter-Ridge Reactor Well";
-        setActivePOIView("shatter_ridge_reactor_well");
-        narrative = `🚀 TRANSITING SUB-SECTION: You slip past the deactivated checkpoint and move deeper down the steel catwalk. Eerie turquoise glowing steam rises from the toxic reactor pool.`;
-        setActivePopup({
-          title: "REACTOR WELL ACCESSED",
-          subtitle: "SUB-SECTION TRANSIT",
-          type: "transit",
-          text: "You move past the security checkpoint and approach the Shatter-Ridge Reactor Well. Analyze the cargo lever mechanism and the bio-reactor core."
-        });
-      }
-      else if (cleanAction.includes("pull cargo lever") || cleanAction.includes("cargo lever")) {
-        const strVal = nextState.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + Math.floor(strVal / 4);
-        nextState.completedPOIActions.push("shatter_ridge_reactor_well:lever");
-        if (roll >= 15) {
-          nextState.experience += 25;
-          nextState.inventory.push("Unstable Plasma Core");
-          narrative = `🎯 STR CHECK SUCCESS (Roll: ${roll} vs 15): You grip the mechanical lever and pull down with hydraulic assist! The crane groans and lowers the cargo crate safely onto the catwalk, allowing you to salvage an Unstable Plasma Core! Earned +25 XP.`;
-          setActivePopup({
-            title: "CARGO CRATE SECURED",
-            subtitle: "STR CHECK SUCCESS",
-            type: "loot",
-            text: `You pulled down the massive hydraulic cargo crane lever (Roll: ${roll} vs 15)! The crane groaned and deposited the container right in front of you. Inside, you secured an Unstable Plasma Core (+10 Max HP, +10 Max Mana, +4 Str, +4 Dex)! Earned +25 XP.`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 15);
-          narrative = `❌ STR CHECK FAILURE (Roll: ${roll} vs 15): You attempt to yank the rusted crane lever, but the heavy gears seize up and snap! Sparks explode in your face, dealing 15 kinetic damage and locking the cargo crate permanently.`;
-          setActivePopup({
-            title: "HYDRAULIC COUPLING FAULT",
-            subtitle: "STR CHECK FAILURE",
-            type: "check_failure",
-            text: `The mechanical lever seized up under your strain (Roll: ${roll} vs 15)! A heavy gear snapped, bursting sparks into your face for 15 kinetic damage and locking the cargo crate permanently.`
-          });
-        }
-      }
-      else if (cleanAction.includes("salvage bio-reactor core") || cleanAction.includes("bio-reactor core") || cleanAction.includes("salvage bio-reactor")) {
-        nextState.inventory.push("Smart-Targeting Visor");
-        nextState.completedPOIActions.push("shatter_ridge_reactor_well:reactor_core");
-        narrative = `🔍 CORE EXTRACTED: You carefully bypass the bio-reactor's external ventilation cooling vents and extract its ocular telemetry analyzer, securing a high-tech Smart-Targeting Visor (+15 Max Mana, +4 Dex, +4 Int)!`;
-        setActivePopup({
-          title: "TELEMETRY VISOR SALVAGED",
-          subtitle: "REACTOR CORE EXTRACTED",
-          type: "loot",
-          text: "You carefully bypassed the bio-cooler and dismantled the reactor's sensor stack! Inside, you secured a premium Smart-Targeting Visor (+15 Max Mana, +4 Dex, +4 Int)!"
-        });
-      }
-      else if (cleanAction.includes("consult squad") || cleanAction.includes("tactics")) {
-        setSquadDialogue({ sceneId: "tactics", nodeId: "start" });
-        setIsLoading(false);
-        return;
-      }
-      else if (cleanAction.includes("proceed to main array") || cleanAction.includes("main array")) {
-        nextState.poi = "Core Array Shatter-Ridge";
-        setActivePOIView("main_array_core");
-        narrative = `🚀 ADVANCING TO CORE: You climb up the vertical structural ladders to the main cavernous hangar. Massive vertical server column rows glow in deep electric blue, hum-charging the central grid mainframe.`;
-        setActivePopup({
-          title: "CORE ARRAY INTERCEPTED",
-          subtitle: "MAIN HANGAR ENTRY",
-          type: "transit",
-          text: "You climb up the metal ladders to the main Core Array cavern. Huge columns hum loudly. Defend Tracker while he bypasses the primary locks!"
-        });
-      }
-      else if (cleanAction.includes("defend core array") || cleanAction.includes("triggers combat")) {
-        nextState.combatState = {
-          enemyName: "3x Autonomous Security Drones",
-          enemyHp: 130,
-          enemyMaxHp: 130,
-          enemyShields: 30,
-          enemyMaxShields: 30,
-          isActive: true,
-          turnLog: "Three floating discs with revolving red sensors descend from the grid ceiling, hum-charging their laser cannons!"
-        };
-        narrative = "💥 COMBAT INITIATED: The automated security network is fully alert! Secure the perimeter and destroy the security drones!";
-        logType = "combat";
-      }
-
-      // ---- PROLOGUE MAP 3: DATA VAULT SANCTUARY ----
-      else if (cleanAction.includes("activate mysterious relic")) {
-        setActiveDialogue("relic_awakening");
-        setRelicStep("intro");
-        narrative = "👁️ ANOMALY DETECTED: You approach the heavy obsidian altar. The golden device hovers silently, vibrating with an eerie psych-ether frequency. Your squad begins discussing the potential danger. Decide how to proceed in the dialog panel above.";
-        setActivePopup({
-          title: "ANOMALY DETECTED",
-          subtitle: "UNKNOWN ARTIFACT",
-          type: "loot",
-          text: "A floating golden device of pre-collapse origin hovers above the obsidian altar. It radiates a warm, pulsing energy field that tickles your neural cyberdeck. Consult your squad above before interacting."
-        });
-      }
+      // Prologue POI actions are authored in Scene Studio and executed by the generic scene runtime.
 
       // Approach Lost, Frightened Girl (Mia recruitment)
       else if (cleanAction.includes("approach lost") || cleanAction.includes("frightened girl") || cleanAction.includes("lost, frightened girl")) {
@@ -7544,11 +7097,11 @@ function MainGame() {
                                                     } else if (squadDialogue.sceneId === "tactics") {
                                                       next.completedPOIActions.push("shatter_ridge_reactor_well:tactics");
                                                     } else if (squadDialogue.sceneId === "transit_conduit_to_ridge") {
+                                                      next.completedPOIActions.push("section_gate:transit");
                                                       next.district = "shatter_ridge_core";
                                                       next.poi = "Shatter-Ridge Security Checkpoint";
                                                       setActiveRegionId("shatter_ridge_core");
                                                       setActivePOIView("shatter_ridge_security_post");
-                                                      next.activeQuests = ["Prologue: Shatter-Ridge - Infiltrate deeper to disable the defensive cyber-barriers."];
                                                       setActivePopup({
                                                         title: "SHATTER-RIDGE CORE ACCESS",
                                                         subtitle: "DISTRICT TRANSLATION",
@@ -7560,7 +7113,6 @@ function MainGame() {
                                                       next.poi = "Sanctuary Hacking Terminal";
                                                       setActiveRegionId("data_vault");
                                                       setActivePOIView("terminal_hacking_puzzle");
-                                                      next.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
                                                       setActivePopup({
                                                         title: "DATA VAULT ENTRANCE",
                                                         subtitle: "CORE SANCTUARY SECURED",
@@ -7753,45 +7305,44 @@ function MainGame() {
                                     if (!gameState) return;
                                     let nextState = { ...gameState };
 
-                                    // Check if choice triggers combat
-                                    if (choice.triggerCombatEncounterId === "ares_ambush" || choice.id === "opt_fury_combat" || choice.targetStepId === "combat_ares") {
-                                      nextState.maxHp = Math.max(50, nextState.maxHp - 25);
-                                      nextState.hp = Math.min(nextState.hp, nextState.maxHp);
-                                      if (nextState.skills) {
-                                        nextState.skills.mindmancer = Math.max(1, (nextState.skills.mindmancer || 0) + 1);
+                                    if (choice.triggerHackingPuzzleType) {
+                                      setHackingPuzzle(initHackingGame(
+                                        choice.triggerHackingPuzzleType,
+                                        nextState.attributes?.int || 10,
+                                        nextState.skills?.netSlicer || 1
+                                      ));
+                                      setActiveDialogue(null);
+                                      setGameState(nextState);
+                                      return;
+                                    }
+
+                                    if (choice.combat) {
+                                      if (choice.maxHpDelta) {
+                                        nextState.maxHp = Math.max(1, nextState.maxHp + choice.maxHpDelta);
+                                        nextState.hp = Math.min(nextState.hp, nextState.maxHp);
                                       }
-                                      nextState.mindmancerUnlocked = true;
+                                      if (choice.unlockMindmancer) {
+                                        nextState.mindmancerUnlocked = true;
+                                        if (nextState.skills) nextState.skills.mindmancer = Math.max(1, nextState.skills.mindmancer || 0);
+                                      }
                                       nextState.combatState = {
-                                        enemyName: "Ares Corporate Enforcers (Ambush)",
-                                        enemyHp: 160,
-                                        enemyMaxHp: 160,
-                                        enemyShields: 20,
-                                        enemyMaxShields: 20,
+                                        enemyName: choice.combat.enemyName,
+                                        enemyHp: choice.combat.enemyHp,
+                                        enemyMaxHp: choice.combat.enemyHp,
+                                        enemyShields: choice.combat.enemyShields || 0,
+                                        enemyMaxShields: choice.combat.enemyShields || 0,
                                         isActive: true,
-                                        turnLog: "A heavy security breach blast door explodes! Ares Corporate Enforcers flood the sanctuary with automatic laser rifles! Defend your squad!"
+                                        turnLog: choice.combat.turnLog,
+                                        victorySceneId: choice.combat.victorySceneId,
+                                        victoryCompletionAction: choice.combat.victoryCompletionAction
                                       };
                                       setActiveDialogue(null);
-                                      setRelicStep("intro");
                                       setGameState(nextState);
-                                      const ambushLogs = [
-                                        ...logs,
-                                        {
-                                          id: crypto.randomUUID(),
-                                          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                          text: `💥 NEURAL AWAKENING & AMBUSH: A surge of strange mental frequencies fuses with your cortex! Ares Biotech Enforcers have ambushed the sanctuary! Defend your squad!`,
-                                          type: "combat" as const,
-                                          district: nextState.district,
-                                          poi: nextState.poi
-                                        }
-                                      ];
-                                      setLogs(ambushLogs);
-                                      triggerAutosave(nextState, ambushLogs);
-                                      triggerToast("COMBAT START: AWAKENING AMBUSH");
                                       return;
                                     }
 
                                     // Stat / Skill checks evaluation
-                                    if (choice.checkType && choice.checkType !== "none" && choice.checkValue) {
+                                    if (choice.checkType && choice.checkType !== "none") {
                                       const rollD20 = Math.floor(Math.random() * 20) + 1;
                                       let statVal = 0;
                                       if (choice.checkType === "int") statVal = nextState.attributes?.int || 10;
@@ -7800,24 +7351,41 @@ function MainGame() {
                                       else if (choice.checkType === "will") statVal = nextState.attributes?.will || 10;
                                       else if (choice.checkType === "mindmancer") statVal = (nextState.skills?.mindmancer || 0) * 3;
                                       
-                                      const totalRoll = rollD20 + statVal;
-                                      const isSuccess = totalRoll >= choice.checkValue;
+                                      let totalRoll = rollD20 + statVal;
+                                      let isSuccess = totalRoll >= (choice.checkValue || 10);
+                                      if (choice.checkType === "credits") {
+                                        totalRoll = nextState.credits;
+                                        isSuccess = nextState.credits >= (choice.checkValue || 0);
+                                      } else if (choice.checkType === "item") {
+                                        totalRoll = nextState.inventory.includes(choice.requiredItem || "") ? 1 : 0;
+                                        isSuccess = totalRoll === 1;
+                                      }
 
                                       if (!isSuccess) {
-                                        triggerToast(`⚠️ CHECK FAILED: Roll ${totalRoll} vs DC ${choice.checkValue}`);
+                                        if (choice.failureHpDamage) nextState.hp = Math.max(1, nextState.hp - choice.failureHpDamage);
+                                        if (choice.failureManaDamage) nextState.mana = Math.max(0, nextState.mana - choice.failureManaDamage);
+                                        triggerToast(`⚠️ CHECK FAILED: ${totalRoll} vs ${choice.checkValue || 10}`);
                                         setLogs(prev => [
                                           ...prev,
                                           {
                                             id: crypto.randomUUID(),
                                             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: `[CHECK FAILURE]: Rolled ${rollD20} + ${statVal} = ${totalRoll} vs DC ${choice.checkValue} (${choice.checkType.toUpperCase()}). Action failed or triggered defensive feedback!`,
+                                            text: choice.failureNarrative || `[CHECK FAILURE]: ${totalRoll} vs ${choice.checkValue || 10} (${choice.checkType.toUpperCase()}).`,
                                             type: "system" as const,
                                             district: nextState.district,
                                             poi: nextState.poi
                                           }
                                         ]);
+                                        setGameState(nextState);
+                                        if (choice.failureTargetStepId) setRelicStep(choice.failureTargetStepId as any);
+                                        return;
                                       } else {
-                                        triggerToast(`⚡ CHECK SUCCESS: Roll ${totalRoll} vs DC ${choice.checkValue}!`);
+                                        if (choice.checkType === "credits") nextState.credits -= choice.checkValue || 0;
+                                        if (choice.checkType === "item" && choice.consumeItem) {
+                                          const index = nextState.inventory.indexOf(choice.requiredItem || "");
+                                          if (index >= 0) nextState.inventory.splice(index, 1);
+                                        }
+                                        triggerToast(`⚡ CHECK SUCCESS: ${totalRoll} vs ${choice.checkValue || 10}!`);
                                       }
                                     }
 
@@ -7834,6 +7402,18 @@ function MainGame() {
                                       nextState.inventory = [choice.grantsItem, ...nextState.inventory];
                                       triggerToast(`Item Acquired: ${choice.grantsItem}`);
                                     }
+                                    if (choice.grantsHp) nextState.hp = Math.min(nextState.maxHp, nextState.hp + choice.grantsHp);
+                                    if (choice.grantsMana) nextState.mana = Math.min(nextState.maxMana, nextState.mana + choice.grantsMana);
+                                    if (choice.grantsMindmancerSkill && nextState.skills) nextState.skills.mindmancer += choice.grantsMindmancerSkill;
+                                    if (choice.clearParty) nextState.party = [];
+                                    if (choice.completionAction) {
+                                      nextState.completedPOIActions = Array.from(new Set([
+                                        ...(nextState.completedPOIActions || []),
+                                        choice.completionAction
+                                      ]));
+                                      nextState = synchronizeQuestProgress(nextState);
+                                    }
+                                    if (choice.completeQuestId) nextState = completeQuest(synchronizeQuestProgress(nextState), choice.completeQuestId);
                                     if (choice.unlockDistrictId) {
                                       nextState.district = choice.unlockDistrictId;
                                       setActiveRegionId(choice.unlockDistrictId);
@@ -7855,9 +7435,19 @@ function MainGame() {
                                     setGameState(nextState);
 
                                     // Step Branching
-                                    if (choice.targetStepId) {
-                                      setRelicStep(choice.targetStepId);
+                                    if (choice.targetStepId === "__EXIT__") {
+                                      setActiveDialogue(null);
+                                      setRelicStep("intro");
+                                    } else if (choice.targetStepId) {
+                                      setRelicStep(choice.targetStepId as any);
                                     } else if (choice.targetPOIId) {
+                                      const targetPOI = MAP_POIS.find(poi => poi.id === choice.targetPOIId);
+                                      if (targetPOI) {
+                                        nextState.poi = targetPOI.name;
+                                        nextState.district = targetPOI.district;
+                                        setActiveRegionId(targetPOI.district);
+                                        setGameState(nextState);
+                                      }
                                       setActivePOIView(choice.targetPOIId);
                                       setActiveDialogue(null);
                                       setRelicStep("intro");
@@ -7995,167 +7585,6 @@ function MainGame() {
                                     </motion.div>
                                   );
                                 })()
-                              ) : activeDialogue === "post_combat_tracker" ? (
-                                <motion.div
-                                  key="post_combat_tracker"
-                                  variants={slideInVariants}
-                                  initial="initial"
-                                  animate="animate"
-                                  exit="exit"
-                                  transition={{ duration: 0.25, ease: "easeOut" }}
-                                  className="bg-slate-950/95 border border-red-500/30 rounded-xl p-4 relative flex flex-col gap-3 font-mono shadow-xl"
-                                >
-                                  <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
-                                    <span className="text-red-500 font-extrabold text-[11px] uppercase tracking-wider animate-pulse flex items-center gap-1.5">
-                                      <AlertTriangle size={14} /> Interrogation & Discovery Scene
-                                    </span>
-                                    <span className="text-3xs text-slate-500">BLAST DOORS SECURED</span>
-                                  </div>
-                                  
-                                  {/* Interrogation of Ares Security Officer */}
-                                  <div className="bg-slate-900/50 border border-red-500/20 p-3 rounded-lg flex flex-col gap-2">
-                                    <div className="flex gap-3 items-start">
-                                      <img
-                                        src="https://images.unsplash.com/photo-1531206715517-5c0ba140b2b8?auto=format&fit=crop&q=80&w=200"
-                                        alt="Ares Security Officer portrait"
-                                        referrerPolicy="no-referrer"
-                                        className="w-14 h-14 object-cover rounded-md border border-red-500/40 filter grayscale flex-shrink-0"
-                                      />
-                                      <div className="text-[10px] space-y-1 text-slate-300 flex-1">
-                                        <p className="text-red-400 font-extrabold uppercase text-left">Ares Security Officer (Captured)</p>
-                                        <p className="text-3xs text-slate-500 leading-none text-left">FACTION: Ares Biotech Corporate Security</p>
-                                        <p className="text-slate-300 font-sans text-2xs italic leading-relaxed pt-1.5 text-left">
-                                          "P-please! Don't shoot! I'm just a contractor! The secondary assault squads are sealing the upper ventilation shaft... but the heavy service tunnels under Level B4 are still completely clear! Here, I'll bypass the terminal lock... *clank*... look, the heavy magnetic blast doors are fully open now! Just let me live!"
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="border-t border-red-500/10 pt-2 text-3xs text-slate-400 text-left">
-                                      <span className="text-cyan-400 font-bold">📢 PLAYER INTERROGATION:</span> "How many of your squad are left, and where is the safest route out of this complex?"
-                                    </div>
-                                  </div>
-
-                                  {/* Tracker Betrayal Logs Discovery */}
-                                  <div className="bg-cyan-950/25 border border-cyan-500/30 p-3 rounded-lg text-left">
-                                    <p className="text-[10px] font-black text-cyan-400 uppercase leading-none mb-1 flex items-center gap-1.5">
-                                      <span>🎒</span> SALVAGING TRACKER'S GEAR & SECURE DATAPAD
-                                    </p>
-                                    <p className="text-slate-400 text-3xs font-sans leading-relaxed">
-                                      You salvage Tracker's lifeless body, recovering his <strong className="text-slate-200">Electric Baton</strong>, <strong className="text-slate-200">Cheap Combat Armor</strong>, and secure credits.
-                                    </p>
-                                    <div className="mt-2 bg-slate-950/80 border border-cyan-500/20 p-2 rounded font-mono text-[9px] text-cyan-300/90 leading-normal">
-                                      <p className="font-extrabold text-red-400 mb-0.5">📂 SECURE DECRYPTED LOG: "ARES_CONTRACT_PLAN_B"</p>
-                                      <p className="italic">
-                                        "Plan B Protocol: If the hacker group fails or triggers security alarms, initiate containment lockdown. Retrieve decrypted database crystals. Leave the rookie and Vice behind as corporate scapegoats to take the fall. Escape solo via the private shuttle bay."
-                                      </p>
-                                      <p className="text-3xs text-slate-500 mt-1 uppercase font-bold">
-                                        ★ DISCOVERY: Tracker was never on your side. He was Plan B to betray you.
-                                      </p>
-                                    </div>
-                                  </div>
-
-                                  <div className="bg-slate-900/40 border border-white/5 p-2 rounded text-3xs text-slate-400 font-sans leading-relaxed text-left">
-                                    Vice leans heavily against the altar, bleeding from a plasma burn: "The blast doors are open, and now we know the truth about Tracker's betrayal. The cowardly rat was going to leave us to rot. But we have a witness here. What are you going to do with this security officer, rookie?"
-                                  </div>
-
-                                  {/* Post-combat choices */}
-                                  <div className="flex flex-col sm:flex-row gap-2 pt-2 text-3xs uppercase justify-start">
-                                    <button
-                                      onClick={() => {
-                                        let next = { ...gameState! };
-                                        next.district = "aurus";
-                                        next.poi = "Main Headquarters (The Hideout)";
-                                        next.party = [];
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Traitor Discovered (Ares Security Executed)");
-                                        setGameState(next);
-                                        setActiveRegionId("aurus");
-                                        setActivePOIView(null);
-                                        setActiveDialogue(null);
-                                        
-                                        setLogs(prev => [
-                                          ...prev,
-                                          {
-                                            id: crypto.randomUUID(),
-                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "💥 NO WITNESSES: You double-tap the Ares Security Officer. In Megacity-9, loose ends get you killed. Carrying the heavy Ares Data Crystal and Tracker's salvaged gear, you support the wounded Vice, escaping through Level B4's overridden doors. You split up in the slums to evade corporate heat. Chapter 1 Begins.",
-                                            type: "narration",
-                                            district: "aurus",
-                                            poi: "Main Headquarters (The Hideout)"
-                                          }
-                                        ]);
-                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AURUS DISTRICT");
-                                      }}
-                                      className="bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1"
-                                    >
-                                      [Double Tap] Kill Officer
-                                    </button>
-
-                                    <button
-                                      onClick={() => {
-                                        let next = { ...gameState! };
-                                        next.district = "aurus";
-                                        next.poi = "Main Headquarters (The Hideout)";
-                                        next.party = [];
-                                        if (next.skills) {
-                                          next.skills.mindmancer += 1;
-                                        }
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Mind-Shattered Security (Officer Subjugated)");
-                                        setGameState(next);
-                                        setActiveRegionId("aurus");
-                                        setActivePOIView(null);
-                                        setActiveDialogue(null);
-                                        
-                                        setLogs(prev => [
-                                          ...prev,
-                                          {
-                                            id: crypto.randomUUID(),
-                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "🔮 SYNAPTIC OVERRIDE: Your eyes glow purple as you rewrite the Officer's memory, erasing his mind of your identities. With Tracker's salvaged gear and decrypted betrayal logs, you escape through Level B4's doors with the wounded Vice. Chapter 1 Begins.",
-                                            type: "narration",
-                                            district: "aurus",
-                                            poi: "Main Headquarters (The Hideout)"
-                                          }
-                                        ]);
-                                        triggerToast("CHAPTER 1 BEGUN: MINDMANCER UNLOCKED (+1 Skill)");
-                                      }}
-                                      className="bg-purple-950/60 hover:bg-purple-900 border border-purple-500/40 text-purple-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1 animate-pulse"
-                                    >
-                                      [Mindmance] Subjugate & Wipe Memory
-                                    </button>
-
-                                    <button
-                                      onClick={() => {
-                                        let next = { ...gameState! };
-                                        next.district = "aurus";
-                                        next.poi = "Main Headquarters (The Hideout)";
-                                        next.party = [];
-                                        next.activeQuests = ["Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."];
-                                        next.completedQuests.push("Officer Pacified (Sedative Injected)");
-                                        setGameState(next);
-                                        setActiveRegionId("aurus");
-                                        setActivePOIView(null);
-                                        setActiveDialogue(null);
-                                        
-                                        setLogs(prev => [
-                                          ...prev,
-                                          {
-                                            id: crypto.randomUUID(),
-                                            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                                            text: "💊 CLINICAL SEDATION: You inject a high-strength medical sedative into the Officer, knocking him out cold for 12 hours. Grabbing Tracker's salvaged gear and reading his decrypted betrayal logs, you make a swift escape with Vice through B4. Chapter 1 Begins.",
-                                            type: "narration",
-                                            district: "aurus",
-                                            poi: "Main Headquarters (The Hideout)"
-                                          }
-                                        ]);
-                                        triggerToast("CHAPTER 1 BEGUN: ARRIVED AT AURUS DISTRICT");
-                                      }}
-                                      className="bg-slate-900 hover:bg-slate-800 border border-white/10 text-slate-200 font-bold px-3 py-2.5 rounded-lg cursor-pointer text-center flex-1"
-                                    >
-                                      [Sedate] Inject Sedative & Flee
-                                    </button>
-                                  </div>
-                                </motion.div>
                               ) : (
                                 <motion.div
                                   key={`active-dialogue-${activeDialogue}`}
@@ -11896,20 +11325,13 @@ function MainGame() {
                               let narrative = `★ THREAT EXTERMINATED: You successfully cleared the area in tactical grid combat! Recovered +${rewardC}¤ and earned +${expGained} XP!`;
 
                               const enemyName = gameState.combatState?.enemyName || "";
-                              if (enemyName.includes("Drone") || enemyName.includes("Sentry")) {
-                                nextState.district = "data_vault";
-                                nextState.poi = "Sanctuary Hacking Terminal";
-                                setActiveRegionId("data_vault");
-                                setActivePOIView("terminal_hacking_puzzle");
-                                nextState.activeQuests = ["Prologue: Data Vault Sanctuary - Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech."];
-                                narrative += `\n\n🛡️ SECURITY BYPASSED: The security drones spark and crash to the floor! Vice gestures to a heavy floor industrial lift elevator: 'Move, recruit! Before they lock down the entire sector! Get inside the core vault chamber.' You travel to the Data Vault Sanctuary.`;
-                              }
-                              else if (enemyName.includes("Enforcer") || enemyName.includes("Ambush") || enemyName.includes("Commander")) {
-                                nextState.poi = "Mysterious Relic Altar";
-                                setActivePOIView("relic_altar");
-                                setActiveDialogue("post_combat_tracker");
-                                nextState.activeQuests = ["Prologue: Interrogate captured Ares Security Officer, make him override locks, and salvage Tracker's gear to escape."];
-                                narrative += `\n\n🛡️ AMBUSH SURVIVED: The smoke clears. Tracker lies lifeless near the breached blast door, killed in the opening gunfight. You and the wounded Vice have cornered the surviving Ares Security Officer! Interrogate him above to discover an escape route and override the sector blast doors.`;
+                              const victorySceneId = gameState.combatState?.victorySceneId;
+                              const victoryCompletionAction = gameState.combatState?.victoryCompletionAction;
+                              if (victorySceneId) {
+                                if (victoryCompletionAction) nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), victoryCompletionAction]));
+                                setActiveDialogue(victorySceneId);
+                                const victoryScene = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) }[victorySceneId];
+                                if (victoryScene) setRelicStep(victoryScene.initialStepId as any);
                               }
                               else if (enemyName.includes("Behemoth") && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
                                 nextState.inventory.push("Acid Beast Core");

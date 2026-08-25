@@ -25,6 +25,8 @@ export interface CombatState {
   playerCorrodedTurns?: number;
   enemyPanicTurns?: number;
   ironWillTriggered?: boolean;
+  victorySceneId?: string;
+  victoryCompletionAction?: string;
 }
 
 export interface EquipmentState {
@@ -314,6 +316,28 @@ export interface POISceneChoice {
   unlockDistrictId?: string;
   unlockBaseId?: string;
   completeQuestStageId?: string;
+  completeQuestId?: string;
+  completionAction?: string;
+  failureNarrative?: string;
+  failureTargetStepId?: string;
+  failureHpDamage?: number;
+  failureManaDamage?: number;
+  grantsHp?: number;
+  grantsMana?: number;
+  maxHpDelta?: number;
+  unlockMindmancer?: boolean;
+  grantsMindmancerSkill?: number;
+  clearParty?: boolean;
+  consumeItem?: boolean;
+  triggerHackingPuzzleType?: HackingPuzzleState["type"];
+  combat?: {
+    enemyName: string;
+    enemyHp: number;
+    enemyShields?: number;
+    turnLog: string;
+    victorySceneId?: string;
+    victoryCompletionAction?: string;
+  };
   variant?: "cyan" | "amber" | "rose" | "purple" | "emerald";
 }
 
@@ -370,12 +394,16 @@ export interface QuestStage {
   description: string;
   objectiveType: "interact_poi" | "kill_target" | "hack_terminal" | "talk_npc" | "collect_item" | "custom_choice";
   targetPOI?: string;
+  /** Stable MAP_POIS id. Names remain presentation-only and may be edited. */
+  targetPOIId?: string;
   targetDistrict?: string;
   targetNPC?: string;
   targetItem?: string;
   targetCount: number;
   currentCount: number;
   completed: boolean;
+  /** Runtime event key written to completedPOIActions when this stage is resolved. */
+  completionAction?: string;
   operationalPaths?: QuestOperationalPath[];
   linkedPOISceneId?: string;
   linkedPOISceneStepId?: string;
@@ -557,6 +585,3 @@ export interface HackingPuzzleState {
 export type District = string;
 export type POI = any;
 export type Item = any;
-
-
-

@@ -72,7 +72,9 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
   const STORAGE_KEY_ITEMS = "dev_studio_custom_items_v2";
   const STORAGE_KEY_NPCS = "dev_studio_custom_npcs_v2";
   const STORAGE_KEY_POIS = "dev_studio_custom_pois_v2";
-  const STORAGE_KEY_QUESTS = "dev_studio_custom_quests_v2";
+  // v3 stores authored overrides only. v2 accidentally persisted a stale copy
+  // of every built-in quest and would shadow migrated campaign definitions.
+  const STORAGE_KEY_QUESTS = "dev_studio_custom_quests_v3";
   const STORAGE_KEY_EVENTS = "dev_studio_custom_events_v2";
   const STORAGE_KEY_ENCOUNTERS = "dev_studio_custom_encounters_v2";
 
@@ -169,7 +171,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return DEFAULT_CAMPAIGN_QUESTS;
+    return [];
   });
 
   const [customEvents, setCustomEvents] = useState<CustomWorldEvent[]>(() => {

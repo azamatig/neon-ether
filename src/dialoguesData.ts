@@ -66,39 +66,6 @@ export const BRANCHING_DIALOGUES: Record<"jax" | "marv" | "cipher", Record<strin
       image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200",
       text: "What operation details are you trying to finalize, rookie?",
       choices: [
-        {
-          text: "Deliver Technical Signal Core",
-          nodeId: "deliver_core_success",
-          prereqText: "[Requires Technical Signal Core]",
-          prereq: (s) => s.inventory.includes("Technical Signal Core"),
-          onSelect: (s) => {
-            s.inventory = s.inventory.filter(i => i !== "Technical Signal Core");
-            s.credits += 150;
-            s.experience += 100;
-            if (s.reputations) {
-              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
-            }
-            s.completedQuests.push("Side Quest: Delivered Signal Core to Jax");
-            return s;
-          }
-        },
-        {
-          text: "Deliver Experimental Drone Chip",
-          nodeId: "deliver_drone_success",
-          prereqText: "[Requires Experimental Drone Chip]",
-          prereq: (s) => s.inventory.includes("Experimental Drone Chip"),
-          onSelect: (s) => {
-            s.inventory = s.inventory.filter(i => i !== "Experimental Drone Chip");
-            s.credits += 200;
-            s.experience += 100;
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Drone"));
-            if (s.reputations) {
-              s.reputations.streetOutlaws = Math.min(100, s.reputations.streetOutlaws + 15);
-            }
-            s.completedQuests.push("Side Quest: Drone Schematic Delivered to Jax");
-            return s;
-          }
-        },
         { text: "Check my active Street Outlaws reputation Standing", nodeId: "reputation_outlaws" },
         { text: "Let me look at other options.", nodeId: "start" }
       ]
@@ -278,42 +245,6 @@ export const BRANCHING_DIALOGUES: Record<"jax" | "marv" | "cipher", Record<strin
       image: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&q=80&w=200",
       text: "Ares automated patrol drones scout the Highwalk Homicide Site Downtown. Their main control boards carry fluid-cooled Neural Regulators. Bring me two of those pristine regulators, and I'll pay you 250¤ plus a custom Smart-Targeting Visor.",
       choices: [
-        {
-          text: "Deliver 2x Neural Regulators",
-          nodeId: "harvest_delivery_success",
-          prereqText: "[Requires 2x Neural Regulators]",
-          prereq: (s: GameState) => s.inventory.filter(i => i === "Neural Regulator").length >= 2,
-          onSelect: (s: GameState) => {
-            let count = 0;
-            s.inventory = s.inventory.filter(i => {
-              if (i === "Neural Regulator" && count < 2) {
-                count++;
-                return false;
-              }
-              return true;
-            });
-            s.credits += 250;
-            s.experience += 120;
-            if (!s.inventory.includes("Smart-Targeting Visor")) {
-              s.inventory.push("Smart-Targeting Visor");
-            }
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Harvest"));
-            if (s.reputations) {
-              s.reputations.aresCorporate = Math.min(100, s.reputations.aresCorporate + 20);
-            }
-            s.completedQuests.push("Side Quest: Cybernetic Harvest Delivered");
-            return s;
-          }
-        },
-        {
-          text: "Accept the contract details.",
-          nodeId: "harvest_accept",
-          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Harvest")) && !s.completedQuests.some(q => q.includes("Harvest")),
-          onSelect: (s: GameState) => {
-            s.activeQuests.push("Side Quest: Cybernetic Harvest - Harvest 2x Neural Regulators by ambushing patrols at the Highwalk Homicide Site.");
-            return s;
-          }
-        },
         { text: "Check my active Ares Corporate Reputation standing", nodeId: "reputation_ares" },
         { text: "Understood, Doctor.", nodeId: "start" }
       ]
@@ -418,35 +349,6 @@ export const BRANCHING_DIALOGUES: Record<"jax" | "marv" | "cipher", Record<strin
       image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200",
       text: "Nouveau's luxury showroom has a prototype Singularity Battery cell behind polarized energy grids. If you slip inside, override their safe, and bring that battery to me, I'll pay you 350¤ and hand you an Unstable Plasma Core. Deal?",
       choices: [
-        {
-          text: "Deliver Prototype Singularity Battery",
-          nodeId: "heist_delivery_success",
-          prereqText: "[Requires Prototype Singularity Battery]",
-          prereq: (s: GameState) => s.inventory.includes("Prototype Singularity Battery"),
-          onSelect: (s: GameState) => {
-            s.inventory = s.inventory.filter(i => i !== "Prototype Singularity Battery");
-            s.credits += 350;
-            s.experience += 150;
-            if (!s.inventory.includes("Unstable Plasma Core")) {
-              s.inventory.push("Unstable Plasma Core");
-            }
-            s.activeQuests = s.activeQuests.filter(q => !q.includes("Heist"));
-            if (s.reputations) {
-              s.reputations.titanLogistics = Math.min(100, s.reputations.titanLogistics + 25);
-            }
-            s.completedQuests.push("Side Quest: Nouveau Heist Complete");
-            return s;
-          }
-        },
-        {
-          text: "Inquire about the heist.",
-          nodeId: "heist_accept",
-          prereq: (s: GameState) => !s.activeQuests.some(q => q.includes("Heist")) && !s.completedQuests.some(q => q.includes("Heist")),
-          onSelect: (s: GameState) => {
-            s.activeQuests.push("Side Quest: Nouveau Heist - Meet Cipher at Club Afterlife, get a VIP Keycard, and steal the Prototype Singularity Battery from Nouveau Showroom.");
-            return s;
-          }
-        },
         { text: "Check Titan Logistics reputation standing instead.", nodeId: "reputation_titan" },
         { text: "Let me think about it.", nodeId: "start" }
       ]

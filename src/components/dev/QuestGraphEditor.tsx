@@ -14,8 +14,9 @@ import {
   Flame,
   Zap
 } from "lucide-react";
-import { GameState, District } from "../../types";
+import { GameState, District, UnifiedQuest } from "../../types";
 import { REGIONS } from "../../data";
+import { activateQuest, buildQuestCatalog } from "../../questEngine";
 
 export interface CustomQuestStage {
   id: string;
@@ -127,13 +128,31 @@ export const QuestGraphEditor: React.FC<QuestGraphEditorProps> = ({
   };
 
   const handleInjectQuestIntoLiveGame = () => {
-    const questText = `${selectedQuest.title}: ${selectedQuest.stages[0]?.objective || selectedQuest.description}`;
     setGameState(prev => {
-      if (prev.activeQuests.includes(questText)) return prev;
-      return {
-        ...prev,
-        activeQuests: [questText, ...prev.activeQuests]
+      const authoredQuest: UnifiedQuest = {
+        id: selectedQuest.id,
+        title: selectedQuest.title,
+        category: selectedQuest.category === "main" ? "Main Quest" : selectedQuest.category === "faction" ? "Faction Contract" : "Side Quest",
+        chapter: "Chapter 1: The Outcast Spark",
+        description: selectedQuest.description,
+        minLevel: 1,
+        stages: selectedQuest.stages.map((stage, index) => ({
+          id: stage.id,
+          stageIndex: stage.order || index + 1,
+          title: stage.objective,
+          description: stage.objective,
+          objectiveType: "interact_poi",
+          targetPOI: stage.poiTarget,
+          targetCount: 1,
+          currentCount: stage.isCompleted ? 1 : 0,
+          completed: !!stage.isCompleted
+        })),
+        rewards: { credits: selectedQuest.rewardCredits, experience: selectedQuest.rewardExp },
+        status: "NOT_STARTED",
+        log: []
       };
+      const campaignQuestsRegistry = buildQuestCatalog([...(prev.campaignQuestsRegistry || []).filter(quest => quest.id !== authoredQuest.id), authoredQuest]);
+      return activateQuest({ ...prev, campaignQuestsRegistry }, authoredQuest.id);
     });
     triggerToast(`QUEST [${selectedQuest.title.toUpperCase()}] INJECTED INTO LIVE JOURNAL!`);
   };

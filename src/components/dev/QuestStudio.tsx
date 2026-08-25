@@ -680,8 +680,8 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
           ) : (
             filteredQuests.map((quest, idx) => {
               const isSelected = selectedQuestId === quest.id;
-              const isCompleted = gameState.completedQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-              const isActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+              const isCompleted = quest.status === "COMPLETED";
+              const isActive = quest.status === "ACTIVE";
               const hasPrereq = !!quest.prerequisiteQuestId;
               const hasNext = !!quest.nextQuestId;
 

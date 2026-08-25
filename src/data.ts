@@ -1186,23 +1186,7 @@ export function getInitialState(archetype: Archetype): GameState {
     party: ["Vice", "Tracker"],
     activeQuests: [], // Compatibility field; authored quest status lives in campaignQuestsRegistry.
     completedQuests: [],
-    structuredQuests: [
-      {
-        id: "prologue",
-        title: "Subsurface AI Catacombs",
-        category: "Main Quest",
-        description: "Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech.",
-        status: "ACTIVE",
-        objectives: [
-          { id: "hack_terminal", text: "Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech", current: 0, target: 1, completed: false }
-        ],
-        rewards: [
-          { type: "experience", amount: 100 },
-          { type: "credits", amount: 150 }
-        ],
-        log: ["Infiltrated Level B4 corridors. Evading drone alerts."]
-      }
-    ],
+    structuredQuests: [], // Derived journal entries are built from campaignQuestsRegistry.
     inventory: [...archetype.startingEquipment, "High-Grade Scrap Salvage", "High-Grade Scrap Salvage", "Rusted Circuitry", "Rusted Circuitry"],
     companions: [
       {

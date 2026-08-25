@@ -62,7 +62,7 @@ import { GameProvider, useGame } from "./context/GameContext";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward, POIInteractiveEvent, POISceneStep, POISceneChoice, POICompanionDialogue, CustomPOIData } from "./types";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "./poiScenesData";
-import { activateQuest, buildQuestCatalog, completeQuest, hydrateQuestSystem, synchronizeQuestProgress } from "./questEngine";
+import { activateQuest, advanceQuestStage, buildQuestCatalog, completeQuest, hydrateQuestSystem, synchronizeQuestProgress } from "./questEngine";
 import vicePortrait from "./assets/characters/vice/vice_portrait.png";
 import viceBody from "./assets/characters/vice/vice_body.png";
 import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
@@ -139,8 +139,8 @@ const getItemIcon = (itemName: string, slot?: string) => {
   return <Briefcase size={14} className="text-slate-400" />;
 };
 
-export function syncStructuredQuests(state: GameState): QuestState[] {
-  const quests: QuestState[] = state.structuredQuests ? [...state.structuredQuests] : [];
+export function buildQuestJournal(state: GameState): QuestState[] {
+  const quests: QuestState[] = [];
 
   const getOrCreate = (id: string, defaults: Partial<QuestState>): QuestState => {
     let q = quests.find(item => item.id === id);
@@ -166,8 +166,8 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
   // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
   const campaignRegistry = buildQuestCatalog(state.campaignQuestsRegistry || []);
   for (const customQ of campaignRegistry) {
-    const isCompleted = state.completedQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
-    const isActive = state.activeQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
+    const isCompleted = customQ.status === "COMPLETED";
+    const isActive = customQ.status === "ACTIVE";
 
     if (isActive || isCompleted || customQ.status !== "NOT_STARTED") {
       const q = getOrCreate(customQ.id, {
@@ -1093,52 +1093,6 @@ function MainGame() {
       return true;
     }
     
-    const activeQ = gameState.activeQuests || [];
-    const completedActions = gameState.completedPOIActions || [];
-    const inv = gameState.inventory || [];
-    
-    // 2. Standard main-quest/side-quest active targets
-    if (poiId === "corporate_plaza" && activeQ.some(q => q.includes("Rescue Vice"))) {
-      const isCompleted = completedActions.includes("corporate_plaza:detention_floor") && 
-                          (completedActions.includes("corporate_plaza:cryo_valve_forced") || 
-                           completedActions.includes("corporate_plaza:cryo_valve_overridden") || 
-                           completedActions.includes("corporate_plaza:cryo_valve_shocked"));
-      if (!isCompleted) return true;
-    }
-    
-    if (poiId === "freight_hub" && activeQ.some(q => q.includes("Hunt for Vice"))) {
-      const foundTarget = completedActions.includes("freight_hub:data_secured") || 
-                          completedActions.includes("freight_hub:supervisor_intimidated") || 
-                          completedActions.includes("freight_hub:clerk_bought");
-      if (!foundTarget) return true;
-    }
-    
-    if (poiId === "shatter_ridge" && activeQ.some(q => q.includes("Drone Schematic"))) {
-      if (!inv.includes("Experimental Drone Chip")) return true;
-    }
-    
-    if (poiId === "bar" && activeQ.some(q => q.includes("Drone Schematic")) && inv.includes("Experimental Drone Chip")) {
-      return true;
-    }
-    
-    if (poiId === "sludge_conduits" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-      const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-      if (slimesCount < 3) return true;
-    }
-    
-    if (poiId === "temple" && activeQ.some(q => q.includes("Chem-Weaver's Request"))) {
-      const slimesCount = inv.filter(i => i === "Glowing Slime").length;
-      if (slimesCount >= 3) return true;
-    }
-    
-    // Vice's Retribution ledger quest
-    const hasLedger = inv.includes("Encrypted Ares Ledger");
-    const isViceQuestActive = (gameState.reputations?.streetOutlaws ?? 50) >= 80 && !gameState.completedQuests.some(q => q.toLowerCase().includes("shatter ridge ledger"));
-    if (isViceQuestActive) {
-      if (poiId === "shatter_ridge" && !hasLedger) return true;
-      if (poiId === "hideout" && hasLedger) return true;
-    }
-    
     // 3. Dynamic campaign quest objectives targeting this POI
     if (gameState.campaignQuestsRegistry && gameState.campaignQuestsRegistry.length > 0) {
       const currentPoiObj = MAP_POIS.find(p => p.id === poiId);
@@ -1148,8 +1102,7 @@ function MainGame() {
       
       let hasCampaignStage = false;
       gameState.campaignQuestsRegistry.forEach(quest => {
-        const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-        if (!isQuestActive) return;
+        if (quest.status !== "ACTIVE") return;
         
         const currentStage = quest.stages?.find(s => !s.completed);
         if (!currentStage) return;
@@ -1173,8 +1126,8 @@ function MainGame() {
     // 4. Custom POI Studio triggers
     const found = (gameState.customPOIsRegistry || []).find(p => p.id === poiId);
     if (found && found.questTrigger?.questId) {
-      const isTriggerActive = gameState.activeQuests?.some(q => q.includes(found.questTrigger.questId));
-      if (isTriggerActive && !completedActions.includes(`${poiId}:quest_triggered`)) {
+      const triggerQuest = gameState.campaignQuestsRegistry?.find(quest => quest.id === found.questTrigger?.questId);
+      if (triggerQuest?.status === "ACTIVE" && !gameState.completedPOIActions.includes(`${poiId}:quest_triggered`)) {
         return true;
       }
     }
@@ -1601,12 +1554,12 @@ function MainGame() {
       ]);
     }
     else if (type === "cargo_logs") {
-      nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-      nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+      nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), "hunt_for_vice:logs_acquired"]));
       if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
         nextState.inventory.push("Decrypted Ares Transit Token");
       }
       nextState.experience += 40;
+      nextState = completeQuest(synchronizeQuestProgress(nextState), "hunt_for_vice");
       setActivePopup({
         title: "💾 SECURITY BYPASSED",
         subtitle: "LOGISTICS ARCHIVE BREACHED",
@@ -1629,7 +1582,8 @@ function MainGame() {
       ]);
     }
     else if (type === "security_mainframe") {
-      nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
+      nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), "rescue_vice:checkpoint_bypassed"]));
+      nextState = synchronizeQuestProgress(nextState);
       nextState.experience += 40;
       setActivePopup({
         title: "💾 DECRYPT COMPLETE",
@@ -1681,7 +1635,7 @@ function MainGame() {
       ]);
     }
     else if (type === "nouveau_safe") {
-      nextState.completedPOIActions.push("nouveau_chrome:shields_hacked");
+      nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), "nouveau:shields_disabled"]));
       nextState.experience += 40;
       setActivePopup({
         title: "💾 BYPASS COMPLETED",
@@ -1705,7 +1659,9 @@ function MainGame() {
       ]);
     }
     else if (type === "shatter_ridge_server") {
-      nextState.inventory.push("Encrypted Ares Ledger");
+      if (!nextState.inventory.includes("Encrypted Ares Ledger")) nextState.inventory.push("Encrypted Ares Ledger");
+      nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), "vice:ledger_acquired"]));
+      nextState = synchronizeQuestProgress(nextState);
       nextState.experience += 50;
       setActivePopup({
         title: "💻 ACCESS GRANTED",
@@ -1771,9 +1727,9 @@ function MainGame() {
       setHackingPuzzle(null);
     }
     else if (type === "cargo_logs") {
-      nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-      nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
+      nextState.completedPOIActions = Array.from(new Set([...(nextState.completedPOIActions || []), "hunt_for_vice:logs_acquired"]));
       nextState.hp = Math.max(10, nextState.hp - 20);
+      nextState = completeQuest(synchronizeQuestProgress(nextState), "hunt_for_vice");
       setActivePopup({
         title: "⚠️ NEURAL BACKLASH",
         subtitle: "FIREWALL TRAP ENGAGED",
@@ -2734,16 +2690,14 @@ function MainGame() {
 
     setGameState(prev => {
       // If gameState is not loaded (e.g. from main menu), initialize with the Cyber-Blade archetype
-      const current = hydrateQuestSystem(prev || getInitialState(ARCHETYPES[0]));
+      let current = hydrateQuestSystem(prev || getInitialState(ARCHETYPES[0]));
+      current = completeQuest(current, "prologue", false);
+      current = activateQuest(current, "outcast_directive");
       
       return {
         ...current,
         district: "aurus",
         poi: "Aurus Safehouse (The Hideout)",
-        activeQuests: [
-          "Chapter 1: Aurus District - You are lying low in Megacity-9 slums. Vice is missing after you split up to escape. Find his whereabouts. Speak to Agent Jax at the Neon Abyss Bar."
-        ],
-        completedQuests: ["Prologue: Data Vault Infiltration"],
         stamina: 100,
         maxStamina: 100,
         credits: Math.max(current.credits, 450), // Provide test currency for gifting & testing
@@ -3459,69 +3413,15 @@ function MainGame() {
                 bonusText += ` +Item '${path.grantsBonusItem}'`;
               }
 
-              // Advance stage progression
-              stage.currentCount = (stage.currentCount || 0) + 1;
-              if (stage.currentCount >= (stage.targetCount || 1)) {
-                stage.completed = true;
-              }
-
-              // Check if entire quest is complete
-              const allStagesDone = quest.stages.every(s => s.completed);
+              nextState = advanceQuestStage(nextState, quest.id, stage.id);
+              const advancedQuest = nextState.campaignQuestsRegistry?.find(item => item.id === quest.id);
+              const allStagesDone = !!advancedQuest?.stages.every(item => item.completed);
               if (allStagesDone) {
-                quest.status = "COMPLETED";
-                nextState.activeQuests = (nextState.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
-                if (!nextState.completedQuests.includes(quest.title)) {
-                  nextState.completedQuests.push(quest.title);
-                }
-
-                // Award Quest Rewards
-                const r = quest.rewards || {};
-                if (r.credits) nextState.credits += r.credits;
-                if (r.experience) nextState.experience += r.experience;
-                if (r.items && r.items.length > 0) nextState.inventory.push(...r.items);
-
-                // Execute Deterministic World Unlocks
-                const wu = r.worldUnlocks || {};
-                let worldUnlockMsgs: string[] = [];
-                if (wu.unlockBaseId) {
-                  if (!nextState.unlockedBases) nextState.unlockedBases = ["hideout"];
-                  if (!nextState.unlockedBases.includes(wu.unlockBaseId)) nextState.unlockedBases.push(wu.unlockBaseId);
-                  if (!nextState.ownedBases) nextState.ownedBases = ["hideout"];
-                  if (!nextState.ownedBases.includes(wu.unlockBaseId)) nextState.ownedBases.push(wu.unlockBaseId);
-                  worldUnlockMsgs.push(`🏠 Base Deed Unlocked: ${wu.unlockBaseId}`);
-                }
-                if (wu.unlockDistrictId) {
-                  if (!nextState.unlockedDistricts) nextState.unlockedDistricts = ["conduit09", "downtown", "aurus"];
-                  if (!nextState.unlockedDistricts.includes(wu.unlockDistrictId)) nextState.unlockedDistricts.push(wu.unlockDistrictId);
-                  worldUnlockMsgs.push(`🚇 District Gate Unlocked: ${wu.unlockDistrictId}`);
-                }
-                if (wu.unlockPerkOrSkill) {
-                  if (!nextState.unlockedPerks) nextState.unlockedPerks = [];
-                  if (!nextState.unlockedPerks.includes(wu.unlockPerkOrSkill)) nextState.unlockedPerks.push(wu.unlockPerkOrSkill);
-                  worldUnlockMsgs.push(`🔮 Global Perk Granted: ${wu.unlockPerkOrSkill}`);
-                }
-                if (wu.recruitCompanionId) {
-                  if (!nextState.party.includes(wu.recruitCompanionId)) nextState.party.push(wu.recruitCompanionId);
-                  worldUnlockMsgs.push(`👤 Recruited Operative: ${wu.recruitCompanionId}`);
-                }
-
-                // Auto-trigger next quest in campaign chain
-                if (quest.nextQuestId) {
-                  const nextQ = registry.find(q => q.id === quest.nextQuestId);
-                  if (nextQ) {
-                    const nextQStr = `${nextQ.title} - ${nextQ.description}`;
-                    if (!nextState.activeQuests.includes(nextQStr) && !nextState.completedQuests.includes(nextQ.title)) {
-                      nextState.activeQuests.push(nextQStr);
-                      nextQ.status = "ACTIVE";
-                      worldUnlockMsgs.push(`➔ Sequential Arc Activated: "${nextQ.title}"`);
-                    }
-                  }
-                }
-
-                narrative = `🏆 CAMPAIGN QUEST COMPLETED: "${quest.title}"!\n\n${path?.outcomeDesc || stage.description}\n\nPayout Claimed: +${r.credits || 0}¤, +${r.experience || 0} XP${r.items?.length ? `, Items: ${r.items.join(", ")}` : ""}${worldUnlockMsgs.length ? `\n\n${worldUnlockMsgs.join("\n")}` : ""}`;
+                nextState = completeQuest(nextState, quest.id);
+                narrative = `🏆 CAMPAIGN QUEST COMPLETED: "${quest.title}"!\n\n${path?.outcomeDesc || stage.description}${bonusText ? `\n\nPath rewards:${bonusText}` : ""}`;
                 triggerToast(`QUEST COMPLETED: ${quest.title}!`);
               } else {
-                narrative = `⚡ CAMPAIGN DIRECTIVE ADVANCED: [${quest.title} - ${stage.title}]\n\n${path?.outcomeDesc || stage.description} ${rollText}${bonusText ? `\n\nBonus Rewards: ${bonusText}` : ""}`;
+                narrative = `⚡ CAMPAIGN DIRECTIVE ADVANCED: [${quest.title} - ${stage.title}]\n\n${path?.outcomeDesc || stage.description} ${rollText}${bonusText ? `\n\nBonus Rewards:${bonusText}` : ""}`;
                 triggerToast(`OBJECTIVE ADVANCED: ${stage.title}`);
               }
             } else {
@@ -3831,45 +3731,6 @@ function MainGame() {
           const victoryScene = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) }[combat.victorySceneId];
           if (victoryScene) setRelicStep(victoryScene.initialStepId as any);
         }
-        // Check Quest item collection
-        if (combat.enemyName === "Toxic Sludge Behemoth" && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
-          nextState.inventory.push("Acid Beast Core");
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Corporate Hunt"));
-          nextState.activeQuests.push("Objective: Deliver the 'Acid Beast Core' to Chancellor Aria at Apex Armory.");
-          narrative += "\n\n🎒 OBJECTIVE COLLECTED: Dislodged the rare green pulsating 'Acid Beast Core'. Advance to Chancellor Aria to deliver the asset.";
-        }
-
-        if (combat.enemyName === "Rogue Rust-Claw Orc" && nextState.activeQuests.some(q => q.includes("Drone Schematic"))) {
-          if (!nextState.inventory.includes("Experimental Drone Chip")) {
-            nextState.inventory.push("Experimental Drone Chip");
-            narrative += "\n\n🎒 OBJECTIVE COLLECTED: The Orc sparks as its crude battery cell explodes. Among the scrap, you salvage a gleaming, experimental copper-plated microchip! 'Experimental Drone Chip' obtained. Deliver it to Jax at the Neon Abyss Bar or install it in your Hideout Base Security mainframe!";
-          }
-        }
-
-        if (combat.enemyName === "Iron Anchor Smuggler" || combat.enemyName === "Heavy Cargo Loader Mech") {
-          if (nextState.activeQuests.some(q => q.includes("Smuggler's Run")) && !nextState.inventory.includes("Stolen Weapon Crate")) {
-            nextState.inventory.push("Stolen Weapon Crate");
-            narrative += "\n\n🎒 OBJECTIVE COLLECTED: Sifting through the debris of the Iron Anchor smuggler, you recover a heavy steel crate wrapped in lead seals: 'Stolen Weapon Crate' acquired. Bring it back to the Titan Logistics Freight Hub!";
-          }
-        }
-
-        if (combat.enemyName === "Ares Patrol Drone" || combat.enemyName === "Skybridge Security Enforcer") {
-          if (nextState.activeQuests.some(q => q.includes("Cybernetic Harvest"))) {
-            const currentRegs = nextState.inventory.filter(i => i === "Neural Regulator").length;
-            if (currentRegs < 2) {
-              nextState.inventory.push("Neural Regulator");
-              narrative += `\n\n🎒 OBJECTIVE COLLECTED: You extract a glowing, fluid-cooled cylinder from the enforcer's central CPU matrix! Got: 'Neural Regulator' (${currentRegs + 1}/2). Bring 2x of these back to Dr. Marv at the Docks!`;
-            }
-          }
-        }
-
-        if (combat.enemyName === "Ares Plasma Sentinel") {
-          if (!nextState.completedPOIActions.includes("corporate_plaza:security_bypassed")) {
-            nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
-          }
-          narrative += "\n\n🔓 SECURITY OVERRIDDEN: The heavy automated Sentinel crashes to the ground, sparking violently. The staff lift is now unlocked. Use it to descend to the cryogenic detention sub-level!";
-        }
-
         // Level Up
         if (nextState.experience >= 100) {
           nextState.level += 1;
@@ -4030,156 +3891,6 @@ function MainGame() {
             ]);
             setIsLoading(false);
             return;
-          }
-        }
-      }
-
-      // 0.1 QUEST DISPATCHER
-      if (actionText.startsWith("[QUEST:") || cleanAction.startsWith("[quest:")) {
-        const match = actionText.match(/\[QUEST:\s*([^:\]]+):([^:\]]+)(?::([^\]]+))?\]/i);
-        if (match) {
-          const questId = match[1].trim();
-          const stageId = match[2].trim();
-          const pathId = match[3] ? match[3].trim() : undefined;
-
-          const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
-          nextState.campaignQuestsRegistry = registry;
-          const quest = registry.find(q => q.id === questId);
-          const stage = quest?.stages?.find(s => s.id === stageId);
-
-          if (stage) {
-            // If stage is linked to an interactive scene directly, launch it!
-            if (stage.linkedPOISceneId) {
-              const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
-              const scene = allScenes[stage.linkedPOISceneId];
-              if (scene) {
-                const startStep = stage.linkedPOISceneStepId || scene.initialStepId;
-                setActiveDialogue(stage.linkedPOISceneId);
-                setRelicStep(startStep as any);
-                setGameState(nextState);
-                setIsLoading(false);
-                return;
-              }
-            }
-
-            if (pathId && stage.operationalPaths) {
-              const path = stage.operationalPaths.find(p => p.id === pathId);
-              if (path) {
-                // Check if path has a linked scene
-                if (path.linkedPOISceneId) {
-                  const allScenes = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) };
-                  const scene = allScenes[path.linkedPOISceneId];
-                  if (scene) {
-                    setActiveDialogue(path.linkedPOISceneId);
-                    setRelicStep(scene.initialStepId as any);
-                    setGameState(nextState);
-                    setIsLoading(false);
-                    return;
-                  }
-                }
-
-                // Check stat/skill requirements
-                let reqPassed = true;
-                let failMsg = "";
-                if (path.requiredStat) {
-                  const statVal = (nextState.attributes as any)?.[path.requiredStat] || 10;
-                  if (statVal < (path.requiredStatValue || 10)) {
-                    reqPassed = false;
-                    failMsg = `Requires ${path.requiredStat.toUpperCase()} ${path.requiredStatValue} (Current: ${statVal})`;
-                  }
-                }
-                if (reqPassed && path.requiredSkill) {
-                  const skillVal = (nextState.skills as any)?.[path.requiredSkill] || 0;
-                  if (skillVal < (path.requiredSkillLevel || 1)) {
-                    reqPassed = false;
-                    failMsg = `Requires Skill ${path.requiredSkill} Level ${path.requiredSkillLevel}`;
-                  }
-                }
-                if (reqPassed && path.requiredItem) {
-                  if (!nextState.inventory.includes(path.requiredItem)) {
-                    reqPassed = false;
-                    failMsg = `Requires Item: "${path.requiredItem}"`;
-                  }
-                }
-                if (reqPassed && path.requiredMana) {
-                  if (nextState.mana < path.requiredMana) {
-                    reqPassed = false;
-                    failMsg = `Requires ${path.requiredMana} Mana (Current: ${nextState.mana})`;
-                  }
-                }
-
-                if (!reqPassed) {
-                  narrative = `❌ PREREQUISITE FAILED: ${failMsg}`;
-                  triggerToast(failMsg);
-                } else {
-                  // Deduct mana or consume item if required
-                  if (path.requiredMana) nextState.mana -= path.requiredMana;
-                  if (path.requiredItem && path.outcomeText?.toLowerCase().includes("consume")) {
-                    const itmIdx = nextState.inventory.indexOf(path.requiredItem);
-                    if (itmIdx > -1) nextState.inventory.splice(itmIdx, 1);
-                  }
-
-                  // Grant rewards
-                  if (path.rewardCredits) nextState.credits += path.rewardCredits;
-                  if (path.rewardXP) nextState.experience += path.rewardXP;
-                  if (path.rewardItem) nextState.inventory.push(path.rewardItem);
-
-                  // Complete stage
-                  stage.completed = true;
-                  stage.currentCount = stage.targetCount || 1;
-
-                  // Check if all stages of quest are complete
-                  const allDone = quest?.stages?.every(s => s.completed || s.id === stage.id);
-                  if (allDone && quest) {
-                    if (quest.rewards?.credits) nextState.credits += quest.rewards.credits;
-                    if (quest.rewards?.experience) nextState.experience += quest.rewards.experience;
-                    if (quest.rewards?.items) quest.rewards.items.forEach(it => nextState.inventory.push(it));
-                    
-                    nextState.activeQuests = (nextState.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
-                    if (!nextState.completedQuests.includes(quest.title)) {
-                      nextState.completedQuests.push(quest.title);
-                    }
-                  }
-
-                  narrative = path.outcomeText || `🎯 QUEST ADVANCED: ${stage.title} accomplished via ${path.label}!`;
-                  setActivePopup({
-                    title: `🎯 QUEST OBJECTIVE COMPLETE`,
-                    subtitle: stage.title.toUpperCase(),
-                    type: "check_success",
-                    text: narrative + (path.rewardCredits ? `\n\nRewards: +${path.rewardCredits}¤ Credits, +${path.rewardXP || 0} XP` : "")
-                  });
-                }
-
-                setGameState(nextState);
-                setLogs(prev => [
-                  ...prev,
-                  {
-                    id: crypto.randomUUID(),
-                    timestamp: timeString,
-                    text: narrative,
-                    type: reqPassed ? "system" : "combat",
-                    district: nextState.district,
-                    poi: nextState.poi
-                  }
-                ]);
-                setIsLoading(false);
-                return;
-              }
-            } else {
-              // Direct stage completion
-              stage.completed = true;
-              stage.currentCount = stage.targetCount || 1;
-              narrative = `🎯 OBJECTIVE COMPLETED: ${stage.title}`;
-              setActivePopup({
-                title: `🎯 OBJECTIVE COMPLETED`,
-                subtitle: stage.title.toUpperCase(),
-                type: "check_success",
-                text: `${stage.description || stage.title} has been accomplished!`
-              });
-              setGameState(nextState);
-              setIsLoading(false);
-              return;
-            }
           }
         }
       }
@@ -4364,8 +4075,8 @@ function MainGame() {
 
         narrative = `💤 REST PROTOCOLS COMPLETE: Rested on safehouse medical bunk. Cybernetic channels completely drained and fully calibrated to 100% capacity.${passiveText}`;
 
-        // Safehouse Intrusion & Tactical Base Raids (disabled until Quest 3 / completedQuests.length >= 3)
-        const isRaidEnabled = (nextState.completedQuests || []).length >= 3;
+        // Safehouse Intrusion & Tactical Base Raids unlock after three authored quests.
+        const isRaidEnabled = (nextState.campaignQuestsRegistry || []).filter(quest => quest.status === "COMPLETED").length >= 3;
         if (isRaidEnabled) {
           const defenses = nextState.safehouseDefenses || {
             securityLevel: 1,
@@ -4752,13 +4463,6 @@ function MainGame() {
       else if (cleanAction.includes("meditate with the core") || cleanAction.includes("meditate")) {
         nextState.mana = Math.min(nextState.maxMana, nextState.mana + 35);
         narrative = "🧘 ETHER ABSORB: You sit silently inside the server cooling grid. Pure static energy enters your core (+35 Mana recovered).";
-
-        if (nextState.activeQuests.some(q => q.includes("Syndicate Catalyst"))) {
-          nextState.inventory.push("Charged Ley-Matrix");
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Syndicate Catalyst"));
-          nextState.activeQuests.push("Objective: Return 'Charged Ley-Matrix' to High Priestess Morgana in Satoshi Square Coven.");
-          narrative += "\n\n🎒 OBJECTIVE COLLECTED: The black cube hums and glows with volatile violet plasma! 'Charged Ley-Matrix' obtained.";
-        }
       }
 
       // Meditate Shrines (Satoshi Gardens)
@@ -4814,15 +4518,8 @@ function MainGame() {
       // Outlaw Mine scavenger
       else if (cleanAction.includes("scavenge rusted mine") || cleanAction.includes("rusted mine") || cleanAction.includes("mine shaft")) {
         if (Math.random() > 0.4) {
-          if (!nextState.inventory.includes("Technical Signal Core") && nextState.activeQuests.some(q => q.includes("Outcast Directive"))) {
-            nextState.inventory.push("Technical Signal Core");
-            nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Outcast Directive"));
-            nextState.activeQuests.push("Objective: Deliver the 'Technical Signal Core' to Agent Jax at the Neon Abyss Bar.");
-            narrative = "★ SEARCH DISCOVERY: You hack open a locked container inside the creaking highwalk elevator shafts! Got quest item: 'Technical Signal Core'. Deliver this back to Agent Jax.";
-          } else {
-            nextState.inventory.push("Nano Med-Stim (Heal)");
-            narrative = "🔍 SCAVENGE SUCCESS: Salvaged an unused corporate medical stimpack ('Nano Med-Stim (Heal)') from an empty highwalk crate!";
-          }
+          nextState.inventory.push("Nano Med-Stim (Heal)");
+          narrative = "🔍 SCAVENGE SUCCESS: Salvaged an unused corporate medical stimpack ('Nano Med-Stim (Heal)') from an empty highwalk crate!";
         } else {
           narrative = "🔍 SCAVENGE FAILURE: Ground sensors show only heavy iron oxide sludge and metallic scrap dust.";
         }
@@ -4831,12 +4528,7 @@ function MainGame() {
       // Sludge Conduits combat (Wetlands / sewer replacement)
       else if (cleanAction.includes("hunt toxic swamp") || cleanAction.includes("hunt toxic") || cleanAction.includes("sludge crawler")) {
         const templates = ENEMIES.sludge_conduits;
-        let roll = templates[0]; // Crawler
-        
-        // Spawn boss if quest is active and not finished
-        if (nextState.activeQuests.some(q => q.includes("Sludge Behemoth") || q.includes("Corporate Hunt"))) {
-          roll = templates[1]; // Behemoth Boss!
-        }
+        const roll = templates[0];
 
         nextState.combatState = {
           enemyName: roll.name,
@@ -4862,618 +4554,11 @@ function MainGame() {
         }
       }
 
-      // ---- MAIN QUEST & SIDE QUEST ACTION HANDLERS ----
-      else if (cleanAction.includes("interface with cargo logs") || cleanAction.includes("cargo logs") || cleanAction.includes("cargo terminal")) {
-        if (nextState.activeQuests.some(q => q.includes("The Hunt for Vice"))) {
-          const intScore = nextState.attributes?.int || 10;
-          const netSlicerLevel = nextState.skills?.netSlicer || 1;
-          setHackingPuzzle(initHackingGame("cargo_logs", intScore, netSlicerLevel));
-          setActivePOIView("terminal_hacking_puzzle");
-          setIsLoading(false);
-          return;
-        } else {
-          narrative = "The cargo terminal lists hundreds of thousands of active logistics lines for Megacity-9. Without a specific query key or active mission, the grid-hash remains unreadable.";
-        }
-      }
-      else if (cleanAction.includes("buy decryption cipher") || cleanAction.includes("corrupt clerk")) {
-        if (nextState.credits >= 150) {
-          nextState.credits -= 150;
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-            nextState.inventory.push("Decrypted Ares Transit Token");
-          }
-          nextState.experience += 70;
-          narrative = "💰 DECIPHER PURCHASED: You slip 150¤ to the twitching warehouse clerk. He grunts, slides a glowing decryption card across the terminal console, and whispers: 'Vice is held in Ares Corporate Plaza sub-level Detention Bay B. Take the encrypted key token and scram!'";
-          setActivePopup({
-            title: "INFORMATION BOUGHT",
-            subtitle: "CIPHER ACQUIRED",
-            type: "loot",
-            text: "You bypassed the security hacking puzzle entirely by paying off a corrupt clerk. He gave you the Decrypted Ares Transit Token and Vice's exact coordinates!\n\nEarned +70 XP!"
-          });
-        } else {
-          narrative = "❌ TRANSACTION REJECTED: Corrupt clerk sneers: 'You think information comes cheap on the docks? Come back with 150¤ credits.'";
-        }
-      }
-      else if (cleanAction.includes("intimidate freight supervisor") || cleanAction.includes("freight supervisor")) {
-        const strength = nextState.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + strength;
-        const targetDC = 14;
-        if (roll >= targetDC) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-            nextState.inventory.push("Decrypted Ares Transit Token");
-          }
-          nextState.experience += 90;
-          narrative = `💪 INTIMIDATION SUCCESS: You grabbed the supervisor's robotic collar and slammed him against the condenser grid (Roll: ${roll} vs ${targetDC})! He whimpers and uploads the coordinate logs directly to your deck.`;
-          setActivePopup({
-            title: "SUPERVISOR CRACKED",
-            subtitle: "FORCE DEMONSTRATION SUCCESS",
-            type: "check_success",
-            text: `Strength Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe terrified supervisor overrides the security block, giving you the Decrypted Ares Transit Token and pointing you to Ares Corporate Plaza sub-levels.\n\nEarned +90 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 25);
-          narrative = `💥 INTIMIDATION FAILURE: The supervisor ducks beneath your grip and slams the alarm buzzer (Roll: ${roll} vs ${targetDC})! Sirens blare, and a ceiling security shock-laser strikes you for -25 damage! You are forced to hack the console manually.`;
-          setActivePopup({
-            title: "ALARM TRIGGERED",
-            subtitle: "FORCE DEMONSTRATION FAILURE",
-            type: "check_failure",
-            text: `Strength Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe supervisor was too fast! He triggers the automated physical hazard grid. Ceiling emitters unleash a high-voltage pulse into your neural chassis.\n\nLost -25 HP. You must now bypass or hack the logs.`
-          });
-        }
-      }
-      else if (cleanAction.includes("pickpocket patrol officer") || cleanAction.includes("patrol officer")) {
-        const dexterity = nextState.attributes?.dex || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + dexterity;
-        const targetDC = 14;
-        if (roll >= targetDC) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-            nextState.inventory.push("Decrypted Ares Transit Token");
-          }
-          nextState.experience += 90;
-          narrative = `⚡ PICKPOCKET SUCCESS: Your fingers slip past the patrol officer's electrostatic belt mesh with absolute fluid grace (Roll: ${roll} vs ${targetDC})! You successfully lift the encrypted security token.`;
-          setActivePopup({
-            title: "GHOST OPERATION SECURED",
-            subtitle: "DEXTERITY CHECK SUCCESS",
-            type: "check_success",
-            text: `Dexterity Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou extracted the Decrypted Ares Transit Token directly from the patrolling officer's belt without triggering any sensors!\n\nEarned +90 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 20);
-          narrative = `💥 PICKPOCKET FAILURE: Your hand triggers the patrol officer's sub-dermal security field (Roll: ${roll} vs ${targetDC})! A heavy electrical arc shocks you for -20 damage. The guards alert the hangar.`;
-          setActivePopup({
-            title: "SENSORS ALARMED",
-            subtitle: "DEXTERITY CHECK FAILURE",
-            type: "check_failure",
-            text: `Dexterity Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe officer's belt sparks as your fingers breach the warning perimeter. A corrective electrical discharge strikes your chassis, inflicting -20 shock damage.`
-          });
-        }
-      }
-      else if (cleanAction.includes("command supervisor") || cleanAction.includes("mind control - mindmancer level 1] command supervisor")) {
-        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
-        const targetDC = 12;
-        if (roll >= targetDC) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-            nextState.inventory.push("Decrypted Ares Transit Token");
-          }
-          nextState.experience += 100;
-          narrative = `🔮 MIND CONTROL SUCCESS: Your eyes flash with a deep violet glare (Roll: ${roll} vs ${targetDC}). You project a crushing suggestion directly into the freight supervisor's cerebral cortex. He blankly types his override code, hands you the Decrypted Ares Transit Token, and mutters, 'Take whatever you need.'`;
-          setActivePopup({
-            title: "NEURAL COMMAND SECURED",
-            subtitle: "MIND CONTROL SUCCESS",
-            type: "check_success",
-            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe supervisor's pupils dilate fully. Bypassing his neural firewall, you forced his physical muscles to hand over the decrypted transit clearance token!\n\nEarned +100 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 15);
-          nextState.mana = Math.max(0, nextState.mana - 10);
-          narrative = `💥 NEURAL RECOIL: The supervisor's simple cybernetic visor filters your brain signal and sounds an alarm! The neural feedback strikes your cerebral nodes for -15 damage and costs -10 Mana. You are forced to hack manually.`;
-          setActivePopup({
-            title: "COGNITIVE BACKLASH",
-            subtitle: "MIND CONTROL FAILURE",
-            type: "check_failure",
-            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nHis head-mounted optical filter shielded his optic nerve from the purple ley flash. He staggered backward and hit the hangar alert siren!\n\nLost -15 HP and -10 Mana.`
-          });
-        }
-      }
-      else if (cleanAction.includes("wipe patrol officer's brain record") || cleanAction.includes("wipe patrol") || cleanAction.includes("erase patrol")) {
-        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
-        const targetDC = 12;
-        if (roll >= targetDC) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("The Hunt for Vice"));
-          nextState.activeQuests.push("Main Quest: Rescue Vice - Infiltrate the sub-level detention cells beneath Ares Biotech Corporate Plaza (Downtown) and extract Vice.");
-          if (!nextState.inventory.includes("Decrypted Ares Transit Token")) {
-            nextState.inventory.push("Decrypted Ares Transit Token");
-          }
-          nextState.experience += 100;
-          narrative = `🧠 MEMORY WIPE SUCCESS: You walk directly up to the patrolling officer and touch his temple (Roll: ${roll} vs ${targetDC}). A powerful synaptic shockwave wipes his last 15 minutes of memory. You pluck the decrypted transit key token from his hand as he blinks in confusion, wondering why he's standing in the dark.`;
-          setActivePopup({
-            title: "COGNITIVE VOID",
-            subtitle: "MEMORY WIPE SUCCESS",
-            type: "check_success",
-            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou completely erased the officer's temporary cognitive buffer! He remembers nothing of your presence as you walk away with his decryption key.\n\nEarned +100 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 20);
-          narrative = `💥 MEMORY WIPE FAILURE: The officer's neural visor records the invasive mental scan, triggering an automatic shock charge (Roll: ${roll} vs ${targetDC})! You take -20 electrical shock damage as he raises his rifle!`;
-          setActivePopup({
-            title: "SYNAPTIC FIREWALL ACTIVE",
-            subtitle: "MEMORY WIPE FAILURE",
-            type: "check_failure",
-            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe officer's sub-dermal security nodes isolated the cognitive intrusion, discharging a physical feedback shock to your fingers.\n\nLost -20 HP.`
-          });
-        }
-      }
-      else if (cleanAction.includes("mind control plaza gate sentinel") || cleanAction.includes("mind control the plaza gate")) {
-        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
-        const targetDC = 13;
-        if (roll >= targetDC) {
-          if (!nextState.completedPOIActions.includes("corporate_plaza:security_bypassed")) {
-            nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
-          }
-          nextState.experience += 110;
-          narrative = `🔮 COGNITIVE OVERRIDE SUCCESS: You stare into the gate sentinel's eyes (Roll: ${roll} vs ${targetDC}). Your violet ley energy invades his neural cyberdeck. He blankly overrides the security terminal locks, bowing his head as you walk past.`;
-          setActivePopup({
-            title: "SENTINEL COGNITIVELY BYPASSED",
-            subtitle: "MIND CONTROL SUCCESS",
-            type: "check_success",
-            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe sentinel's security grid is fully breached from within his own brain. He has safely opened the primary Plaza security barriers for you.\n\nEarned +110 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 25);
-          narrative = `💥 COGNITIVE SPIKE FAILURE: The gate sentinel has an advanced cerebral firewall (Roll: ${roll} vs ${targetDC})! A heavy electric counter-pulse hits your skull for -25 damage, and the guards raise their plasma carbines!`;
-          setActivePopup({
-            title: "COGNITIVE FIREWALL SPARK",
-            subtitle: "MIND CONTROL FAILURE",
-            type: "check_failure",
-            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nHis military-grade synaptic shield deflected your command, discharging a direct cybernetic shockwave back into your brain.\n\nLost -25 HP.`
-          });
-        }
-      }
-      else if (cleanAction.includes("neural shock the valve glands") || cleanAction.includes("neural shock the valve")) {
-        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
-        const targetDC = 11;
-        if (roll >= targetDC) {
-          if (!nextState.completedPOIActions.includes("corporate_plaza:detention_floor")) {
-            nextState.completedPOIActions.push("corporate_plaza:detention_floor");
-          }
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice"));
-          if (!nextState.completedQuests.includes("Main Quest: Rescue Vice")) {
-            nextState.completedQuests.push("Main Quest: Rescue Vice");
-          }
-          nextState.experience += 150;
-          
-          // Recruit Vice as a companion
-          const viceComp = {
-            id: "vice",
-            name: "Vice",
-            role: "Assault / Demolitions Specialist",
-            avatar: "🔫",
-            image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=600",
-            description: "Vice is a battle-hardened veteran runner from the Old Sector. His left eye is replaced by a military tactical targeting tracker. He is an expert in heavy particle rifles, magnetic explosives, and concrete-breaching operations.",
-            dialogue: "You actually made it, kid. Didn't think you had the grit. Let's show these corporate suits what happens when you cross the runners.",
-            reaction: null,
-            happiness: 100,
-            affection: "Loyal",
-            affectionValue: 50,
-            willpower: 75,
-            corruption: 25,
-            hygiene: "Normal",
-            discipline: 80,
-            hunger: "Satiated",
-            respect: 90,
-            withdrawRisk: "None",
-            anger: 0,
-            defiance: 20,
-            fear: 10,
-            inventory: ["Heavy Particle Rifle", "EMP Detonator", "Tactical Body Armor"],
-            currentJob: "Security Guard"
-          };
-          nextState.baseNPCs = [...(nextState.baseNPCs || []), viceComp];
-          
-          narrative = `🔮 BIOMENTAL SHOCK SUCCESS: You focus your Mindmancer ley current directly onto the cryo-release valve's hydraulic bio-sensors (Roll: ${roll} vs ${targetDC}). The valve expands instantly under the bio-electric pulse, safely venting the cryo-fluid. Vice steps out of the cell, breathing heavy: 'Kid... how did you do that without the access keys? Dynamic work.'`;
-          setActivePopup({
-            title: "VICE LIBERATED",
-            subtitle: "BIOMENTAL MANIPULATION SUCCESS",
-            type: "check_success",
-            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou successfully bypassed the physical lock by sending a high-frequency cognitive wave that forced the hydraulic bio-receptors to open. Vice has been rescued and joined your safehouse squad!\n\nEarned +150 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 20);
-          narrative = `💥 BIOMENTAL SHOCK FAILURE: Your neural pulse is grounded by the valve's heavy shielding (Roll: ${roll} vs ${targetDC})! A high-voltage thermal back-arc shocks you for -20 HP.`;
-          setActivePopup({
-            title: "HYDRO-SHOCK BACKLASH",
-            subtitle: "BIOMENTAL MANIPULATION FAILURE",
-            type: "check_failure",
-            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe valve casing was heavily grounded. Your cognitive wave triggered a static arc discharge that burned your palms.\n\nLost -20 HP.`
-          });
-        }
-      }
-      else if (cleanAction.includes("psychic tunnel through security firewall") || cleanAction.includes("psychic tunnel through security")) {
-        const willVal = nextState.attributes?.willpower || nextState.attributes?.will || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + willVal;
-        const targetDC = 13;
-        if (roll >= targetDC) {
-          if (!nextState.inventory.includes("Encrypted Ares Ledger")) {
-            nextState.inventory.push("Encrypted Ares Ledger");
-          }
-          nextState.experience += 120;
-          narrative = `🔮 PSYCHIC TUNNEL SUCCESS: You connect your cerebral deck directly to the servers and channel raw psychic ley-currents (Roll: ${roll} vs ${targetDC}). The firewall's encryption nodes melt, letting you slip past the physical defenses and secure the Encrypted Ares Ledger!`;
-          setActivePopup({
-            title: "LEDGER SECURED",
-            subtitle: "PSYCHIC BYPASS SUCCESS",
-            type: "check_success",
-            text: `Mindmance Check: SUCCESS!\n\nRoll: ${roll} vs DC ${targetDC}\n\nYou bypassed standard mainframe security entirely by projecting a heavy mental bypass wave that spoofed the physical decrypters.\n\nEarned +120 XP!`
-          });
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 20);
-          nextState.mana = Math.max(0, nextState.mana - 15);
-          narrative = `💥 PSYCHIC COLLAPSE: The secure servers detect your non-standard signal and trigger a high-intensity cognitive burn (Roll: ${roll} vs ${targetDC})! You take -20 HP and -15 Mana from the brutal feedback.`;
-          setActivePopup({
-            title: "COGNITIVE DESTRUCTION FEEDBACK",
-            subtitle: "PSYCHIC BYPASS FAILURE",
-            type: "check_failure",
-            text: `Mindmance Check: FAILED!\n\nRoll: ${roll} vs DC ${targetDC}\n\nThe Ares servers fired a lethal defensive sub-routine that fried your active cognitive buffers.\n\nLost -20 HP and -15 Mana.`
-          });
-        }
-      }
-      else if (cleanAction.includes("bribe security automated bot")) {
-        if (nextState.credits >= 15) {
-          nextState.credits -= 15;
-          if (!nextState.completedPOIActions.includes("corporate_plaza:bot_bribed")) {
-            nextState.completedPOIActions.push("corporate_plaza:bot_bribed");
-          }
-          narrative = "💰 BOT BYPASSED: Slipped 15¤ into the automated bot's service slider. Active plaza security scan sensitivity reduced (+4 bonus to infiltration hacks!).";
-          setActivePopup({
-            title: "BOT CALIBRATION MODIFIED",
-            subtitle: "SECURITY SCAN BYPASSED",
-            type: "check_success",
-            text: "You inserted 15¤ into the bot's micro-ledger. A gear clicks, and its orange lens flashes green. The local scanner sweeps are temporarily adjusted to filter out your neural signature.\n\nGain +4 bonus to security hacking checks at the Plaza!"
-          });
-        } else {
-          narrative = "❌ TRANSACTION ABORTED: The automated security bot buzzes: 'LIQUIDITY DEFICIT. RETRACTING SYSTEM PERMISSION.'";
-        }
-      }
-      else if (cleanAction.includes("view ares commercial holograms") || cleanAction.includes("ares commercial holograms")) {
-        nextState.mana = Math.min(nextState.maxMana, nextState.mana + 15);
-        narrative = "📺 HOLOGRAPHIC OVERLAY: You stand beneath towering 3D renders of biotech chimeras and armor frames. A calming neural ripple from the projectors refreshes your cognitive arrays (+15 Mana).";
-        setActivePopup({
-          title: "ARES CORP PROMOTION",
-          subtitle: "HOLOGRAPHIC CHANNELS SYNCED",
-          type: "loot",
-          text: "A grand voice echoes from glowing glass structures:\n\n'Ares Biotech: Designing the perfect tomorrow, today.'\n\nYour neural deck interfaces with the high-concept visual carrier waves, siphoning active ether streams. Recovered +15 Mana!"
-        });
-      }
-      else if (cleanAction.includes("assault plaza guards")) {
-        nextState.combatState = {
-          enemyName: "Ares Plasma Sentinel",
-          enemyHp: 110,
-          enemyMaxHp: 110,
-          enemyShields: 40,
-          enemyMaxShields: 40,
-          isActive: true,
-          turnLog: "The heavy automated Plasma Sentinel activates its dual heavy laser turrets and slides on ceiling tracks into a defensive formation!"
-        };
-        narrative = "💥 ELITE ENGAGEMENT: You draw weapons and charge the checkpoint! The Plasma Sentinel rotates on steel tracks and engages!";
-        logType = "combat";
-      }
-      else if (cleanAction.includes("hack security mainframe")) {
-        if (nextState.completedPOIActions.includes("corporate_plaza:security_bypassed")) {
-          narrative = "⚠️ MAINBOARD DECRYPTED: The staff elevator is already unlocked.";
-        } else {
-          const intScore = nextState.attributes?.int || 10;
-          const netSlicerLevel = nextState.skills?.netSlicer || 1;
-          const bribed = nextState.completedPOIActions?.includes("corporate_plaza:bot_bribed");
-          setHackingPuzzle(initHackingGame("security_mainframe", intScore, netSlicerLevel, bribed));
-          setActivePOIView("terminal_hacking_puzzle");
-          setIsLoading(false);
-          return;
-        }
-      }
-      else if (cleanAction.includes("forge clearance credentials")) {
-        nextState.completedPOIActions.push("corporate_plaza:security_bypassed");
-        narrative = "🔑 CLEARANCE CONFIRMED: Presenting the forged credentials, the terminal's red scanners flash green. Staff lift unlocked.";
-        setActivePopup({
-          title: "🔑 CLEARANCE CONFIRMED",
-          subtitle: "TRANSIT BADGE ACCEPTED",
-          type: "check_success",
-          text: "You slot the Decrypted Ares Transit Token or cast a subtle Mindmance signal. The checkpoint scanners green-light your access. The elevator doors open cleanly!"
-        });
-      }
-      else if (cleanAction.includes("breach cryo-detention unit")) {
-        nextState.completedPOIActions.push("corporate_plaza:detention_floor");
-        narrative = "🔓 SUB-LEVEL BREACHED: You take the lift down to the chilling, frost-covered cryogenic detention cells. Vice is locked in Chamber B-12!";
-        setActivePopup({
-          title: "🔓 SUB-LEVEL BREACHED",
-          subtitle: "CRYO-LOCKDOWN MODE ACTIVE",
-          type: "combat_warning",
-          text: "The sub-level air is freezing. Ice crystals cling to heavy tubes. Vice is suspended in a thick glass cryo-pod, his life signs stable but locked at zero kelvin. Choose your method to trigger the emergency eject!"
-        });
-      }
-      else if (cleanAction.includes("force emergency cryo-release valve")) {
-        const str = nextState.attributes?.str || 10;
-        const roll = Math.floor(Math.random() * 20) + 1 + str;
-        
-        if (roll >= 16) {
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice") && !q.includes("The Hunt for Vice"));
-          nextState.completedQuests.push("Chapter 1 Completed: Vice Rescued from Cryo-Detention");
-          
-          const viceIdx = nextState.companions.findIndex(c => c.name === "Vice");
-          if (viceIdx >= 0) {
-            nextState.companions[viceIdx].status = "in_party";
-          } else {
-            nextState.companions.push({
-              name: "Vice",
-              fee: 0,
-              status: "in_party",
-              role: "Tactical Leader",
-              bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
-              avatar: "👩‍🎤",
-              image: vicePortrait,
-              equipment: {
-                meleeWeapon: "Vibroblade",
-                rangedWeapon: "Battle Pistol BP132",
-                armor: "Light Neon Leather Armor",
-                headpiece: null,
-                trinket: null
-              },
-              inventory: []
-            });
-          }
-          if (!nextState.party.includes("Vice")) {
-            nextState.party.push("Vice");
-          }
-
-          const viceBaseNPC = {
-            id: "vice",
-            name: "Vice",
-            role: "Weapons & Field Coordinator",
-            avatar: "👩‍🎤",
-            image: vicePortrait,
-            description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
-            dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
-            reaction: null,
-            happiness: 90,
-            affection: "Warm",
-            affectionValue: 75,
-            willpower: 80,
-            corruption: 15,
-            hygiene: "Normal",
-            discipline: 75,
-            hunger: "Satiated",
-            respect: 80,
-            withdrawRisk: "None",
-            anger: 0,
-            defiance: 0,
-            fear: 0,
-            inventory: ["Heavy Plasma Pistol", "Reinforced Flak Guard"],
-            currentJob: "Defensive Security Guard"
-          };
-          nextState.baseNPCs = [...(nextState.baseNPCs || []), viceBaseNPC];
-          nextState.credits += 300;
-          nextState.experience += 150;
-
-          setActivePopup({
-            title: "🔓 CHAPTER 1 COMPLETED!",
-            subtitle: "VICE HAS BEEN EXTRACTED",
-            type: "check_success",
-            text: "The cryo-glass seal cracks (Roll: " + roll + " vs 16), releasing pressurized white nitrogen gas. Vice stumbles out of the pod, coughing and shivering but grinning. He slams his organic fist onto your armored shoulder:\n\n'Kid... you came. You actually breached an Ares security plaza for me. Respect.'\n\nReward: Vice joins your Hideout Base & active party squad!\n+300¤ Credits, +150 XP!\n\nSpeak to Agent Jax at Neon Abyss Bar to prepare for Chapter 2!"
-          });
-          narrative = `💪 VALVE FORCED (Roll: ${roll} vs 16): You put your back into the emergency lever and rip open the manual cryo-coolant valve! Vice ejects safely.`;
-        } else {
-          nextState.hp = Math.max(10, nextState.hp - 20);
-          narrative = `❌ VALVE RESISTED (Roll: ${roll} vs 16): You strained against the heavy rusted valve, but it refused to turn, venting freezing coolant onto your arms (-20 HP). Choose another vector!`;
-        }
-      }
-      else if (cleanAction.includes("override cryogenic suspension")) {
-        const intScore = nextState.attributes?.int || 10;
-        const netSlicerLevel = nextState.skills?.netSlicer || 1;
-        setHackingPuzzle(initHackingGame("cryo_bypass", intScore, netSlicerLevel));
-        setActivePOIView("terminal_hacking_puzzle");
-        setIsLoading(false);
-        return;
-      }
-      else if (cleanAction.includes("short-circuit power grid coupling")) {
-        if (nextState.mana >= 30) {
-          nextState.mana -= 30;
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Rescue Vice") && !q.includes("The Hunt for Vice"));
-          nextState.completedQuests.push("Chapter 1 Completed: Vice Rescued from Cryo-Detention");
-          
-          const viceIdx = nextState.companions.findIndex(c => c.name === "Vice");
-          if (viceIdx >= 0) {
-            nextState.companions[viceIdx].status = "in_party";
-          } else {
-            nextState.companions.push({
-              name: "Vice",
-              fee: 0,
-              status: "in_party",
-              role: "Tactical Leader",
-              bio: "The veteran female leader of your shadow-running cell. Rebellious and sharp in her open-duster cyberpunk leather jacket and high-tech body-gilding cybernetics. Her tactical intuition is unmatched, and her modified plasma sidearm is always warm.",
-              avatar: "👩‍🎤",
-              image: vicePortrait,
-              equipment: {
-                meleeWeapon: "Vibroblade",
-                rangedWeapon: "Battle Pistol BP132",
-                armor: "Light Neon Leather Armor",
-                headpiece: null,
-                trinket: null
-              },
-              inventory: []
-            });
-          }
-          if (!nextState.party.includes("Vice")) {
-            nextState.party.push("Vice");
-          }
-
-          const viceBaseNPC = {
-            id: "vice",
-            name: "Vice",
-            role: "Weapons & Field Coordinator",
-            avatar: "👩‍🎤",
-            image: vicePortrait,
-            description: "Vice stands tall in her open-duster cyberpunk leather jacket over a high-tech metallic lattice corset, adjusting her specialized heavy plasma pistol. Her cybernetic targeting eye flickers neon pink as she reviews battle tactical logs. Her loyalty to you is absolute.",
-            dialogue: "Kid, you came for me. Respect. The Safehouse is looking amazing, let's start planning our next strike on the corporate structures.",
-            reaction: null,
-            happiness: 90,
-            affection: "Warm",
-            affectionValue: 75,
-            willpower: 80,
-            corruption: 15,
-            hygiene: "Normal",
-            discipline: 75,
-            hunger: "Satiated",
-            respect: 80,
-            withdrawRisk: "None",
-            anger: 0,
-            defiance: 0,
-            fear: 0,
-            inventory: ["Heavy Plasma Pistol", "Reinforced Flak Guard"],
-            currentJob: "Defensive Security Guard"
-          };
-          nextState.baseNPCs = [...(nextState.baseNPCs || []), viceBaseNPC];
-          nextState.credits += 300;
-          nextState.experience += 150;
-
-          setActivePopup({
-            title: "🔓 CHAPTER 1 COMPLETED!",
-            subtitle: "VICE HAS BEEN EXTRACTED",
-            type: "check_success",
-            text: "The cryo-glass seal cracks, releasing pressurized white nitrogen gas. Vice stumbles out of the pod, coughing and shivering but grinning. He slams his organic fist onto your armored shoulder:\n\n'Kid... you came. You actually breached an Ares security plaza for me. Respect.'\n\nReward: Vice joins your Hideout Base & active party squad!\n+300¤ Credits, +150 XP!\n\nSpeak to Agent Jax at Neon Abyss Bar to prepare for Chapter 2!"
-          });
-          narrative = "⚡ SYSTEM SHORT-CIRCUITED: You channel 30 Mana directly into the cryo-grid power couplers, forcing an automated emergency failsafe eject! Vice is released!";
-        } else {
-          narrative = "⚠️ INSUFFICIENT ENERGY: You do not have 30 Mana available to overload the power couplers!";
-        }
-      }
-      else if (cleanAction.includes("hunt rust-claw orcs")) {
-        nextState.combatState = {
-          enemyName: "Rogue Rust-Claw Orc",
-          enemyHp: 90,
-          enemyMaxHp: 90,
-          enemyShields: 20,
-          enemyMaxShields: 20,
-          isActive: true,
-          turnLog: "The heavy Orc roars, swinging a crude electrified scrap-mace!"
-        };
-        narrative = "💥 COMBAT INITIALIZED: You corner the rogue Rust-Claw Orc scavengers in Shatter Ridge! Deploy weapons!";
-        logType = "combat";
-      }
-      else if (cleanAction.includes("deliver drone chip to jax")) {
-        if (nextState.inventory.includes("Experimental Drone Chip")) {
-          nextState.inventory = nextState.inventory.filter(i => i !== "Experimental Drone Chip");
-          nextState.credits += 200;
-          nextState.experience += 100;
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Drone"));
-          nextState.completedQuests.push("Side Quest: The Lost Drone Schematic (Delivered to Jax)");
-          narrative = "💰 SCHEMATIC DELIVERED: You delivered the experimental microchip to Agent Jax at the Neon Abyss Bar! Recovered +200¤ and +100 XP.";
-          setActivePopup({
-            title: "💰 QUEST COMPLETED",
-            subtitle: "DRONE SCHEMATIC DELIVERED",
-            type: "loot",
-            text: "Jax takes the dense, glowing microchip with a smirk:\n\n'Incredible work. The Outcasts thank you, rookie. This chip has enough flight telemetry data to give us sector air superiority! Here are your credits.'\n\nReward: +200¤ Credits, +100 XP!"
-          });
-        }
-      }
-      else if (cleanAction.includes("install chip in base security")) {
-        if (nextState.inventory.includes("Experimental Drone Chip")) {
-          nextState.inventory = nextState.inventory.filter(i => i !== "Experimental Drone Chip");
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Drone"));
-          nextState.completedQuests.push("Side Quest: The Lost Drone Schematic (Installed in Hideout)");
-          
-          if (!nextState.safehouseDefenses) {
-            nextState.safehouseDefenses = {
-              securityLevel: 1,
-              turrets: 0,
-              shieldStrength: 100,
-              fortifiedDoors: false,
-              intrusionLogs: []
-            };
-          }
-          nextState.safehouseDefenses.securityLevel += 1;
-          nextState.safehouseDefenses.shieldStrength = Math.min(250, nextState.safehouseDefenses.shieldStrength + 50);
-          nextState.safehouseDefenses.intrusionLogs.push(`📡 Experimental drone telemetry chip synchronized. Shielding boosted by 50%. Security Level escalated to ${nextState.safehouseDefenses.securityLevel}.`);
-          
-          narrative = "🔧 BASE INTEGRATION: You installed the Drone Chip directly into the Hideout's mainframe grid! Permanent shield and defense boost applied!";
-          setActivePopup({
-            title: "🔧 BASE UPGRADED",
-            subtitle: "DRONE TELEMETRY INTEGRATED",
-            type: "check_success",
-            text: "You slot the experimental microchip into the Hideout security terminal. Automated micro-drones deploy around the safehouse perimeter, weaving an advanced defense grid!\n\nSafehouse Security Level increased!\nBase Shield Strength +50%!"
-          });
-        }
-      }
-      
       // ==========================================
       // ---- EXPANDED DOCKS & DOWNTOWN POIs ----
       // ==========================================
 
-      // 1. Titan Logistics Freight Hub & Smuggler's Run Quest actions
-      else if (cleanAction.includes("accept 'the smuggler's run'")) {
-        if (nextState.activeQuests.some(q => q.includes("Smuggler")) || nextState.completedQuests.some(q => q.includes("Smuggler"))) {
-          narrative = "⚠️ CONTRACT RECORDED: You have already accepted or finished this contract under your active mission database.";
-        } else {
-          nextState.activeQuests.push("Side Quest: Smuggler's Run - Secure the Stolen Weapon Crate from the Iron Anchor gang at the Rusty Anchor Shipyard.");
-          narrative = "📜 CONTRACT SIGNED: Siphoned the 'Smuggler's Run' contract details into your neural interface. Travel to the Rusty Anchor Shipyard POI to locate the contraband.";
-          setActivePopup({
-            title: "📜 CONTRACT SIGNED",
-            subtitle: "SMUGGLER'S RUN ENGAGED",
-            type: "check_success",
-            text: "Titan Logistics Wharf-master Jack looks over his shoulder:\n\n'Alright, streetrunner. A heavy crate of high-grade experimental kinetic rifles was stolen by those Iron Anchor low-lifes at the Rusty Anchor Shipyard.\n\nRecover that crate and bring it back, and we'll pay you 160¤ plus a custom-vibrated titanium blade.'\n\nObjective: Raid the Rusty Anchor Shipyard (Combat POI)!"
-          });
-        }
-      }
-      else if (cleanAction.includes("deliver recovered weapon crate")) {
-        if (nextState.inventory.includes("Stolen Weapon Crate")) {
-          nextState.inventory = nextState.inventory.filter(i => i !== "Stolen Weapon Crate");
-          nextState.credits += 160;
-          nextState.experience += 100;
-          if (!nextState.inventory.includes("Vibroblade")) {
-            nextState.inventory.push("Vibroblade");
-          }
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Smuggler"));
-          nextState.completedQuests.push("Side Quest: The Smuggler's Run (Completed)");
-          narrative = "💰 SHIPMENT RECOVERED: Delivered the stolen crate to Titan Logistics! Rewarded +160¤, +100 XP, and a custom Vibroblade weapon!";
-          setActivePopup({
-            title: "💰 CONTRACT COMPLETED",
-            subtitle: "SMUGGLER'S RUN INVOICED",
-            type: "loot",
-            text: "Jack smiles with missing steel teeth, slotting the heavy crate into an automated freight pneumatic tube:\n\n'Smooth run, kid. You hit those Iron Anchor thugs hard. Here are your credits, and as promised, a premium-grade Vibroblade.'\n\nReward: +160¤ Credits, +100 XP, and 'Vibroblade' weapon added to inventory!"
-          });
-        } else {
-          narrative = "❌ CONTRA-KEYS OFFLINE: You do not carry the 'Stolen Weapon Crate' in your inventory deck. Seek out the Shipyard first!";
-        }
-      }
-
-      // 2. Rusty Anchor Shipyard actions
-      else if (cleanAction.includes("raid syndicate caches")) {
-        const templates = ENEMIES.shipyard;
-        const isQuestActive = nextState.activeQuests.some(q => q.includes("Smuggler"));
-        const roll = isQuestActive ? templates[1] : templates[0]; // Elite mech if quest active, otherwise standard smuggler
-
-        nextState.combatState = {
-          enemyName: roll.name,
-          enemyHp: roll.hp,
-          enemyMaxHp: roll.maxHp,
-          enemyShields: roll.shields,
-          enemyMaxShields: roll.maxShields,
-          isActive: true,
-          turnLog: isQuestActive 
-            ? "A towering Heavy Cargo Loader Mech boots up with glowing crimson optics, blocking your path!"
-            : "An Iron Anchor Smuggler raises his rifle and shouts: 'Look what we got here! Flesh for the grinder!'"
-        };
-        narrative = `💥 COMBAT INITIALIZED: Confronted by hostile ${roll.name}! Deploy tactical weapon systems!`;
-        logType = "combat";
-      }
+      // Rusty Anchor Shipyard utility actions
       else if (cleanAction.includes("steal crane master control key")) {
         const dex = nextState.attributes?.dex || 10;
         const netSlicer = nextState.skills?.netSlicer || 1;
@@ -5515,50 +4600,6 @@ function MainGame() {
         setGameState(nextState);
         setIsLoading(false);
         return;
-      }
-      else if (cleanAction.includes("accept side-quest: cybernetic harvest")) {
-        if (nextState.activeQuests.some(q => q.includes("Harvest")) || nextState.completedQuests.some(q => q.includes("Harvest"))) {
-          narrative = "⚠️ PATIENT ENCRYPTED: Dr. Marv waving you off. 'You already have my blueprint tasks in your logs, patient.'";
-        } else {
-          nextState.activeQuests.push("Side Quest: Cybernetic Harvest - Harvest 2x Neural Regulators by ambushing patrols at the Highwalk Homicide Site (Downtown).");
-          narrative = "📜 PATIENT RECORDED: Accepted Dr. Marv's contract. Travel to Downtown's Highwalk Homicide Site to ambush patrol units and secure the parts.";
-          setActivePopup({
-            title: "🧬 SPECIALIZED BIO-CONTRACT",
-            subtitle: "CYBERNETIC HARVEST ENGAGED",
-            type: "check_success",
-            text: "Dr. Marv wipes a bloody laser scalpel, his mechanical eye zooming in on your torso:\n\n'Look here, streetrunner. Ares automated defense drones patrol the Highwalk Homicide Site in Downtown district. Their primary processors contain military-grade Neural Regulators.\n\nBring me two of those regulators to help stabilize my bio-stimulants, and I will reward you with 250¤ and a premium smart-targeting visor.'\n\nObjective: Hunt Patrol Drones at the Homicide Site!"
-          });
-        }
-      }
-      else if (cleanAction.includes("deliver neural regulators to dr. marv") || cleanAction.includes("deliver neural regulators")) {
-        const regs = nextState.inventory.filter(i => i === "Neural Regulator").length;
-        if (regs >= 2) {
-          // Remove 2x regulators
-          let removed = 0;
-          nextState.inventory = nextState.inventory.filter(item => {
-            if (item === "Neural Regulator" && removed < 2) {
-              removed++;
-              return false;
-            }
-            return true;
-          });
-          nextState.credits += 250;
-          nextState.experience += 120;
-          if (!nextState.inventory.includes("Smart-Targeting Visor")) {
-            nextState.inventory.push("Smart-Targeting Visor");
-          }
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Harvest"));
-          nextState.completedQuests.push("Side Quest: Cybernetic Harvest (Completed)");
-          narrative = "🧬 NEURAL REGULATORS SECURED: Delivered the 2x regulators to Dr. Marv! Rewarded +250¤, +120 XP, and a rare 'Smart-Targeting Visor'!";
-          setActivePopup({
-            title: "🧬 SYSTEM STABILIZED",
-            subtitle: "CYBERNETIC HARVEST COMPLETE",
-            type: "loot",
-            text: "Dr. Marv plugs the fluid-cooled regulators into his bio-synth machine with a sigh of relief:\n\n'Superb specimens. Clean matrix, no feedback corrosion. Take this visor, runner. It links directly with your tactical interface to boost overall damage.'\n\nReward: +250¤ Credits, +120 XP, and 'Smart-Targeting Visor' added to inventory (+12 bonus damage to combat strikes!)"
-          });
-        } else {
-          narrative = `❌ LOGS DETECTED LIQUIDITY GAP: You only have ${regs}/2 Neural Regulators. Ambush patrols at Highwalk Homicide Site in Downtown region first!`;
-        }
       }
       else if (cleanAction.includes("undergo experimental bio-splice")) {
         if (nextState.completedPOIActions.includes("marv_clinic:bio_spliced")) {
@@ -5629,89 +4670,7 @@ function MainGame() {
         }
       }
 
-      // 5. Nouveau Cybernetic Showroom actions
-      else if (cleanAction.includes("inquire about 'nouveau heist'")) {
-        if (nextState.activeQuests.some(q => q.includes("Heist")) || nextState.completedQuests.some(q => q.includes("Heist"))) {
-          narrative = "⚠️ HEIST ENGAGED: Heist blueprints are already registered under your neural deck logs.";
-        } else {
-          nextState.activeQuests.push("Side Quest: Nouveau Heist - Meet Cipher at Club Afterlife, get a VIP Keycard, and steal the Prototype Singularity Battery from Nouveau Showroom.");
-          narrative = "📜 HEIST CONTRACT RECORDED: Infiltrate Club Afterlife to formulate a plan with Cipher to crack the Nouveau Cybernetic Showroom shields.";
-          setActivePopup({
-            title: "💎 HEIST OF NOUVEAU SHOWROOM",
-            subtitle: "HIGH-SECURITY INFILTRATION",
-            type: "check_success",
-            text: "You review the showroom blueprints. The luxury Prototype Singularity Battery is stored behind polarized electromagnetic kinetic force shields.\n\nTo steal it, you'll need Cipher's VIP Afterlife Keycard or an exceptionally high intelligence software exploit."
-          });
-        }
-      }
-      else if (cleanAction.includes("hack nouveau pressure shields")) {
-        if (nextState.completedPOIActions.includes("nouveau_chrome:shields_hacked")) {
-          narrative = "⚠️ MAINBOARD DECRYPTED: The pressure shields are already disabled. The glass pod is wide open.";
-        } else {
-          const intScore = nextState.attributes?.int || 10;
-          const netSlicerLevel = nextState.skills?.netSlicer || 1;
-          const hasCard = nextState.inventory.includes("VIP Afterlife Keycard");
-          setHackingPuzzle(initHackingGame("nouveau_safe", intScore, netSlicerLevel, hasCard));
-          setActivePOIView("terminal_hacking_puzzle");
-          setIsLoading(false);
-          return;
-        }
-      }
-      else if (cleanAction.includes("loot prototype singularity battery")) {
-        if (!nextState.completedPOIActions.includes("nouveau_chrome:shields_hacked")) {
-          narrative = "❌ FORCE SHIELDS ONLINE: An indigo kinetic field blocks your hand. Deactivate the pressure shields or keycard access first!";
-        } else if (nextState.inventory.includes("Prototype Singularity Battery") || nextState.completedQuests.some(q => q.includes("Nouveau Heist"))) {
-          narrative = "⚠️ INVENTORY RECORDED: You already secured the Prototype Singularity Battery.";
-        } else {
-          nextState.inventory.push("Prototype Singularity Battery");
-          narrative = "🎒 PRIZE SECURED: You snatched the heavy, pulsing 'Prototype Singularity Battery' from the pedestal! Take this back to Cipher at Club Afterlife VIP Lounge to complete the quest!";
-          setActivePopup({
-            title: "💎 PROTOTYPE SECURED",
-            subtitle: "NOUVEAU HEIST PRIZE IN STASH",
-            type: "loot",
-            text: "You lift the pulsing, multi-core cybernetic battery cell. Its core containment fluid burns with cold neon-white light.\n\nDeliver this back to Cipher at Club Afterlife VIP Deck to claim your major credits payout!"
-          });
-        }
-      }
-
-      // Heist delivery
-      else if (cleanAction.includes("bring the prototype singularity battery") || (cleanAction.includes("deliver") && cleanAction.includes("battery") && nextState.poi === "Club Afterlife VIP Lounge")) {
-        if (nextState.inventory.includes("Prototype Singularity Battery")) {
-          nextState.inventory = nextState.inventory.filter(i => i !== "Prototype Singularity Battery");
-          nextState.credits += 350;
-          nextState.experience += 150;
-          if (!nextState.inventory.includes("Unstable Plasma Core")) {
-            nextState.inventory.push("Unstable Plasma Core");
-          }
-          nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Heist"));
-          nextState.completedQuests.push("Side Quest: Nouveau Heist (Completed)");
-          narrative = "💰 HEIST COMPLETED: Delivered the singularity battery to Cipher! Rewarded +350¤, +150 XP, and a rare 'Unstable Plasma Core'!";
-          setActivePopup({
-            title: "💰 HEIST INVOICED",
-            subtitle: "NOUVEAU SHOWROOM BREACHED",
-            type: "loot",
-            text: "Cipher's face lights up as he takes the glowing white battery:\n\n'Incredible! You actually did it! This battery has enough cold-fusion power to fuel our entire network subnet node for a year.\n\nHere's your cut, plus a weapon component of extreme power.'\n\nReward: +350¤ Credits, +150 XP, and 'Unstable Plasma Core' added to inventory!"
-          });
-        }
-      }
-
-      // 6. Highwalk Homicide Site actions
-      else if (cleanAction.includes("ambush security patrols") || cleanAction.includes("ambush security")) {
-        const templates = ENEMIES.homicide_site;
-        const roll = templates[Math.floor(Math.random() * templates.length)];
-
-        nextState.combatState = {
-          enemyName: roll.name,
-          enemyHp: roll.hp,
-          enemyMaxHp: roll.maxHp,
-          enemyShields: roll.shields,
-          enemyMaxShields: roll.maxShields,
-          isActive: true,
-          turnLog: "The security drone activates defense arrays, sweeping the skybridge with heavy smart-carbines!"
-        };
-        narrative = `💥 COMBAT INITIALIZED: Ambushed ${roll.name} on the skybridge sky-arch! Deploy shields!`;
-        logType = "combat";
-      }
+      // Highwalk Homicide Site utility actions
       else if (cleanAction.includes("hack rebel courier's cyberdeck") || cleanAction.includes("hack rebel courier")) {
         const intScore = nextState.attributes?.int || 10;
         const netSlicerLevel = nextState.skills?.netSlicer || 1;
@@ -5730,48 +4689,6 @@ function MainGame() {
           }
           narrative = "🔍 SEARCH SUCCESS: You salvaged 1x 'Shatter-Ridge Scrap Metal' from the shredded drone chassis!";
         }
-      }
-
-      else if (cleanAction.includes("harvest glowing slime pool")) {
-        const count = nextState.inventory.filter(i => i === "Glowing Slime").length;
-        if (count < 3) {
-          nextState.inventory.push("Glowing Slime");
-          const nextCount = count + 1;
-          narrative = `🧪 SLIME HARVESTED: You successfully scraped a sample of 'Glowing Slime' from the hot sludge conduits. Gathered (${nextCount}/3) samples.`;
-          setActivePopup({
-            title: "🧪 SLIME SAMPLE SECURED",
-            subtitle: "BIO-ACTIVE HARVEST",
-            type: "loot",
-            text: `You carefully extracted a glowing, reactive chemical slime sample into a sterile glass capsule.\n\nSamples secured: ${nextCount}/3\n\nReturn to Priestess Morgana at Satoshi Square Temple once you have 3 samples!`
-          });
-        } else {
-          narrative = "🧪 HARVEST COMPLETED: You already carry the maximum 3x Glowing Slime samples needed for Priestess Morgana's request.";
-        }
-      }
-
-      else if (cleanAction.includes("hack ares secure server farm")) {
-        const intScore = nextState.attributes?.intelligence ?? 10;
-        const netSlicerLevel = nextState.skills?.netSlicer ?? 0;
-        const puzzle = initHackingGame("shatter_ridge_server", intScore, netSlicerLevel);
-        setHackingPuzzle(puzzle);
-        setActivePOIView("hacking");
-        narrative = "💻 SECURE SERVER FARM: Initializing host bypass interface on Ares server node...";
-      }
-
-      else if (cleanAction.includes("deliver encrypted ledger directly to vice")) {
-        nextState.inventory = nextState.inventory.filter(i => i !== "Encrypted Ares Ledger");
-        nextState.completedQuests.push("Vice's Retribution: Shatter Ridge Ledger (Completed)");
-        nextState.credits += 400;
-        nextState.experience += 250;
-        nextState.attributes.strength = (nextState.attributes.strength || 10) + 2;
-        nextState.reputations.streetOutlaws = Math.min(100, (nextState.reputations.streetOutlaws || 50) + 15);
-        narrative = "🤝 VICE'S RETRIBUTION COMPLETED: Delivered the Encrypted Ares Ledger directly to Vice! He gives you a respectful salute, some black market credits, and walks you through neural combat enhancement routines (+2 Strength, +400¤, +250 XP, +15% Outcast Union trust).";
-        setActivePopup({
-          title: "🤝 LEGENDARY CONFIDENCE SECURED",
-          subtitle: "VICE'S RETRIBUTION COMPLETE",
-          type: "check_success",
-          text: "Vice plugs the ledger into his wrist console, running dynamic decrypts on the secure databases. 'They thought they could lock down our people,' he says, a heavy cybernetic grin crossing his face. 'This changes everything. Nice work, kid.'\n\nRewards:\n• +400¤ Credits\n• +250 XP\n• +2 Strength (Permanent Neural Combat Upgrade)\n• +15% Outcast Union Reputation"
-        });
       }
 
       // ==========================================
@@ -6246,8 +5163,7 @@ function MainGame() {
                             const questPinDirective = (() => {
                               if (!gameState?.campaignQuestsRegistry) return null;
                               for (const quest of gameState.campaignQuestsRegistry) {
-                                const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-                                if (!isQuestActive) continue;
+                                if (quest.status !== "ACTIVE") continue;
                                 const currentStage = quest.stages?.find(s => !s.completed);
                                 if (!currentStage) continue;
                                 const targetPoiLower = (currentStage.targetPOI || "").toLowerCase();
@@ -6566,7 +5482,7 @@ function MainGame() {
                                   },
                                   contracts: {
                                     enabled: found.name.toLowerCase().includes("bar") || found.id === "hideout" || found.name.toLowerCase().includes("abyss"),
-                                    availableQuestIds: ["Outcast Directive", "Drone Schematic"]
+                                    availableQuestIds: []
                                   },
                                   rumors: {
                                     enabled: true,
@@ -7280,33 +6196,11 @@ function MainGame() {
                                             : activeDialogue === "mira_voss_offer"
                                               ? "You want me to guard some dusty basement safehouse? *Laughs harshly* That's a good joke. Pity doesn't buy loyalty. If you want my knuckles, pay the boss his 200¤ credits, or slam me into the ground in a duel. Show me you have the strength to command, otherwise go back to your desk."
                                               : activeDialogue === "jax"
-                                                ? gameState.inventory.includes("Technical Signal Core")
-                                                  ? "Amazing effort! You delivered the Technical Signal Core. I'm injecting 150¤ into your grid ledger and clearing active corporate tracking nodes."
-                                                  : gameState.activeQuests.some(q => q.includes("The Hunt for Vice"))
-                                                    ? "The clock is ticking. You must traverse to the Titan Logistics Freight Hub in Docks Region, interface with their cargo manifest logs, and isolate Vice's coordinates!"
-                                                    : gameState.activeQuests.some(q => q.includes("Rescue Vice"))
-                                                      ? "We found Vice! He is cryogenic-frozen in Detention Bay B underneath the Ares Biotech Corporate Plaza in Downtown. Bring him home, recruit!"
-                                                      : gameState.completedQuests.some(q => q.includes("Vice Rescued") || q.includes("Chapter 1 Completed"))
-                                                        ? "Outstanding work breaking Vice out of that corporate cryogenic block! We are building a genuine resistance cell here. Prepare your safehouse upgrades and Dojo training - we strike the corporate sectors in Chapter 2!"
-                                                        : gameState.completedQuests.some(q => q.includes("Outcast"))
-                                                          ? "Hold on, rookie! My covert antennas just sniffed an encrypted corporate report. Your cell leader Vice didn't slip through the net clean. He was captured by Ares Tactical! They shipped him out of slums. Go to the Titan Logistics Freight Hub in Docks, hack their transport logs, and find out where they've put him!"
-                                                          : "The tracking satellite signals are narrowing down. Traverse to Shatter Ridge Corridors in Downtown Region, seize that copper Technical Signal Core, and deliver it!"
-                                                : activeDialogue === "aria"
-                                                  ? gameState.inventory.includes("Acid Beast Core")
-                                                    ? "Outstanding operation. The sewer lines are functioning beautifully. Here is your salary, and I have authorized an 'Apex Mantis electro-blade' inside stash storage."
-                                                    : gameState.completedQuests.some(q => q.includes("Corporate Hunt"))
-                                                      ? "The corporate board records your diagnostic work with high honor, mercenary. Keep doing business with Apex."
-                                                      : "A radioactive Mutant Sludge Behemoth is nesting in the Docks Sludge Conduits. Hunt it down, extract its chemical Acid Beast Core, and deliver it."
-                                                  : activeDialogue === "morgana"
-                                                    ? gameState.inventory.includes("Charged Ley-Matrix")
-                                                      ? "The bio-frequencies are secure. I will inject high-magic Ether calibrations directly into your cognitive deck. Maximum mana capacity raised!"
-                                                      : gameState.completedQuests.some(q => q.includes("Syndicate Catalyst"))
-                                                        ? gameState.activeQuests.some(q => q.includes("Chem-Weaver's Request"))
-                                                          ? `Bring me 3x Glowing Slime samples from the Docks Sludge Conduits. You currently have ${gameState.inventory.filter(i => i === "Glowing Slime").length}/3 samples.`
-                                                          : gameState.completedQuests.some(q => q.includes("Chem-Weaver's Request"))
-                                                            ? "The bio-sludge catalyst is perfect. The technomantic ley-matrix hums with clean celestial current. Bless you, child."
-                                                            : "Your neural system is harmonized with the techno-magic flow, initiate. Walk in shadow."
-                                                        : "Take my uncharged server matrix, traverse to the Cyber-shrine Gardens in Satoshi Square Region, and Meditate with the tech core to charge the Ley-Matrix."
+                                            ? "Jax reviews the resistance network and points you toward the authored contracts available at this location."
+                                            : activeDialogue === "aria"
+                                              ? "Chancellor Aria monitors Apex operations from behind an encrypted armory console."
+                                              : activeDialogue === "morgana"
+                                                ? "Morgana studies the ley-stream in silence. Her authored rites and contracts are available through the temple scene nodes."
                                                     : activeDialogue === "lost_girl"
                                                       ? gameState.companions.some(c => c.name === "Mia")
                                                         ? "Mia looks up at you with happy, sparkling eyes: 'Thank you for giving me a home and saving my life, commander! I'll do my absolute best to support you.'"
@@ -7322,122 +6216,6 @@ function MainGame() {
                                   {/* Branching Response Action Buttons inside Dialogue Overlay */}
                                   <div className="flex flex-wrap gap-1.5 pt-2.5">
                                     
-                                    {/* Dialogue Accept/Complete action switches */}
-                                    {activeDialogue === "jax" && (
-                                      gameState.inventory.includes("Technical Signal Core") ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.credits += 150;
-                                            next.experience += 80;
-                                            next.inventory = next.inventory.filter(i => i !== "Technical Signal Core");
-                                            next.activeQuests = next.activeQuests.filter(q => !q.includes("Technical Signal Core") && !q.includes("Outcast Directive"));
-                                            next.completedQuests.push("Outcast Directive: Secured signal jammer core from waste-raiders.");
-                                            setGameState(next);
-                                            triggerToast("COMPLETED: OUTCAST DIRECTIVE (+150¤)");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-cyan-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-cyan-400"
-                                        >
-                                          Deliver Signal Core (+150¤)
-                                        </button>
-                                      ) : !gameState.activeQuests.some(q => q.includes("Outcast")) && !gameState.completedQuests.some(q => q.includes("Outcast")) ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.activeQuests.push("Outcast Directive: Move to Shatter Ridge Corridors (Downtown Region) and secure the Technical Signal Core for Jax.");
-                                            setGameState(next);
-                                            triggerToast("ACCEPTED QUEST: OUTCAST DIRECTIVE");
-                                          }}
-                                          className="bg-cyan-950 text-cyan-400 border border-cyan-500/30 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer hover:bg-cyan-900"
-                                        >
-                                          Accept Assignment
-                                        </button>
-                                      ) : gameState.completedQuests.some(q => q.includes("Outcast")) && !gameState.activeQuests.some(q => q.includes("The Hunt for Vice") || q.includes("Rescue Vice")) && !gameState.completedQuests.some(q => q.includes("Vice Rescued") || q.includes("Chapter 1 Completed")) ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.activeQuests.push("Main Quest: The Hunt for Vice - Visit the Docks' Freight Hub and hack the cargo terminal logs to locate Vice's cryogenic holding block.");
-                                            setGameState(next);
-                                            triggerToast("ACCEPTED MAIN QUEST: THE HUNT FOR VICE");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-purple-500 text-slate-950 font-bold px-2.5 py-1.5 rounded text-3xs uppercase cursor-pointer hover:bg-purple-400 animate-pulse"
-                                        >
-                                          Accept Quest: The Hunt for Vice
-                                        </button>
-                                      ) : null
-                                    )}
-
-                                    {activeDialogue === "aria" && !gameState.completedQuests.some(q => q.includes("Corporate Hunt")) && (
-                                      gameState.inventory.includes("Acid Beast Core") ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.credits += 180;
-                                            next.experience += 90;
-                                            next.inventory = next.inventory.filter(i => i !== "Acid Beast Core");
-                                            next.inventory.push("Apex Mantis electro-blade");
-                                            next.activeQuests = next.activeQuests.filter(q => !q.includes("Acid Beast Core"));
-                                            next.completedQuests.push("Corporate Hunt: Collect mutant chemical core in Sewage.");
-                                            setGameState(next);
-                                            triggerToast("COMPLETED: CORPORATE HUNT (+180¤ +Apex Electro-Blade)");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-cyan-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
-                                        >
-                                          Deliver Acid Beast Core (+180¤)
-                                        </button>
-                                      ) : !gameState.activeQuests.some(q => q.includes("Corporate Hunt") || q.includes("Sludge Behemoth")) ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.activeQuests.push("Corporate Hunt: Travel to Sludge Conduits (Docks Region) and engage the Toxic Sludge Behemoth to secure its Acid Beast Core.");
-                                            setGameState(next);
-                                            triggerToast("ACCEPTED QUEST: CORPORATE HUNT");
-                                          }}
-                                          className="bg-cyan-950 text-cyan-400 border border-cyan-500/30 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
-                                        >
-                                          Accept License
-                                        </button>
-                                      ) : null
-                                    )}
-
-                                    {activeDialogue === "morgana" && !gameState.completedQuests.some(q => q.includes("Syndicate Catalyst")) && (
-                                      gameState.inventory.includes("Charged Ley-Matrix") ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.maxMana += 25;
-                                            next.mana = next.maxMana;
-                                            next.credits += 120;
-                                            next.experience += 70;
-                                            next.inventory = next.inventory.filter(i => i !== "Charged Ley-Matrix");
-                                            next.activeQuests = next.activeQuests.filter(q => !q.includes("Ley-Matrix") && !q.includes("Syndicate Catalyst"));
-                                            next.completedQuests.push("Syndicate Catalyst: Meditated at Cyber Shi-Shrines.");
-                                            setGameState(next);
-                                            triggerToast("COMPLETED: COVEN Ley alignment (+120¤ +25 Max Mana)");
-                                            setActiveDialogue(null);
-                                          }}
-                                          className="bg-cyan-500 text-slate-950 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
-                                        >
-                                          Deliver Charged Matrix (+120¤)
-                                        </button>
-                                      ) : !gameState.activeQuests.some(q => q.includes("Syndicate Catalyst")) ? (
-                                        <button
-                                          onClick={() => {
-                                            let next = { ...gameState };
-                                            next.activeQuests.push("Syndicate Catalyst: Move to Satoshi Cyber-Shrine Gardens (Satoshi Square Region) and Meditate with the tech core to charge the matrix.");
-                                            setGameState(next);
-                                            triggerToast("ACCEPTED QUEST: COVEN SYNDICATE CATALYST");
-                                          }}
-                                          className="bg-cyan-950 text-cyan-400 border border-cyan-500/30 font-bold px-2 py-1 rounded text-3xs uppercase cursor-pointer"
-                                        >
-                                          Accept Initiation
-                                        </button>
-                                      ) : null
-                                    )}
-
                                     {activeDialogue === "auction_lobby" && (
                                       <>
                                         {/* Bid for Evelyn */}
@@ -8718,8 +7496,7 @@ function MainGame() {
                                            const currentDistrict = (currentPoiObj?.district || gameState.district || "").toLowerCase();
 
                                            gameState.campaignQuestsRegistry.forEach(quest => {
-                                             const isQuestActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-                                             if (!isQuestActive) return;
+                                             if (quest.status !== "ACTIVE") return;
 
                                              const currentStage = quest.stages?.find(s => !s.completed);
                                              if (!currentStage) return;
@@ -10817,12 +9594,7 @@ function MainGame() {
                                 const victoryScene = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(nextState.poiInteractiveScenes || {}) }[victorySceneId];
                                 if (victoryScene) setRelicStep(victoryScene.initialStepId as any);
                               }
-                              else if (enemyName.includes("Behemoth") && nextState.activeQuests.some(q => q.includes("Corporate Hunt"))) {
-                                nextState.inventory.push("Acid Beast Core");
-                                nextState.activeQuests = nextState.activeQuests.filter(q => !q.includes("Corporate Hunt"));
-                                nextState.activeQuests.push("Objective: Deliver the 'Acid Beast Core' to Chancellor Aria at Apex Armory.");
-                                narrative += "\n\n🎒 OBJECTIVE COLLECTED: Dislodged the rare green pulsating 'Acid Beast Core'. Advance to Chancellor Aria to deliver the asset.";
-                              }
+
 
                               if (nextState.experience >= 100) {
                                 nextState.level += 1;
@@ -11696,7 +10468,7 @@ function MainGame() {
 
                     {/* TAB SLOT C: QUEST LOG DIRECTIVE SCHEMAS */}
                     {activeTab === "quests" && (() => {
-                      const allQuests = syncStructuredQuests(gameState);
+                      const allQuests = buildQuestJournal(gameState);
                       
                       // Filter based on questFilter state
                       const filteredQuests = allQuests.filter(q => {

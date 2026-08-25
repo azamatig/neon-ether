@@ -22,6 +22,7 @@ import {
   MessageSquare
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { activateQuest } from "../questEngine";
 import {
   GameState,
   CustomPOIData,
@@ -387,15 +388,11 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
   // ----------------------------------------------------
   const availableQuests = (gameState.campaignQuestsRegistry || []).filter(q => 
     (services.contracts?.availableQuestIds?.includes(q.id) || !services.contracts?.availableQuestIds || services.contracts.availableQuestIds.length === 0) &&
-    !gameState.completedQuests.includes(q.id) &&
-    !gameState.activeQuests.some(aq => aq.includes(q.title) || aq.includes(q.id))
+    q.status === "NOT_STARTED"
   );
 
   const handleAcceptContract = (questId: string, questTitle: string) => {
-    setGameState(prev => ({
-      ...prev,
-      activeQuests: [...prev.activeQuests, `${questTitle} (Accepted at ${poi.name})`]
-    }));
+    setGameState(prev => activateQuest(prev, questId));
 
     addSystemLog(`📜 CONTRACT ACCEPTED: "${questTitle}" signed at ${poi.name}. Objectives uploaded to datapad.`);
     triggerToast(`Contract Accepted: ${questTitle}`);

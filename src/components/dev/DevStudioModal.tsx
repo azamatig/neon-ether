@@ -325,6 +325,20 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
     } catch (e) {}
   }, [customPOIs]);
 
+  // POI Studio data is authored game content, not modal-only draft state. Keep
+  // the runtime registry hydrated from persisted overrides so edited buttons
+  // remain available after closing the studio or reloading the application.
+  useEffect(() => {
+    if (!setGameState) return;
+    setGameState(prev => {
+      const current = prev.customPOIsRegistry || [];
+      const currentJson = JSON.stringify(current);
+      const authoredJson = JSON.stringify(customPOIs);
+      if (currentJson === authoredJson) return prev;
+      return { ...prev, customPOIsRegistry: customPOIs };
+    });
+  }, [customPOIs, setGameState]);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_QUESTS, JSON.stringify(customQuests));

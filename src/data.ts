@@ -694,6 +694,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "safehouse",
     buttons: [
       "[SCENE:vice_retribution_briefing] Discuss Vice's Retribution",
+      "[SCENE:singularity_briefing] Review the Hyperion Final Assault",
       "Rest & Recover at Hideout",
       "Check Stash Inventory",
       "Manage Passive Server Work",
@@ -1020,6 +1021,28 @@ export const MAP_POIS: MapPOI[] = [
       "Overload automated grid line (HACK check)",
       "Inspect thermal pipes"
     ]
+  },
+  {
+    id: "hyperion_gate",
+    name: "Hyperion Neo-Cathedral Gate",
+    district: "hyperion_cathedral",
+    description: "The fortified entrance to Hyperion Spire. Kinetic shield pylons and cyber-crusader gunlines protect the ascent chamber leading to the Archon's ley-altar.",
+    image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=600",
+    x: 25,
+    y: 75,
+    type: "combat",
+    buttons: []
+  },
+  {
+    id: "hyperion_summit",
+    name: "Hyperion Ley-Altar Summit",
+    district: "hyperion_cathedral",
+    description: "The summit of the corporate cathedral, where the Archon AI binds the city's ley-energy into a planetary purge lattice.",
+    image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=600",
+    x: 72,
+    y: 20,
+    type: "combat",
+    buttons: []
   },
   {
     id: "altar_column",

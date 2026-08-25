@@ -646,10 +646,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Fight through the elite cyber-crusader vanguard at the cathedral gates.",
         objectiveType: "kill_target",
         targetPOI: "Hyperion Neo-Cathedral",
+        targetPOIId: "hyperion_gate",
         targetDistrict: "hyperion_cathedral",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "singularity:spire_breached",
+        linkedPOISceneId: "singularity_spire_gate",
+        linkedPOISceneStepId: "gate"
       },
       {
         id: "mq6_s2",
@@ -658,10 +662,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Climb to the Ley-Altar summit and destroy the divine AI construct.",
         objectiveType: "kill_target",
         targetPOI: "Hyperion Ley-Altar Summit",
+        targetPOIId: "hyperion_summit",
         targetDistrict: "hyperion_cathedral",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "singularity:archon_destroyed",
+        linkedPOISceneId: "singularity_archon_confrontation",
+        linkedPOISceneStepId: "altar",
         operationalPaths: [
           {
             id: "mq6_p1_mind",

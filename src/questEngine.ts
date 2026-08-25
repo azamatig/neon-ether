@@ -152,7 +152,10 @@ export function completeQuest(state: GameState, questId: string, grantRewards = 
   const completedQuests = Array.from(new Set([...hydrated.completedQuests, quest.title]));
   if (quest.nextQuestId) {
     const nextQuest = nextRegistry.find(item => item.id === quest.nextQuestId);
-    if (nextQuest && nextQuest.status !== "COMPLETED") {
+    const reputationMet = !nextQuest?.requiredReputationFaction ||
+      (hydrated.reputations?.[nextQuest.requiredReputationFaction] || 0) >= (nextQuest.requiredReputationValue || 0);
+    const levelMet = !nextQuest || (nextQuest.minLevel || 1) <= hydrated.level;
+    if (nextQuest && nextQuest.status !== "COMPLETED" && levelMet && reputationMet) {
       nextRegistry = nextRegistry.map(item => item.id === nextQuest.id ? { ...item, status: "ACTIVE" as const } : item);
       if (!activeQuests.some(entry => isLegacyMatch([entry], nextQuest))) activeQuests.push(questLabel(nextQuest));
     }

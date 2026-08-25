@@ -5435,8 +5435,9 @@ function MainGame() {
                         {(() => {
                           const isDialogueActive = squadDialogue || gameState?.activeBranchingDialogue || activeDialogue;
                           const isQuestIntercept = hasActiveQuestIntercept(activePOIView);
-                          if (!isDialogueActive && !isQuestIntercept) {
-                            const found = (gameState.customPOIsRegistry || []).find(p => p.id === activePOIView) || MAP_POIS.find(p => p.id === activePOIView);
+                          const customPOIOverride = (gameState.customPOIsRegistry || []).find(p => p.id === activePOIView);
+                          if (!isDialogueActive && (!isQuestIntercept || !!customPOIOverride)) {
+                            const found = customPOIOverride || MAP_POIS.find(p => p.id === activePOIView);
                             if (found) {
                               const resolvedPOI: CustomPOIData = {
                                 id: found.id,
@@ -5520,6 +5521,11 @@ function MainGame() {
                                       ...prev,
                                       activeBranchingDialogue: { npcId, nodeId: nodeId || "start" }
                                     }));
+                                  }}
+                                  onLaunchQuestScene={(sceneId, stepId) => {
+                                    const scene = { ...DEFAULT_POI_INTERACTIVE_SCENES, ...(gameState.poiInteractiveScenes || {}) }[sceneId];
+                                    setActiveDialogue(sceneId);
+                                    setRelicStep((stepId || scene?.initialStepId || "intro") as any);
                                   }}
                                   onExecuteAction={(actionText) => {
                                     handleExecuteAction(actionText);

@@ -1164,6 +1164,7 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                         const foundPOI = allAvailablePOIs.find(p => p.name === selectedVal || p.id === selectedVal);
                         handleUpdateStage(sIdx, { 
                           targetPOI: selectedVal,
+                          targetPOIId: foundPOI?.id,
                           targetDistrict: foundPOI?.district || stage.targetDistrict || "conduit09"
                         });
                       }}
@@ -1176,6 +1177,18 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-3xs text-emerald-300 uppercase font-bold">Completion Event Key</label>
+                    <input
+                      type="text"
+                      value={stage.completionAction || ""}
+                      onChange={(e) => handleUpdateStage(sIdx, { completionAction: e.target.value || undefined })}
+                      className="bg-slate-950 border border-emerald-700/60 focus:border-emerald-400 rounded-lg px-2 py-1 text-2xs text-emerald-200 outline-none font-mono"
+                      placeholder="poi_id:action"
+                      title="The completedPOIActions event that advances this stage in the live game"
+                    />
                   </div>
 
                   <div className="flex flex-col gap-1">

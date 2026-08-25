@@ -10,7 +10,13 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 export function buildQuestCatalog(overrides: UnifiedQuest[] = []): UnifiedQuest[] {
   const quests = new Map<string, UnifiedQuest>();
   DEFAULT_CAMPAIGN_QUESTS.forEach(quest => quests.set(quest.id, clone(quest)));
-  overrides.forEach(quest => quests.set(quest.id, clone(quest)));
+  overrides.forEach(quest => {
+    // The first Quest Studio prototype shipped a five-stage placeholder
+    // prologue (p_s1...p_s5). Never let that stale save copy shadow the real
+    // ten-stage world route authored in questsData.
+    const isPlaceholderPrologue = quest.id === "prologue" && quest.stages.some(stage => /^p_s\d+$/.test(stage.id));
+    if (!isPlaceholderPrologue) quests.set(quest.id, clone(quest));
+  });
   return Array.from(quests.values());
 }
 
@@ -33,13 +39,20 @@ function syncCollectStage(stage: QuestStage, state: GameState): QuestStage {
   };
 }
 
+function syncStageFromWorld(stage: QuestStage, state: GameState): QuestStage {
+  const collected = syncCollectStage(stage, state);
+  if (!collected.completionAction || collected.completed) return collected;
+  if (!(state.completedPOIActions || []).includes(collected.completionAction)) return collected;
+  return { ...collected, currentCount: collected.targetCount || 1, completed: true };
+}
+
 /** Hydrates old saves and keeps the Quest Studio catalog available in normal gameplay. */
 export function hydrateQuestSystem(state: GameState): GameState {
   const catalog = buildQuestCatalog(state.campaignQuestsRegistry || []);
   const campaignQuestsRegistry = catalog.map(quest => {
     const completed = isLegacyMatch(state.completedQuests, quest);
     const active = isLegacyMatch(state.activeQuests, quest);
-    const stages = quest.stages.map(stage => syncCollectStage(stage, state));
+    const stages = quest.stages.map(stage => syncStageFromWorld(stage, state));
 
     if (completed) {
       return {
@@ -58,6 +71,16 @@ export function hydrateQuestSystem(state: GameState): GameState {
   });
 
   return { ...state, campaignQuestsRegistry };
+}
+
+/** Reconciles edited stage trigger keys with world events without touching definitions. */
+export function synchronizeQuestProgress(state: GameState): GameState {
+  const hydrated = hydrateQuestSystem(state);
+  const registry = (hydrated.campaignQuestsRegistry || []).map(quest => {
+    const stages = quest.stages.map(stage => syncStageFromWorld(stage, hydrated));
+    return { ...quest, stages };
+  });
+  return { ...hydrated, campaignQuestsRegistry: registry };
 }
 
 function questLabel(quest: UnifiedQuest): string {

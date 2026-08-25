@@ -62,7 +62,7 @@ import { GameProvider, useGame } from "./context/GameContext";
 
 import { LogMessage, GameState, CompanionState, QuestState, QuestObjective, QuestReward, POIInteractiveEvent, POISceneStep, POISceneChoice, POICompanionDialogue, CustomPOIData } from "./types";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "./poiScenesData";
-import { DEFAULT_CAMPAIGN_QUESTS } from "./questsData";
+import { buildQuestCatalog, hydrateQuestSystem } from "./questEngine";
 import vicePortrait from "./assets/characters/vice/vice_portrait.png";
 import viceBody from "./assets/characters/vice/vice_body.png";
 import trackerPortrait from "./assets/characters/tracker/tracker_portrait.png";
@@ -516,12 +516,12 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
   }
 
   // 14. Dynamic Campaign Quests & Custom Quests Registry Synchronization
-  const campaignRegistry = state.campaignQuestsRegistry || [];
+  const campaignRegistry = buildQuestCatalog(state.campaignQuestsRegistry || []);
   for (const customQ of campaignRegistry) {
     const isCompleted = state.completedQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
     const isActive = state.activeQuests?.some(q => q.includes(customQ.title) || q.includes(customQ.id));
 
-    if (isActive || isCompleted) {
+    if (isActive || isCompleted || customQ.status !== "NOT_STARTED") {
       const q = getOrCreate(customQ.id, {
         title: customQ.title,
         category: (customQ.category === "Main Quest" ? "Main Quest" : "Side Quest") as any,
@@ -540,10 +540,20 @@ export function syncStructuredQuests(state: GameState): QuestState[] {
         ]
       });
 
-      if (isCompleted) {
+      q.title = customQ.title;
+      q.description = customQ.description;
+      q.category = customQ.category === "Main Quest" ? "Main Quest" : "Side Quest";
+      q.objectives = (customQ.stages || []).map((s, idx) => ({
+        id: s.id || `stage_${idx}`,
+        text: s.title + (s.description ? `: ${s.description}` : ""),
+        current: isCompleted ? (s.targetCount || 1) : (s.currentCount || 0),
+        target: s.targetCount || 1,
+        completed: isCompleted || s.completed || (s.currentCount >= (s.targetCount || 1))
+      }));
+      if (isCompleted || customQ.status === "COMPLETED") {
         q.status = "COMPLETED";
       } else {
-        q.status = "ACTIVE";
+        q.status = isActive ? "ACTIVE" : customQ.status;
       }
       if (customQ.narrativeBriefing) {
         q.log = [customQ.narrativeBriefing];
@@ -2851,7 +2861,7 @@ function MainGame() {
       // Clean migration of old state variables
       const isBlade = state.archetype === "Cyber-Blade";
       const isMage = state.archetype === "Techno-Mage";
-      const migratedState: GameState = {
+      const migratedState: GameState = hydrateQuestSystem({
         district: "aurus",
         poi: "Main Headquarters (The Hideout)",
         hp: 100,
@@ -2891,7 +2901,7 @@ function MainGame() {
           trinket: null
         },
         ...state
-      };
+      });
 
       // Migrate old weapon slot if exists
       if (migratedState.equipment && (migratedState.equipment as any).weapon) {
@@ -3104,7 +3114,7 @@ function MainGame() {
 
     setGameState(prev => {
       // If gameState is not loaded (e.g. from main menu), initialize with the Cyber-Blade archetype
-      const current = prev || getInitialState(ARCHETYPES[0]);
+      const current = hydrateQuestSystem(prev || getInitialState(ARCHETYPES[0]));
       
       return {
         ...current,
@@ -3264,7 +3274,7 @@ function MainGame() {
   // Deploy fresh agent from archetype select
   const handleDeployAgent = async () => {
     setIsLoading(true);
-    const initial = getInitialState(selectedArchetype);
+    const initial = hydrateQuestSystem(getInitialState(selectedArchetype));
     
     // Set custom properties
     initial.playerName = customName.trim() || "Kaelen";
@@ -3757,7 +3767,8 @@ function MainGame() {
         const stageId = parts[1];
         const pathId = parts[2];
 
-        const registry = nextState.campaignQuestsRegistry || [];
+        const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+        nextState.campaignQuestsRegistry = registry;
         const quest = registry.find(q => q.id === questId);
         if (quest) {
           const stage = quest.stages?.find(s => s.id === stageId || !s.completed);
@@ -4404,7 +4415,8 @@ function MainGame() {
           const stageId = match[2].trim();
           const pathId = match[3] ? match[3].trim() : undefined;
 
-          const registry = nextState.campaignQuestsRegistry || DEFAULT_CAMPAIGN_QUESTS;
+          const registry = buildQuestCatalog(nextState.campaignQuestsRegistry || []);
+          nextState.campaignQuestsRegistry = registry;
           const quest = registry.find(q => q.id === questId);
           const stage = quest?.stages?.find(s => s.id === stageId);
 

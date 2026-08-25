@@ -37,6 +37,7 @@ import { CustomWorldItem } from "./ItemForgeStudio";
 import { BASE_PROPERTIES, DEFAULT_CAMPAIGN_QUESTS } from "../../questsData";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "../../poiScenesData";
 import { MAP_POIS } from "../../data";
+import { activateQuest, advanceQuestStage, buildQuestCatalog, completeQuest, resetQuest } from "../../questEngine";
 
 interface QuestStudioProps {
   customQuests: UnifiedQuest[];
@@ -147,12 +148,8 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
   // Current Quest Status in Live Game State
   const liveQuestStatus = useMemo(() => {
-    const isCompleted = gameState.completedQuests?.some(q => q.includes(questForm.title) || q.includes(questForm.id));
-    if (isCompleted) return "COMPLETED";
-    const isActive = gameState.activeQuests?.some(q => q.includes(questForm.title) || q.includes(questForm.id));
-    if (isActive) return "ACTIVE";
-    return "NOT_STARTED";
-  }, [gameState.activeQuests, gameState.completedQuests, questForm.title, questForm.id]);
+    return gameState.campaignQuestsRegistry?.find(q => q.id === questForm.id)?.status || "NOT_STARTED";
+  }, [gameState.campaignQuestsRegistry, questForm.id]);
 
   // Handler: Save Quest Form
   const handleSaveQuest = () => {
@@ -173,12 +170,23 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
     // Also update campaignQuestsRegistry in gameState for immediate live sync
     setGameState(prev => {
-      const reg = prev.campaignQuestsRegistry || [];
+      const reg = buildQuestCatalog(prev.campaignQuestsRegistry || customQuests);
       const idx = reg.findIndex(q => q.id === questForm.id);
       let updatedReg: UnifiedQuest[];
       if (idx >= 0) {
         updatedReg = [...reg];
-        updatedReg[idx] = questForm;
+        const liveQuest = reg[idx];
+        updatedReg[idx] = {
+          ...questForm,
+          status: liveQuest.status,
+          rewardClaimed: liveQuest.rewardClaimed,
+          stages: questForm.stages.map(stage => {
+            const liveStage = liveQuest.stages.find(item => item.id === stage.id);
+            return liveStage
+              ? { ...stage, currentCount: liveStage.currentCount, completed: liveStage.completed }
+              : stage;
+          })
+        };
       } else {
         updatedReg = [...reg, questForm];
       }
@@ -564,82 +572,21 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
   // LIVE GAME MASTER QUEST TESTER ACTIONS
   // ============================================================
   const handleLiveActivateQuest = () => {
-    const questTitleFormatted = `${questForm.title} - ${questForm.description}`;
-    
-    setGameState(prev => {
-      const active = prev.activeQuests || [];
-      const updatedActive = active.includes(questTitleFormatted) 
-        ? active 
-        : [...active.filter(q => !q.includes(questForm.title)), questTitleFormatted];
-
-      return {
-        ...prev,
-        activeQuests: updatedActive,
-        completedQuests: (prev.completedQuests || []).filter(q => !q.includes(questForm.title))
-      };
-    });
+    setGameState(prev => activateQuest(prev, questForm.id));
 
     triggerToast(`LIVE HUD: "${questForm.title}" is now ACTIVE in player quest log!`);
   };
 
   const handleLiveAdvanceStage = () => {
+    setGameState(prev => advanceQuestStage(prev, questForm.id));
     triggerToast(`LIVE ADVANCE: Advanced Stage for "${questForm.title}"!`);
   };
 
   const handleLiveCompleteQuest = () => {
-    const questTitleFormatted = `${questForm.title} - ${questForm.description}`;
     const rewards = questForm.rewards || {};
     const worldUnlocks = rewards.worldUnlocks || {};
 
-    setGameState(prev => {
-      // 1. Update Quests lists
-      const nextActive = (prev.activeQuests || []).filter(q => !q.includes(questForm.title));
-      const nextCompleted = Array.from(new Set([...(prev.completedQuests || []), questForm.title]));
-
-      // 2. Grant Credits & Inventory Items
-      const nextCredits = prev.credits + (rewards.credits || 0);
-      const nextInventory = [...prev.inventory, ...(rewards.items || [])];
-
-      // 3. Grant World Unlocks: Base Deeds
-      let nextUnlockedBases = [...(prev.unlockedBases || ["hideout"])];
-      if (worldUnlocks.unlockBaseId && !nextUnlockedBases.includes(worldUnlocks.unlockBaseId)) {
-        nextUnlockedBases.push(worldUnlocks.unlockBaseId);
-      }
-
-      // 4. Grant World Unlocks: District Passes
-      let nextUnlockedDistricts = [...(prev.unlockedDistricts || ["conduit09", "downtown", "aurus"])];
-      if (worldUnlocks.unlockDistrictId && !nextUnlockedDistricts.includes(worldUnlocks.unlockDistrictId)) {
-        nextUnlockedDistricts.push(worldUnlocks.unlockDistrictId);
-      }
-
-      // 5. Grant World Unlocks: Perks
-      let nextUnlockedPerks = [...(prev.unlockedPerks || [])];
-      if (worldUnlocks.unlockPerkOrSkill && !nextUnlockedPerks.includes(worldUnlocks.unlockPerkOrSkill)) {
-        nextUnlockedPerks.push(worldUnlocks.unlockPerkOrSkill);
-      }
-
-      // 6. Automatically trigger NEXT quest in sequence if defined!
-      if (questForm.nextQuestId) {
-        const nextQuestObj = allQuests.find(q => q.id === questForm.nextQuestId);
-        if (nextQuestObj) {
-          const nextQuestString = `${nextQuestObj.title} - ${nextQuestObj.description}`;
-          if (!nextActive.includes(nextQuestString) && !nextCompleted.includes(nextQuestObj.title)) {
-            nextActive.push(nextQuestString);
-          }
-        }
-      }
-
-      return {
-        ...prev,
-        activeQuests: nextActive,
-        completedQuests: nextCompleted,
-        credits: nextCredits,
-        inventory: nextInventory,
-        unlockedBases: nextUnlockedBases,
-        unlockedDistricts: nextUnlockedDistricts,
-        unlockedPerks: nextUnlockedPerks
-      };
-    });
+    setGameState(prev => completeQuest(prev, questForm.id));
 
     let unlockMsg = `COMPLETED: "${questForm.title}"! +${rewards.credits || 0}¤, +${rewards.experience || 0} XP`;
     if (worldUnlocks.unlockBaseId) {
@@ -655,11 +602,7 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
   };
 
   const handleLiveResetQuest = () => {
-    setGameState(prev => ({
-      ...prev,
-      activeQuests: (prev.activeQuests || []).filter(q => !q.includes(questForm.title)),
-      completedQuests: (prev.completedQuests || []).filter(q => !q.includes(questForm.title))
-    }));
+    setGameState(prev => resetQuest(prev, questForm.id));
     triggerToast(`RESET: "${questForm.title}" reset to Not Started.`);
   };
 

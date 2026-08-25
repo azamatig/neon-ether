@@ -169,7 +169,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return DEFAULT_CAMPAIGN_QUESTS;
+    return [];
   });
 
   const [customEvents, setCustomEvents] = useState<CustomWorldEvent[]>(() => {

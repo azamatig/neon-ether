@@ -86,14 +86,16 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
     }
   };
   
-  // Available tabs calculation
-  const hasShop = services.shop?.enabled || poi.category === "shop" || poi.type === "shop";
-  const hasClinic = services.clinic?.enabled || poi.category === "medical" || poi.id?.includes("clinic");
-  const hasRest = services.rest?.enabled || poi.category === "safehouse" || poi.type === "safehouse" || poi.id === "hideout";
-  const hasAuction = services.auction?.enabled || poi.category === "auction" || poi.name?.toLowerCase().includes("auction");
-  const hasContracts = services.contracts?.enabled || (services.contracts?.availableQuestIds && services.contracts.availableQuestIds.length > 0);
-  const hasRumors = services.rumors?.enabled || (services.rumors?.rumorList && services.rumors.rumorList.length > 0) || poi.category === "social";
-  const hasNpcs = (poi.placedNPCIds && poi.placedNPCIds.length > 0) || (services.npcs?.placedNPCIds && services.npcs.placedNPCIds.length > 0);
+  // Service tabs are authored explicitly in POI Studio. Names, categories,
+  // populated lists, and legacy POI types must never turn tabs on implicitly.
+  const hasShop = services.shop?.enabled === true;
+  const hasClinic = services.clinic?.enabled === true;
+  const hasRest = services.rest?.enabled === true;
+  const hasAuction = services.auction?.enabled === true;
+  const hasContracts = services.contracts?.enabled === true;
+  const hasRumors = services.rumors?.enabled === true;
+  const hasNpcs = services.npcs?.enabled === true;
+  const hasServiceTabs = hasShop || hasClinic || hasRest || hasAuction || hasContracts || hasRumors || hasNpcs;
   
   const [activeTab, setActiveTab] = useState<"overview" | "shop" | "clinic" | "rest" | "auction" | "contracts" | "rumors" | "npcs">("overview");
   const [actionResult, setActionResult] = useState<{ title: string; text: string; success: boolean } | null>(null);
@@ -597,7 +599,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
       </div>
 
       {/* 2. MODULAR INTERIOR SERVICE TABS */}
-      <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0">
+      {hasServiceTabs && <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0">
         <button
           onClick={() => setActiveTab("overview")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
@@ -661,7 +663,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           </button>
         )}
 
-        <button
+        {hasContracts && <button
           onClick={() => setActiveTab("contracts")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
             activeTab === "contracts"
@@ -670,9 +672,9 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           }`}
         >
           <Scroll size={13} /> Job & Bounty Board ({availableQuests.length})
-        </button>
+        </button>}
 
-        <button
+        {hasRumors && <button
           onClick={() => setActiveTab("rumors")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
             activeTab === "rumors"
@@ -681,7 +683,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           }`}
         >
           <Radio size={13} /> Rumors & Intel
-        </button>
+        </button>}
 
         {hasNpcs && (
           <button
@@ -695,7 +697,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
             <Users size={13} /> Locals & NPCs
           </button>
         )}
-      </div>
+      </div>}
 
       {/* 3. TAB CONTENT VIEWS */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">

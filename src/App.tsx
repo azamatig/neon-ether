@@ -139,6 +139,9 @@ const getItemIcon = (itemName: string, slot?: string) => {
   return <Briefcase size={14} className="text-slate-400" />;
 };
 
+const getPlayerActionLabel = (action: string): string =>
+  action.replace(/^\[(?:SCENE|QUEST):[^\]]+\]\s*/i, "");
+
 export function buildQuestJournal(state: GameState): QuestState[] {
   const quests: QuestState[] = [];
 
@@ -7511,7 +7514,9 @@ function MainGame() {
                                                (!targetPoiLower && targetDistrictLower && targetDistrictLower === currentDistrict);
 
                                              if (matchesThisPOI) {
-                                               if (currentStage.linkedPOISceneId) {
+                                               if (currentStage.linkedPOIActionId) {
+                                                  // Lightweight actions are rendered by POIInteriorHub from the POI registry.
+                                               } else if (currentStage.linkedPOISceneId) {
                                                   const linkedStep = currentStage.linkedPOISceneStepId ? `:${currentStage.linkedPOISceneStepId}` : "";
                                                   btns.push(`[SCENE:${currentStage.linkedPOISceneId}${linkedStep}] 🎬 ${currentStage.title}`);
                                                } else if (currentStage.operationalPaths && currentStage.operationalPaths.length > 0) {
@@ -7558,7 +7563,7 @@ function MainGame() {
                                           }`}
                                         >
                                           <span className="truncate group-hover:text-cyan-300">
-                                            {action} {isCompleted && " ✓ [SECURED]"}
+                                            {getPlayerActionLabel(action)} {isCompleted && " ✓ [SECURED]"}
                                           </span>
                                           <span className="text-[9px] text-slate-600 font-bold border border-white/5 px-1 rounded block flex-shrink-0 ml-2">
                                             {isCompleted ? "✓" : idx + 1}

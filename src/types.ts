@@ -244,6 +244,19 @@ export interface CustomPOIAction {
   rewardCredits?: number;
   rewardXP?: number;
   rewardItem?: string;
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "credits" | "mana" | "item";
+  checkValue?: number;
+  requiredItem?: string;
+  consumeItem?: boolean;
+  successTitle?: string;
+  successText?: string;
+  failureTitle?: string;
+  failureText?: string;
+  failureHpDamage?: number;
+  failureManaDamage?: number;
+  completionAction?: string;
+  requiredQuestId?: string;
+  repeatMode?: "always" | "once";
 }
 
 export interface CustomPOIData {
@@ -408,6 +421,8 @@ export interface QuestStage {
   /** Runtime event key written to completedPOIActions when this stage is resolved. */
   completionAction?: string;
   operationalPaths?: QuestOperationalPath[];
+  contentType?: "scene" | "poi_action" | "event";
+  linkedPOIActionId?: string;
   linkedPOISceneId?: string;
   linkedPOISceneStepId?: string;
 }

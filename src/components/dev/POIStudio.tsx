@@ -1394,9 +1394,16 @@ export const POIStudio: React.FC<POIStudioProps> = ({
                     label: "Hack Local Sub-Terminal (INT Check)",
                     desc: "Bypass corporate firewall to extract encrypted data shards.",
                     statCheck: "[Intelligence 12]",
+                    checkType: "int",
+                    checkValue: 12,
                     actionType: "custom",
                     rewardXP: 35,
-                    rewardCredits: 50
+                    rewardCredits: 50,
+                    successTitle: "TERMINAL BREACHED",
+                    successText: "Encrypted data shards were copied successfully.",
+                    failureTitle: "ACCESS DENIED",
+                    failureText: "The corporate firewall rejected the intrusion.",
+                    repeatMode: "once"
                   };
                   setPoiForm({ ...poiForm, actions: [...(poiForm.actions || []), newAction] });
                 }}
@@ -1454,6 +1461,31 @@ export const POIStudio: React.FC<POIStudioProps> = ({
                     }}
                     className="text-3xs text-slate-300 bg-slate-950 px-2 py-1 rounded border border-white/10"
                   />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={act.checkType || "none"} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],checkType:e.target.value as CustomPOIAction["checkType"]}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-amber-200 bg-slate-950 px-2 py-1 rounded border border-white/10">
+                      <option value="none">No Check</option><option value="int">INT Check</option><option value="str">STR Check</option><option value="dex">DEX Check</option><option value="will">WILL Check</option><option value="credits">Credit Cost</option><option value="mana">Mana Cost</option><option value="item">Required Item</option>
+                    </select>
+                    <input type="number" value={act.checkValue || 10} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],checkValue:Number(e.target.value)}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-amber-200 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="DC / Cost" />
+                    {act.checkType === "item" && <input value={act.requiredItem || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],requiredItem:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="col-span-2 text-3xs text-amber-200 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Required item name" />}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <input type="number" value={act.rewardCredits || 0} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],rewardCredits:Number(e.target.value)}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-emerald-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Credits" />
+                    <input type="number" value={act.rewardXP || 0} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],rewardXP:Number(e.target.value)}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-cyan-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="XP" />
+                    <input value={act.rewardItem || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],rewardItem:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-purple-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Loot item" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={act.successTitle || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],successTitle:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-emerald-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Success popup title" />
+                    <input value={act.failureTitle || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],failureTitle:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-rose-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Failure popup title" />
+                    <textarea value={act.successText || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],successText:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-slate-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Success popup text" />
+                    <textarea value={act.failureText || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],failureText:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-slate-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Failure popup text" />
+                    <input value={act.completionAction || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],completionAction:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="col-span-2 text-3xs text-fuchsia-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Quest completion event (optional)" />
+                    <input value={act.requiredQuestId || ""} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],requiredQuestId:e.target.value}; setPoiForm({...poiForm,actions:acts}); }} className="col-span-2 text-3xs text-cyan-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Required active quest ID (optional)" />
+                    <input type="number" value={act.failureHpDamage || 0} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],failureHpDamage:Number(e.target.value)}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-rose-300 bg-slate-950 px-2 py-1 rounded border border-white/10" placeholder="Failure HP damage" />
+                    <select value={act.repeatMode || "once"} onChange={e => { const acts=[...(poiForm.actions||[])]; acts[aIdx]={...acts[aIdx],repeatMode:e.target.value as CustomPOIAction["repeatMode"]}; setPoiForm({...poiForm,actions:acts}); }} className="text-3xs text-slate-300 bg-slate-950 px-2 py-1 rounded border border-white/10"><option value="once">One Time</option><option value="always">Repeatable</option></select>
+                  </div>
                 </div>
               ))}
             </div>

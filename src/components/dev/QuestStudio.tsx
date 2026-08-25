@@ -1244,6 +1244,18 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
                 {/* Sub-Section: Linked Interactive POI Event & Cinematic Nodes */}
                 <div className="mt-1 p-2.5 bg-slate-950/90 rounded-lg border border-purple-500/30 flex flex-col gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-4xs text-cyan-300 font-bold uppercase">Stage Content Type</label>
+                      <select value={stage.contentType || (stage.linkedPOISceneId ? "scene" : stage.linkedPOIActionId ? "poi_action" : "event")} onChange={e => handleUpdateStage(sIdx, { contentType: e.target.value as QuestStage["contentType"] })} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-2xs text-slate-200">
+                        <option value="scene">Interactive Scene</option><option value="poi_action">Lightweight POI Action</option><option value="event">Passive Event Only</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-4xs text-cyan-300 font-bold uppercase">Linked POI Action ID</label>
+                      <input disabled={(stage.contentType || (stage.linkedPOISceneId ? "scene" : "event")) !== "poi_action"} value={stage.linkedPOIActionId || ""} onChange={e => handleUpdateStage(sIdx, { linkedPOIActionId: e.target.value || undefined })} className="bg-slate-950 disabled:bg-slate-900/50 border border-slate-700 rounded px-2 py-1 text-2xs text-cyan-200" placeholder="search_sewer_grate" />
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-1.5">
                     <span className="text-3xs font-bold text-purple-300 uppercase flex items-center gap-1">
                       <Zap size={12} className="text-purple-400" /> Linked POI Interactive Event / Scene

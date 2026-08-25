@@ -94,6 +94,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
   const hasNpcs = (poi.placedNPCIds && poi.placedNPCIds.length > 0) || (services.npcs?.placedNPCIds && services.npcs.placedNPCIds.length > 0);
   
   const [activeTab, setActiveTab] = useState<"overview" | "shop" | "clinic" | "rest" | "auction" | "contracts" | "rumors" | "npcs">("overview");
+  const [actionResult, setActionResult] = useState<{ title: string; text: string; success: boolean } | null>(null);
 
   // Log generator helper
   const addSystemLog = (text: string, type: "narration" | "action" | "combat" | "system" = "system") => {
@@ -108,6 +109,55 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
         poi: poi.name
       }
     ]);
+  };
+
+  const executeLightweightAction = (action: CustomPOIAction) => {
+    const checkType = action.checkType || "none";
+    const target = action.checkValue || 10;
+    let total = target;
+    let success = true;
+    if (["int", "str", "dex", "will"].includes(checkType)) {
+      const stat = gameState.attributes?.[checkType as "int" | "str" | "dex" | "will"] || 10;
+      total = Math.floor(Math.random() * 20) + 1 + stat;
+      success = total >= target;
+    } else if (checkType === "credits") {
+      total = gameState.credits;
+      success = total >= target;
+    } else if (checkType === "mana") {
+      total = gameState.mana;
+      success = total >= target;
+    } else if (checkType === "item") {
+      success = gameState.inventory.includes(action.requiredItem || "");
+      total = success ? 1 : 0;
+    }
+
+    setGameState(prev => {
+      const next = { ...prev, inventory: [...prev.inventory], completedPOIActions: [...(prev.completedPOIActions || [])] };
+      if (success) {
+        if (checkType === "credits") next.credits -= target;
+        if (checkType === "mana") next.mana -= target;
+        if (checkType === "item" && action.consumeItem) {
+          const index = next.inventory.indexOf(action.requiredItem || "");
+          if (index >= 0) next.inventory.splice(index, 1);
+        }
+        next.credits += action.rewardCredits || 0;
+        next.experience += action.rewardXP || 0;
+        if (action.rewardItem) next.inventory.push(action.rewardItem);
+        if (action.completionAction) next.completedPOIActions = Array.from(new Set([...next.completedPOIActions, action.completionAction]));
+        if ((action.repeatMode || "once") === "once") next.completedPOIActions = Array.from(new Set([...next.completedPOIActions, `${poi.id}:action:${action.id}`]));
+      } else {
+        next.hp = Math.max(1, next.hp - (action.failureHpDamage || 0));
+        next.mana = Math.max(0, next.mana - (action.failureManaDamage || 0));
+      }
+      return next;
+    });
+
+    const rollSuffix = checkType !== "none" ? ` (${total} vs ${target})` : "";
+    const title = success ? action.successTitle || "ACTION SUCCESS" : action.failureTitle || "ACTION FAILED";
+    const text = success ? action.successText || action.desc : action.failureText || `The attempt failed${rollSuffix}.`;
+    setActionResult({ title, text, success });
+    addSystemLog(`${success ? "✅" : "❌"} ${action.label}: ${text}${rollSuffix}`, success ? "action" : "system");
+    triggerToast(`${title}${rollSuffix}`);
   };
 
   // ----------------------------------------------------
@@ -406,6 +456,15 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-950/95 border border-cyan-500/30 rounded-xl overflow-hidden shadow-2xl text-slate-100 font-mono">
+      {actionResult && (
+        <div className="absolute inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
+          <div className={`max-w-md w-full rounded-xl border p-5 shadow-2xl ${actionResult.success ? "border-emerald-500/60 bg-emerald-950/90" : "border-rose-500/60 bg-rose-950/90"}`}>
+            <h3 className={`font-black text-sm uppercase ${actionResult.success ? "text-emerald-300" : "text-rose-300"}`}>{actionResult.title}</h3>
+            <p className="mt-2 text-xs text-slate-200 font-sans leading-relaxed whitespace-pre-line">{actionResult.text}</p>
+            <button onClick={() => setActionResult(null)} className="mt-4 px-4 py-2 rounded bg-slate-900 border border-white/20 text-xs font-bold cursor-pointer hover:bg-slate-800">Continue</button>
+          </div>
+        </div>
+      )}
       
       {/* 1. TOP HEADER & ATMOSPHERIC BANNER */}
       <div className="relative border-b border-white/10 p-3 md:p-4 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -608,30 +667,41 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
                   actionType: "custom" as const
                 }))).map((action: CustomPOIAction | any, idx: number) => {
                   const actionLabel = action.label || action;
-                  const isDone = completedActions.includes(`${poi.id}:${actionLabel}`);
+                  const visibleLabel = String(actionLabel).replace(/^\[(?:SCENE|QUEST):[^\]]+\]\s*/i, "");
+                  const questLocked = !!action.requiredQuestId && !gameState.campaignQuestsRegistry?.some(quest => quest.id === action.requiredQuestId && quest.status === "ACTIVE");
+                  const isDone = completedActions.includes(`${poi.id}:action:${action.id}`) || completedActions.includes(`${poi.id}:${actionLabel}`);
 
                   return (
                     <button
                       key={`poi-action-${idx}-${action.id || "no-id"}-${actionLabel}`}
-                      disabled={isDone}
+                      disabled={isDone || questLocked}
                       onClick={() => {
-                        if (action.actionType === "scene" && action.targetSceneId && onLaunchQuestScene) {
+                        if (action.actionType === "dialogue" && action.targetNpcId && onStartDialogue) {
+                          onStartDialogue(action.targetNpcId);
+                        } else if (action.actionType === "scene" && action.targetSceneId && onLaunchQuestScene) {
                           onLaunchQuestScene(action.targetSceneId);
+                        } else if (action.actionType === "shop") {
+                          setActiveTab("shop");
+                        } else if (action.actionType === "rest") {
+                          setActiveTab("rest");
+                        } else if (poi.actions?.includes(action)) {
+                          executeLightweightAction(action);
                         } else if (onExecuteAction) {
                           onExecuteAction(actionLabel);
                         }
                       }}
                       className={`text-left p-3 rounded-lg border font-mono text-xs transition-all flex flex-col justify-between cursor-pointer group ${
-                        isDone
+                        isDone || questLocked
                           ? "border-slate-900 bg-slate-950/40 text-slate-600 cursor-not-allowed opacity-50"
                           : "border-cyan-500/20 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-400 text-slate-200 shadow-sm"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-1.5">
                         <span className="font-bold group-hover:text-cyan-300">
-                          {actionLabel}
+                          {visibleLabel}
                         </span>
                         {isDone && <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />}
+                        {questLocked && <Lock size={13} className="text-amber-400 shrink-0" />}
                       </div>
 
                       {action.desc && (

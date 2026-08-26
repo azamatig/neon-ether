@@ -22,6 +22,7 @@ import {
   MessageSquare
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { activateQuest } from "../questEngine";
 import {
   GameState,
   CustomPOIData,
@@ -49,6 +50,7 @@ interface POIInteriorHubProps {
   onExecuteAction?: (actionName: string) => void;
   onReturnToMap?: () => void;
   completedActions?: string[];
+  scannerMode?: boolean;
 }
 
 export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
@@ -61,7 +63,8 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
   onStartDialogue,
   onExecuteAction,
   onReturnToMap,
-  completedActions = []
+  completedActions = [],
+  scannerMode = false
 }) => {
   // Extract services or provide intelligent defaults based on POI category
   const services = poi.services || {};
@@ -83,16 +86,19 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
     }
   };
   
-  // Available tabs calculation
-  const hasShop = services.shop?.enabled || poi.category === "shop" || poi.type === "shop";
-  const hasClinic = services.clinic?.enabled || poi.category === "medical" || poi.id?.includes("clinic");
-  const hasRest = services.rest?.enabled || poi.category === "safehouse" || poi.type === "safehouse" || poi.id === "hideout";
-  const hasAuction = services.auction?.enabled || poi.category === "auction" || poi.name?.toLowerCase().includes("auction");
-  const hasContracts = services.contracts?.enabled || (services.contracts?.availableQuestIds && services.contracts.availableQuestIds.length > 0);
-  const hasRumors = services.rumors?.enabled || (services.rumors?.rumorList && services.rumors.rumorList.length > 0) || poi.category === "social";
-  const hasNpcs = (poi.placedNPCIds && poi.placedNPCIds.length > 0) || (services.npcs?.placedNPCIds && services.npcs.placedNPCIds.length > 0);
+  // Service tabs are authored explicitly in POI Studio. Names, categories,
+  // populated lists, and legacy POI types must never turn tabs on implicitly.
+  const hasShop = services.shop?.enabled === true;
+  const hasClinic = services.clinic?.enabled === true;
+  const hasRest = services.rest?.enabled === true;
+  const hasAuction = services.auction?.enabled === true;
+  const hasContracts = services.contracts?.enabled === true;
+  const hasRumors = services.rumors?.enabled === true;
+  const hasNpcs = services.npcs?.enabled === true;
+  const hasServiceTabs = hasShop || hasClinic || hasRest || hasAuction || hasContracts || hasRumors || hasNpcs;
   
   const [activeTab, setActiveTab] = useState<"overview" | "shop" | "clinic" | "rest" | "auction" | "contracts" | "rumors" | "npcs">("overview");
+  const [actionResult, setActionResult] = useState<{ title: string; text: string; success: boolean } | null>(null);
 
   // Log generator helper
   const addSystemLog = (text: string, type: "narration" | "action" | "combat" | "system" = "system") => {
@@ -107,6 +113,55 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
         poi: poi.name
       }
     ]);
+  };
+
+  const executeLightweightAction = (action: CustomPOIAction) => {
+    const checkType = action.checkType || "none";
+    const target = action.checkValue || 10;
+    let total = target;
+    let success = true;
+    if (["int", "str", "dex", "will"].includes(checkType)) {
+      const stat = gameState.attributes?.[checkType as "int" | "str" | "dex" | "will"] || 10;
+      total = Math.floor(Math.random() * 20) + 1 + stat;
+      success = total >= target;
+    } else if (checkType === "credits") {
+      total = gameState.credits;
+      success = total >= target;
+    } else if (checkType === "mana") {
+      total = gameState.mana;
+      success = total >= target;
+    } else if (checkType === "item") {
+      success = gameState.inventory.includes(action.requiredItem || "");
+      total = success ? 1 : 0;
+    }
+
+    setGameState(prev => {
+      const next = { ...prev, inventory: [...prev.inventory], completedPOIActions: [...(prev.completedPOIActions || [])] };
+      if (success) {
+        if (checkType === "credits") next.credits -= target;
+        if (checkType === "mana") next.mana -= target;
+        if (checkType === "item" && action.consumeItem) {
+          const index = next.inventory.indexOf(action.requiredItem || "");
+          if (index >= 0) next.inventory.splice(index, 1);
+        }
+        next.credits += action.rewardCredits || 0;
+        next.experience += action.rewardXP || 0;
+        if (action.rewardItem) next.inventory.push(action.rewardItem);
+        if (action.completionAction) next.completedPOIActions = Array.from(new Set([...next.completedPOIActions, action.completionAction]));
+        if ((action.repeatMode || "once") === "once") next.completedPOIActions = Array.from(new Set([...next.completedPOIActions, `${poi.id}:action:${action.id}`]));
+      } else {
+        next.hp = Math.max(1, next.hp - (action.failureHpDamage || 0));
+        next.mana = Math.max(0, next.mana - (action.failureManaDamage || 0));
+      }
+      return next;
+    });
+
+    const rollSuffix = checkType !== "none" ? ` (${total} vs ${target})` : "";
+    const title = success ? action.successTitle || "ACTION SUCCESS" : action.failureTitle || "ACTION FAILED";
+    const text = success ? action.successText || action.desc : action.failureText || `The attempt failed${rollSuffix}.`;
+    setActionResult({ title, text, success });
+    addSystemLog(`${success ? "✅" : "❌"} ${action.label}: ${text}${rollSuffix}`, success ? "action" : "system");
+    triggerToast(`${title}${rollSuffix}`);
   };
 
   // ----------------------------------------------------
@@ -387,15 +442,11 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
   // ----------------------------------------------------
   const availableQuests = (gameState.campaignQuestsRegistry || []).filter(q => 
     (services.contracts?.availableQuestIds?.includes(q.id) || !services.contracts?.availableQuestIds || services.contracts.availableQuestIds.length === 0) &&
-    !gameState.completedQuests.includes(q.id) &&
-    !gameState.activeQuests.some(aq => aq.includes(q.title) || aq.includes(q.id))
+    q.status === "NOT_STARTED"
   );
 
   const handleAcceptContract = (questId: string, questTitle: string) => {
-    setGameState(prev => ({
-      ...prev,
-      activeQuests: [...prev.activeQuests, `${questTitle} (Accepted at ${poi.name})`]
-    }));
+    setGameState(prev => activateQuest(prev, questId));
 
     addSystemLog(`📜 CONTRACT ACCEPTED: "${questTitle}" signed at ${poi.name}. Objectives uploaded to datapad.`);
     triggerToast(`Contract Accepted: ${questTitle}`);
@@ -407,8 +458,91 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
   const linkedSceneId = poi.questTrigger?.linkedSceneId;
   const triggerLabel = poi.questTrigger?.triggerButtonLabel || "⚡ Launch Interactive Scene / Event";
 
+  const renderActionButtons = () => ((poi.actions && poi.actions.length > 0) ? poi.actions : (poi.buttons || []).map((b, idx) => ({
+    id: `action_${idx}`,
+    label: b,
+    desc: "Standard location interaction",
+    actionType: "custom" as const
+  }))).map((action: CustomPOIAction | any, idx: number) => {
+    const actionLabel = action.label || action;
+    const visibleLabel = String(actionLabel).replace(/^\[(?:SCENE|QUEST):[^\]]+\]\s*/i, "");
+    const questLocked = !!action.requiredQuestId && !gameState.campaignQuestsRegistry?.some(quest => quest.id === action.requiredQuestId && quest.status === "ACTIVE");
+    const isDone = completedActions.includes(`${poi.id}:action:${action.id}`) || completedActions.includes(`${poi.id}:${actionLabel}`);
+
+    return (
+      <button
+        key={`poi-action-${idx}-${action.id || "no-id"}-${actionLabel}`}
+        disabled={isDone || questLocked}
+        onClick={() => {
+          if (action.actionType === "dialogue" && action.targetNpcId && onStartDialogue) {
+            onStartDialogue(action.targetNpcId);
+          } else if (action.actionType === "scene" && action.targetSceneId && onLaunchQuestScene) {
+            onLaunchQuestScene(action.targetSceneId);
+          } else if (action.actionType === "shop") {
+            setActiveTab("shop");
+          } else if (action.actionType === "rest") {
+            setActiveTab("rest");
+          } else if (poi.actions?.includes(action)) {
+            executeLightweightAction(action);
+          } else if (onExecuteAction) {
+            onExecuteAction(actionLabel);
+          }
+        }}
+        className={`text-left p-3 rounded-lg border font-mono text-xs transition-all flex flex-col justify-between cursor-pointer group ${
+          isDone || questLocked
+            ? "border-slate-900 bg-slate-950/40 text-slate-600 cursor-not-allowed opacity-50"
+            : "border-cyan-500/20 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-400 text-slate-200 shadow-sm"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-1.5">
+          <span className="font-bold group-hover:text-cyan-300">{visibleLabel}</span>
+          {isDone && <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />}
+          {questLocked && <Lock size={13} className="text-amber-400 shrink-0" />}
+        </div>
+        {action.desc && <span className="text-3xs text-slate-400 mt-1 line-clamp-1">{action.desc}</span>}
+        {action.statCheck && <span className="text-4xs text-amber-300 font-bold mt-1 uppercase">Prerequisite: {action.statCheck}</span>}
+      </button>
+    );
+  });
+
+  if (scannerMode) {
+    return (
+      <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-3 w-full h-full">
+        {actionResult && (
+          <div className="absolute inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
+            <div className={`max-w-md w-full rounded-xl border p-5 shadow-2xl ${actionResult.success ? "border-emerald-500/60 bg-emerald-950/90" : "border-rose-500/60 bg-rose-950/90"}`}>
+              <h3 className={`font-black text-sm uppercase ${actionResult.success ? "text-emerald-300" : "text-rose-300"}`}>{actionResult.title}</h3>
+              <p className="mt-2 text-xs text-slate-200 font-sans leading-relaxed whitespace-pre-line">{actionResult.text}</p>
+              <button onClick={() => setActionResult(null)} className="mt-4 px-4 py-2 rounded bg-slate-900 border border-white/20 text-xs font-bold cursor-pointer hover:bg-slate-800">Continue</button>
+            </div>
+          </div>
+        )}
+        <div className="lg:col-span-5 flex flex-col justify-between relative rounded-xl overflow-hidden border border-white/10 min-h-[220px] lg:min-h-[340px]">
+          <img src={poi.bgImage || poi.image} alt={poi.name} referrerPolicy="no-referrer" className="absolute inset-0 w-full h-full object-cover select-none filter brightness-90 saturate-125" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-slate-950/80" />
+          <div className="p-2 z-10 flex justify-between bg-slate-950/80 border-b border-white/5 uppercase font-mono text-[9px] text-slate-400"><span>GRID LOCALITY FILE</span><span className="text-cyan-400 font-bold">STATUS: VISITED</span></div>
+          <div className="p-3 z-10 font-mono"><span className="text-cyan-400 text-3xs tracking-wider uppercase font-extrabold">● NODE SCAN COMPLETE</span><p className="text-sm font-black text-white mt-0.5 uppercase">{poi.name}</p></div>
+        </div>
+        <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
+          <div className="space-y-2"><h4 className="text-3xs font-mono uppercase tracking-[0.15em] text-cyan-400 font-black">LOCAL DESCRIPTOR CONSOLE</h4><p className="text-slate-200 text-xs sm:text-sm font-sans leading-relaxed font-medium">{poi.desc}</p></div>
+          <div className="space-y-4"><p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">OPERATIONAL RESPONSES PREPARED AT LOCATION:</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{renderActionButtons()}</div></div>
+          <div className="flex justify-end border-t border-white/5 pt-3">{onReturnToMap && <button onClick={onReturnToMap} className="bg-rose-950/40 border border-rose-500/30 text-rose-300 hover:bg-rose-950 font-mono text-[10px] font-bold px-4 py-2 rounded-lg cursor-pointer"><ArrowLeft size={13} className="inline mr-1" />Return to Map</button>}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-slate-950/95 border border-cyan-500/30 rounded-xl overflow-hidden shadow-2xl text-slate-100 font-mono">
+      {actionResult && (
+        <div className="absolute inset-0 z-50 bg-slate-950/80 flex items-center justify-center p-4">
+          <div className={`max-w-md w-full rounded-xl border p-5 shadow-2xl ${actionResult.success ? "border-emerald-500/60 bg-emerald-950/90" : "border-rose-500/60 bg-rose-950/90"}`}>
+            <h3 className={`font-black text-sm uppercase ${actionResult.success ? "text-emerald-300" : "text-rose-300"}`}>{actionResult.title}</h3>
+            <p className="mt-2 text-xs text-slate-200 font-sans leading-relaxed whitespace-pre-line">{actionResult.text}</p>
+            <button onClick={() => setActionResult(null)} className="mt-4 px-4 py-2 rounded bg-slate-900 border border-white/20 text-xs font-bold cursor-pointer hover:bg-slate-800">Continue</button>
+          </div>
+        </div>
+      )}
       
       {/* 1. TOP HEADER & ATMOSPHERIC BANNER */}
       <div className="relative border-b border-white/10 p-3 md:p-4 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -465,7 +599,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
       </div>
 
       {/* 2. MODULAR INTERIOR SERVICE TABS */}
-      <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0">
+      {hasServiceTabs && <div className="flex items-center gap-1 px-3 py-1.5 bg-slate-950 border-b border-white/5 overflow-x-auto no-scrollbar shrink-0">
         <button
           onClick={() => setActiveTab("overview")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
@@ -529,7 +663,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           </button>
         )}
 
-        <button
+        {hasContracts && <button
           onClick={() => setActiveTab("contracts")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
             activeTab === "contracts"
@@ -538,9 +672,9 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           }`}
         >
           <Scroll size={13} /> Job & Bounty Board ({availableQuests.length})
-        </button>
+        </button>}
 
-        <button
+        {hasRumors && <button
           onClick={() => setActiveTab("rumors")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap cursor-pointer ${
             activeTab === "rumors"
@@ -549,7 +683,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
           }`}
         >
           <Radio size={13} /> Rumors & Intel
-        </button>
+        </button>}
 
         {hasNpcs && (
           <button
@@ -563,7 +697,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
             <Users size={13} /> Locals & NPCs
           </button>
         )}
-      </div>
+      </div>}
 
       {/* 3. TAB CONTENT VIEWS */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-4">
@@ -604,53 +738,7 @@ export const POIInteriorHub: React.FC<POIInteriorHubProps> = ({
 
               {/* Action buttons list */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {((poi.actions && poi.actions.length > 0) ? poi.actions : (poi.buttons || []).map((b, idx) => ({
-                  id: `action_${idx}`,
-                  label: b,
-                  desc: "Standard location interaction",
-                  actionType: "custom" as const
-                }))).map((action: CustomPOIAction | any, idx: number) => {
-                  const actionLabel = action.label || action;
-                  const isDone = completedActions.includes(`${poi.id}:${actionLabel}`);
-
-                  return (
-                    <button
-                      key={`poi-action-${idx}-${action.id || "no-id"}-${actionLabel}`}
-                      disabled={isDone}
-                      onClick={() => {
-                        if (action.actionType === "scene" && action.targetSceneId && onLaunchQuestScene) {
-                          onLaunchQuestScene(action.targetSceneId);
-                        } else if (onExecuteAction) {
-                          onExecuteAction(actionLabel);
-                        }
-                      }}
-                      className={`text-left p-3 rounded-lg border font-mono text-xs transition-all flex flex-col justify-between cursor-pointer group ${
-                        isDone
-                          ? "border-slate-900 bg-slate-950/40 text-slate-600 cursor-not-allowed opacity-50"
-                          : "border-cyan-500/20 bg-slate-900/60 hover:bg-slate-900 hover:border-cyan-400 text-slate-200 shadow-sm"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-1.5">
-                        <span className="font-bold group-hover:text-cyan-300">
-                          {actionLabel}
-                        </span>
-                        {isDone && <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />}
-                      </div>
-
-                      {action.desc && (
-                        <span className="text-3xs text-slate-400 mt-1 line-clamp-1">
-                          {action.desc}
-                        </span>
-                      )}
-
-                      {action.statCheck && (
-                        <span className="text-4xs text-amber-300 font-bold mt-1 uppercase">
-                          Prerequisite: {action.statCheck}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                {renderActionButtons()}
               </div>
             </div>
           </div>

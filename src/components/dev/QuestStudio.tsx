@@ -37,6 +37,7 @@ import { CustomWorldItem } from "./ItemForgeStudio";
 import { BASE_PROPERTIES, DEFAULT_CAMPAIGN_QUESTS } from "../../questsData";
 import { DEFAULT_POI_INTERACTIVE_SCENES } from "../../poiScenesData";
 import { MAP_POIS } from "../../data";
+import { activateQuest, advanceQuestStage, buildQuestCatalog, completeQuest, resetQuest } from "../../questEngine";
 
 interface QuestStudioProps {
   customQuests: UnifiedQuest[];
@@ -147,12 +148,8 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
   // Current Quest Status in Live Game State
   const liveQuestStatus = useMemo(() => {
-    const isCompleted = gameState.completedQuests?.some(q => q.includes(questForm.title) || q.includes(questForm.id));
-    if (isCompleted) return "COMPLETED";
-    const isActive = gameState.activeQuests?.some(q => q.includes(questForm.title) || q.includes(questForm.id));
-    if (isActive) return "ACTIVE";
-    return "NOT_STARTED";
-  }, [gameState.activeQuests, gameState.completedQuests, questForm.title, questForm.id]);
+    return gameState.campaignQuestsRegistry?.find(q => q.id === questForm.id)?.status || "NOT_STARTED";
+  }, [gameState.campaignQuestsRegistry, questForm.id]);
 
   // Handler: Save Quest Form
   const handleSaveQuest = () => {
@@ -173,12 +170,23 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
     // Also update campaignQuestsRegistry in gameState for immediate live sync
     setGameState(prev => {
-      const reg = prev.campaignQuestsRegistry || [];
+      const reg = buildQuestCatalog(prev.campaignQuestsRegistry || customQuests);
       const idx = reg.findIndex(q => q.id === questForm.id);
       let updatedReg: UnifiedQuest[];
       if (idx >= 0) {
         updatedReg = [...reg];
-        updatedReg[idx] = questForm;
+        const liveQuest = reg[idx];
+        updatedReg[idx] = {
+          ...questForm,
+          status: liveQuest.status,
+          rewardClaimed: liveQuest.rewardClaimed,
+          stages: questForm.stages.map(stage => {
+            const liveStage = liveQuest.stages.find(item => item.id === stage.id);
+            return liveStage
+              ? { ...stage, currentCount: liveStage.currentCount, completed: liveStage.completed }
+              : stage;
+          })
+        };
       } else {
         updatedReg = [...reg, questForm];
       }
@@ -564,82 +572,21 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
   // LIVE GAME MASTER QUEST TESTER ACTIONS
   // ============================================================
   const handleLiveActivateQuest = () => {
-    const questTitleFormatted = `${questForm.title} - ${questForm.description}`;
-    
-    setGameState(prev => {
-      const active = prev.activeQuests || [];
-      const updatedActive = active.includes(questTitleFormatted) 
-        ? active 
-        : [...active.filter(q => !q.includes(questForm.title)), questTitleFormatted];
-
-      return {
-        ...prev,
-        activeQuests: updatedActive,
-        completedQuests: (prev.completedQuests || []).filter(q => !q.includes(questForm.title))
-      };
-    });
+    setGameState(prev => activateQuest(prev, questForm.id));
 
     triggerToast(`LIVE HUD: "${questForm.title}" is now ACTIVE in player quest log!`);
   };
 
   const handleLiveAdvanceStage = () => {
+    setGameState(prev => advanceQuestStage(prev, questForm.id));
     triggerToast(`LIVE ADVANCE: Advanced Stage for "${questForm.title}"!`);
   };
 
   const handleLiveCompleteQuest = () => {
-    const questTitleFormatted = `${questForm.title} - ${questForm.description}`;
     const rewards = questForm.rewards || {};
     const worldUnlocks = rewards.worldUnlocks || {};
 
-    setGameState(prev => {
-      // 1. Update Quests lists
-      const nextActive = (prev.activeQuests || []).filter(q => !q.includes(questForm.title));
-      const nextCompleted = Array.from(new Set([...(prev.completedQuests || []), questForm.title]));
-
-      // 2. Grant Credits & Inventory Items
-      const nextCredits = prev.credits + (rewards.credits || 0);
-      const nextInventory = [...prev.inventory, ...(rewards.items || [])];
-
-      // 3. Grant World Unlocks: Base Deeds
-      let nextUnlockedBases = [...(prev.unlockedBases || ["hideout"])];
-      if (worldUnlocks.unlockBaseId && !nextUnlockedBases.includes(worldUnlocks.unlockBaseId)) {
-        nextUnlockedBases.push(worldUnlocks.unlockBaseId);
-      }
-
-      // 4. Grant World Unlocks: District Passes
-      let nextUnlockedDistricts = [...(prev.unlockedDistricts || ["conduit09", "downtown", "aurus"])];
-      if (worldUnlocks.unlockDistrictId && !nextUnlockedDistricts.includes(worldUnlocks.unlockDistrictId)) {
-        nextUnlockedDistricts.push(worldUnlocks.unlockDistrictId);
-      }
-
-      // 5. Grant World Unlocks: Perks
-      let nextUnlockedPerks = [...(prev.unlockedPerks || [])];
-      if (worldUnlocks.unlockPerkOrSkill && !nextUnlockedPerks.includes(worldUnlocks.unlockPerkOrSkill)) {
-        nextUnlockedPerks.push(worldUnlocks.unlockPerkOrSkill);
-      }
-
-      // 6. Automatically trigger NEXT quest in sequence if defined!
-      if (questForm.nextQuestId) {
-        const nextQuestObj = allQuests.find(q => q.id === questForm.nextQuestId);
-        if (nextQuestObj) {
-          const nextQuestString = `${nextQuestObj.title} - ${nextQuestObj.description}`;
-          if (!nextActive.includes(nextQuestString) && !nextCompleted.includes(nextQuestObj.title)) {
-            nextActive.push(nextQuestString);
-          }
-        }
-      }
-
-      return {
-        ...prev,
-        activeQuests: nextActive,
-        completedQuests: nextCompleted,
-        credits: nextCredits,
-        inventory: nextInventory,
-        unlockedBases: nextUnlockedBases,
-        unlockedDistricts: nextUnlockedDistricts,
-        unlockedPerks: nextUnlockedPerks
-      };
-    });
+    setGameState(prev => completeQuest(prev, questForm.id));
 
     let unlockMsg = `COMPLETED: "${questForm.title}"! +${rewards.credits || 0}¤, +${rewards.experience || 0} XP`;
     if (worldUnlocks.unlockBaseId) {
@@ -655,11 +602,7 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
   };
 
   const handleLiveResetQuest = () => {
-    setGameState(prev => ({
-      ...prev,
-      activeQuests: (prev.activeQuests || []).filter(q => !q.includes(questForm.title)),
-      completedQuests: (prev.completedQuests || []).filter(q => !q.includes(questForm.title))
-    }));
+    setGameState(prev => resetQuest(prev, questForm.id));
     triggerToast(`RESET: "${questForm.title}" reset to Not Started.`);
   };
 
@@ -737,8 +680,8 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
           ) : (
             filteredQuests.map((quest, idx) => {
               const isSelected = selectedQuestId === quest.id;
-              const isCompleted = gameState.completedQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-              const isActive = gameState.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
+              const isCompleted = quest.status === "COMPLETED";
+              const isActive = quest.status === "ACTIVE";
               const hasPrereq = !!quest.prerequisiteQuestId;
               const hasNext = !!quest.nextQuestId;
 
@@ -1101,6 +1044,16 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                 When this quest is turned in, the selected quest will automatically activate in the player's log.
               </span>
             </div>
+
+            <div className="flex flex-col gap-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800">
+              <label className="text-3xs text-fuchsia-400 font-bold uppercase">Required Reputation</label>
+              <div className="grid grid-cols-2 gap-2">
+                <select value={questForm.requiredReputationFaction || ""} onChange={(e) => setQuestForm({ ...questForm, requiredReputationFaction: (e.target.value || undefined) as UnifiedQuest["requiredReputationFaction"] })} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-2xs text-slate-200">
+                  <option value="">No reputation gate</option><option value="streetOutlaws">Street Outlaws</option><option value="titanLogistics">Titan Logistics</option><option value="aresCorporate">Ares Corporate</option>
+                </select>
+                <input type="number" value={questForm.requiredReputationValue || 0} onChange={(e) => setQuestForm({ ...questForm, requiredReputationValue: Number(e.target.value) })} className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-2xs text-slate-200" />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1221,6 +1174,7 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                         const foundPOI = allAvailablePOIs.find(p => p.name === selectedVal || p.id === selectedVal);
                         handleUpdateStage(sIdx, { 
                           targetPOI: selectedVal,
+                          targetPOIId: foundPOI?.id,
                           targetDistrict: foundPOI?.district || stage.targetDistrict || "conduit09"
                         });
                       }}
@@ -1233,6 +1187,18 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-3xs text-emerald-300 uppercase font-bold">Completion Event Key</label>
+                    <input
+                      type="text"
+                      value={stage.completionAction || ""}
+                      onChange={(e) => handleUpdateStage(sIdx, { completionAction: e.target.value || undefined })}
+                      className="bg-slate-950 border border-emerald-700/60 focus:border-emerald-400 rounded-lg px-2 py-1 text-2xs text-emerald-200 outline-none font-mono"
+                      placeholder="poi_id:action"
+                      title="The completedPOIActions event that advances this stage in the live game"
+                    />
                   </div>
 
                   <div className="flex flex-col gap-1">
@@ -1278,6 +1244,18 @@ export const QuestStudio: React.FC<QuestStudioProps> = ({
 
                 {/* Sub-Section: Linked Interactive POI Event & Cinematic Nodes */}
                 <div className="mt-1 p-2.5 bg-slate-950/90 rounded-lg border border-purple-500/30 flex flex-col gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-4xs text-cyan-300 font-bold uppercase">Stage Content Type</label>
+                      <select value={stage.contentType || (stage.linkedPOISceneId ? "scene" : stage.linkedPOIActionId ? "poi_action" : "event")} onChange={e => handleUpdateStage(sIdx, { contentType: e.target.value as QuestStage["contentType"] })} className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-2xs text-slate-200">
+                        <option value="scene">Interactive Scene</option><option value="poi_action">Lightweight POI Action</option><option value="event">Passive Event Only</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-4xs text-cyan-300 font-bold uppercase">Linked POI Action ID</label>
+                      <input disabled={(stage.contentType || (stage.linkedPOISceneId ? "scene" : "event")) !== "poi_action"} value={stage.linkedPOIActionId || ""} onChange={e => handleUpdateStage(sIdx, { linkedPOIActionId: e.target.value || undefined })} className="bg-slate-950 disabled:bg-slate-900/50 border border-slate-700 rounded px-2 py-1 text-2xs text-cyan-200" placeholder="search_sewer_grate" />
+                    </div>
+                  </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-500/20 pb-1.5">
                     <span className="text-3xs font-bold text-purple-300 uppercase flex items-center gap-1">
                       <Zap size={12} className="text-purple-400" /> Linked POI Interactive Event / Scene

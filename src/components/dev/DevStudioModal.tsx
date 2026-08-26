@@ -72,7 +72,9 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
   const STORAGE_KEY_ITEMS = "dev_studio_custom_items_v2";
   const STORAGE_KEY_NPCS = "dev_studio_custom_npcs_v2";
   const STORAGE_KEY_POIS = "dev_studio_custom_pois_v2";
-  const STORAGE_KEY_QUESTS = "dev_studio_custom_quests_v2";
+  // v3 stores authored overrides only. v2 accidentally persisted a stale copy
+  // of every built-in quest and would shadow migrated campaign definitions.
+  const STORAGE_KEY_QUESTS = "dev_studio_custom_quests_v3";
   const STORAGE_KEY_EVENTS = "dev_studio_custom_events_v2";
   const STORAGE_KEY_ENCOUNTERS = "dev_studio_custom_encounters_v2";
 
@@ -169,7 +171,7 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return DEFAULT_CAMPAIGN_QUESTS;
+    return [];
   });
 
   const [customEvents, setCustomEvents] = useState<CustomWorldEvent[]>(() => {
@@ -322,6 +324,23 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
       localStorage.setItem(STORAGE_KEY_POIS, JSON.stringify(customPOIs));
     } catch (e) {}
   }, [customPOIs]);
+
+  // POI Studio data is authored game content, not modal-only draft state. Keep
+  // the runtime registry hydrated from persisted overrides so edited buttons
+  // remain available after closing the studio or reloading the application.
+  useEffect(() => {
+    if (!setGameState || !gameState) return;
+    setGameState(prev => {
+      // MainGame deliberately uses null while it is on the menu/loading a save.
+      // The updater may therefore run after the render-time guard above.
+      if (!prev) return prev;
+      const current = prev.customPOIsRegistry || [];
+      const currentJson = JSON.stringify(current);
+      const authoredJson = JSON.stringify(customPOIs);
+      if (currentJson === authoredJson) return prev;
+      return { ...prev, customPOIsRegistry: customPOIs };
+    });
+  }, [customPOIs, setGameState, !!gameState]);
 
   useEffect(() => {
     try {

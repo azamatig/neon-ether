@@ -587,12 +587,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 15,
     y: 80,
     type: "quest",
-    buttons: [
-      "Slip through Vent (DEX Check)",
-      "Talk to Vice & Tracker",
-      "Scavenge Rusted Emergency Locker (Find Cyber-Ammo & Health Stimpack)",
-      "Dismantle ventilation casing (Acquire Carbon Fiber Armor Plates)"
-    ]
+    buttons: ["[SCENE:prologue_ventilation] Open Ventilation Breach Scene"]
   },
   {
     id: "security_terminal",
@@ -603,12 +598,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 45,
     y: 55,
     type: "quest",
-    buttons: [
-      "Bypass Sub-Terminal (INT Check)",
-      "Search terminal wreckage for scrap",
-      "Hack Secure Weapons Locker (Acquire Tactical Cyber-SMG!)",
-      "Siphon auxiliary thermal battery (Recover +35 Mana)"
-    ]
+    buttons: ["[SCENE:prologue_security_terminal] Open Security Terminal Scene"]
   },
   {
     id: "blast_door",
@@ -619,12 +609,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 75,
     y: 40,
     type: "quest",
-    buttons: [
-      "Pry Open Valve (STR Check)",
-      "Banter with Vice and Tracker",
-      "Raid security guard barracks (Loot Nano Med-Stim & Flak Guard Armor)",
-      "Interface with corporate supply bin (Extract Energy Batteries)"
-    ]
+    buttons: ["[SCENE:prologue_blast_door] Open Heavy Blast Door Scene"]
   },
   {
     id: "section_gate",
@@ -635,9 +620,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 90,
     y: 20,
     type: "quest",
-    buttons: [
-      "Proceed to Shatter-Ridge Core (Transit)"
-    ]
+    buttons: ["[SCENE:prologue_section_gate] Open Shatter-Ridge Transit Scene"]
   },
 
   // ---- MAP 2: CORE ARRAY SHATTER-RIDGE ----
@@ -650,12 +633,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 20,
     y: 70,
     type: "quest",
-    buttons: [
-      "Overclock Security Gate (INT Check)",
-      "Scavenge Security Chest (Find Exo-Plated Mesh Armor & Nano Med-Stim)",
-      "Pep-Talk Vice & Tracker (Inspiration Dialogue)",
-      "Move to Reactor Well (Proceed)"
-    ]
+    buttons: ["[SCENE:prologue_security_checkpoint] Open Security Checkpoint Scene"]
   },
   {
     id: "shatter_ridge_reactor_well",
@@ -666,12 +644,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 50,
     y: 45,
     type: "quest",
-    buttons: [
-      "Pull Cargo Lever (STR Check)",
-      "Salvage Bio-Reactor Core (Find Smart-Targeting Visor)",
-      "Consult Squad on Tactics",
-      "Proceed to Main Array (Transit)"
-    ]
+    buttons: ["[SCENE:prologue_reactor_well] Open Reactor Well Scene"]
   },
   {
     id: "main_array_core",
@@ -682,9 +655,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 80,
     y: 30,
     type: "combat",
-    buttons: [
-      "Defend Core Array (Triggers Combat!)"
-    ]
+    buttons: ["[SCENE:prologue_core_array] Open Core Array Defense Scene"]
   },
 
   // ---- MAP 3: DATA VAULT SANCTUARY ----
@@ -697,9 +668,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 35,
     y: 60,
     type: "quest",
-    buttons: [
-      "Initiate Terminal Hack (Mini-Game)"
-    ]
+    buttons: ["[SCENE:prologue_vault_terminal] Open Sanctuary Terminal Scene"]
   },
   {
     id: "relic_altar",
@@ -710,9 +679,7 @@ export const MAP_POIS: MapPOI[] = [
     x: 75,
     y: 40,
     type: "quest",
-    buttons: [
-      "Activate Mysterious Relic"
-    ]
+    buttons: ["[SCENE:relic_altar] Open Relic Altar Scene"]
   },
 
   // ---- CHAPTER 1: AURUS DISTRICT ----
@@ -726,6 +693,8 @@ export const MAP_POIS: MapPOI[] = [
     y: 75,
     type: "safehouse",
     buttons: [
+      "[SCENE:vice_retribution_briefing] Discuss Vice's Retribution",
+      "[SCENE:singularity_briefing] Review the Hyperion Final Assault",
       "Rest & Recover at Hideout",
       "Check Stash Inventory",
       "Manage Passive Server Work",
@@ -744,6 +713,8 @@ export const MAP_POIS: MapPOI[] = [
     y: 60,
     type: "social",
     buttons: [
+      "[SCENE:outcast_briefing] Outcast Directive Briefing",
+      "[SCENE:drone_schematic_briefing] Review the Downed Courier Contract",
       "Talk to Agent Jax",
       "Approach Lost, Frightened Girl",
       "Order Spell-Enhanced Cocktail (-10¤)",
@@ -762,6 +733,7 @@ export const MAP_POIS: MapPOI[] = [
     type: "shop",
     buttons: [
       "Talk to Chancellor Aria",
+      "[SCENE:corporate_hunt_briefing] Corporate Hunt Briefing",
       "Purchase Advanced Gear",
       "Sell Scrap for Credits"
     ]
@@ -825,10 +797,8 @@ export const MAP_POIS: MapPOI[] = [
     y: 40,
     type: "social",
     buttons: [
-      "Accept 'The Smuggler's Run' Side-Quest",
-      "Deliver Recovered Weapon Crate to Freight Hub",
-      "Scavenge Shipping Containers",
-      "Interface with Cargo Logs"
+      "[SCENE:smugglers_briefing] Review Hijacked Shipment Contract",
+      "Scavenge Shipping Containers"
     ]
   },
   {
@@ -855,8 +825,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 70,
     type: "combat",
     buttons: [
-      "Hunt Toxic Swamp Beast",
-      "Scavenge Glowing Slime pools",
       "Search Discarded Sewer Grates"
     ]
   },
@@ -870,7 +838,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 80,
     type: "combat",
     buttons: [
-      "Raid Syndicate Caches (Triggers Combat!)",
       "Steal Crane Master Control Key (DEX Check)",
       "Scavenge Submerged Hull for Scrap Metal"
     ]
@@ -885,8 +852,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 20,
     type: "shop",
     buttons: [
-      "Talk to Dr. Marv (Accept Side-Quest: Cybernetic Harvest)",
-      "Deliver Neural Regulators to Dr. Marv",
+      "[SCENE:cybernetic_harvest_briefing] Discuss Neural Regulator Shortage",
       "Undergo Experimental Bio-Splice (STR check)"
     ]
   },
@@ -903,7 +869,6 @@ export const MAP_POIS: MapPOI[] = [
     type: "combat",
     buttons: [
       "Ambush Outlaw Scrap-Raiders",
-      "Scavenge Rusted Mine Shafts",
       "Investigate Abandoned Power Terminal"
     ]
   },
@@ -946,9 +911,7 @@ export const MAP_POIS: MapPOI[] = [
     y: 25,
     type: "shop",
     buttons: [
-      "Inquire about 'Nouveau Heist' Side-Quest",
-      "Hack Nouveau Pressure Shields (INT check)",
-      "Loot Prototype Singularity Battery"
+      "Browse Nouveau Implant Catalog"
     ]
   },
   {
@@ -961,6 +924,8 @@ export const MAP_POIS: MapPOI[] = [
     y: 55,
     type: "social",
     buttons: [
+      "[SCENE:hunt_for_vice_briefing] Review Cipher's Vice Trace",
+      "[SCENE:nouveau_heist_briefing] Plan the Nouveau Heist",
       "Talk to Cipher (VIP Deck - INT Check)",
       "Buy Round of Luxury Champagne (-30¤)",
       "Eavesdrop on Corporate Executives",
@@ -977,7 +942,6 @@ export const MAP_POIS: MapPOI[] = [
     y: 40,
     type: "combat",
     buttons: [
-      "Ambush Security Patrols (Triggers Combat!)",
       "Hack Rebel Courier's Cyberdeck (INT Check)",
       "Search Wreckage for Cargo Pass"
     ]
@@ -995,6 +959,8 @@ export const MAP_POIS: MapPOI[] = [
     type: "arcane",
     buttons: [
       "Talk to Priestess Morgana",
+      "[SCENE:syndicate_briefing] Syndicate Catalyst Briefing",
+      "[SCENE:chem_weaver_briefing] Discuss Bio-Luminescent Reagents",
       "Train Mana Capacity (+20 Max Mana) (-80¤)",
       "Meditate with the Core (+25 Mana)",
       "Examine Technomantic Matrix"
@@ -1055,6 +1021,28 @@ export const MAP_POIS: MapPOI[] = [
       "Overload automated grid line (HACK check)",
       "Inspect thermal pipes"
     ]
+  },
+  {
+    id: "hyperion_gate",
+    name: "Hyperion Neo-Cathedral Gate",
+    district: "hyperion_cathedral",
+    description: "The fortified entrance to Hyperion Spire. Kinetic shield pylons and cyber-crusader gunlines protect the ascent chamber leading to the Archon's ley-altar.",
+    image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=600",
+    x: 25,
+    y: 75,
+    type: "combat",
+    buttons: []
+  },
+  {
+    id: "hyperion_summit",
+    name: "Hyperion Ley-Altar Summit",
+    district: "hyperion_cathedral",
+    description: "The summit of the corporate cathedral, where the Archon AI binds the city's ley-energy into a planetary purge lattice.",
+    image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&q=80&w=600",
+    x: 72,
+    y: 20,
+    type: "combat",
+    buttons: []
   },
   {
     id: "altar_column",
@@ -1196,25 +1184,9 @@ export function getInitialState(archetype: Archetype): GameState {
     maxMana: archetype.maxMana,
     credits: archetype.credits,
     party: ["Vice", "Tracker"],
-    activeQuests: ["Prologue: Subsurface AI Catacombs - Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech."],
+    activeQuests: [], // Compatibility field; authored quest status lives in campaignQuestsRegistry.
     completedQuests: [],
-    structuredQuests: [
-      {
-        id: "prologue",
-        title: "Subsurface AI Catacombs",
-        category: "Main Quest",
-        description: "Infiltrate Conduit 09 with Vice and Tracker to steal corporate database crystals from Ares Biotech.",
-        status: "ACTIVE",
-        objectives: [
-          { id: "hack_terminal", text: "Hack the cyber-vault terminal to steal corporate data crystals from Ares Biotech", current: 0, target: 1, completed: false }
-        ],
-        rewards: [
-          { type: "experience", amount: 100 },
-          { type: "credits", amount: 150 }
-        ],
-        log: ["Infiltrated Level B4 corridors. Evading drone alerts."]
-      }
-    ],
+    structuredQuests: [], // Derived journal entries are built from campaignQuestsRegistry.
     inventory: [...archetype.startingEquipment, "High-Grade Scrap Salvage", "High-Grade Scrap Salvage", "Rusted Circuitry", "Rusted Circuitry"],
     companions: [
       {

@@ -61,7 +61,8 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
   initialSelectedSceneId,
   onClearSelectedSceneId
 }) => {
-  const STORAGE_KEY_SCENES = "dev_studio_custom_scenes_v2";
+  // v3 starts from authored runtime scenes; v2 contained stale legacy copies.
+  const STORAGE_KEY_SCENES = "dev_studio_custom_scenes_v3";
 
   // Master scene registry combining defaults and dynamic custom scenes
   const [scenes, setScenes] = useState<Record<string, POIInteractiveEvent>>(() => {
@@ -891,6 +892,7 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                             <option value="will">Willpower Check</option>
                             <option value="mindmancer">Mindmancer Perk Level</option>
                             <option value="credits">Credit Cost</option>
+                            <option value="mana">Mana Cost</option>
                             <option value="item">Required Item</option>
                           </select>
                         </div>
@@ -912,20 +914,16 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                         )}
 
                         {choice.checkType === "item" && (
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-4xs text-amber-300 font-bold uppercase">Required Item Name</label>
-                            <input
-                              type="text"
-                              value={choice.requiredItem || ""}
-                              onChange={e => {
-                                const nextChoices = [...(activeStep.choices || [])];
-                                nextChoices[chIdx].requiredItem = e.target.value;
-                                handleUpdateStep(activeStepId, { choices: nextChoices });
-                              }}
-                              className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200"
-                              placeholder="e.g. Encryption Keycard"
-                            />
-                          </div>
+                          <>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-4xs text-amber-300 font-bold uppercase">Required Item Name</label>
+                              <input type="text" value={choice.requiredItem || ""} onChange={e => { const nextChoices = [...(activeStep.choices || [])]; nextChoices[chIdx].requiredItem = e.target.value; handleUpdateStep(activeStepId, { choices: nextChoices }); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200" placeholder="e.g. Encryption Keycard" />
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-4xs text-amber-300 font-bold uppercase">Required Quantity</label>
+                              <input type="number" min="1" value={choice.requiredItemQuantity || 1} onChange={e => { const nextChoices = [...(activeStep.choices || [])]; nextChoices[chIdx].requiredItemQuantity = Math.max(1, Number(e.target.value)); handleUpdateStep(activeStepId, { choices: nextChoices }); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200 font-mono" />
+                            </div>
+                          </>
                         )}
 
                         <div className="flex flex-col gap-0.5">
@@ -941,6 +939,22 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                             className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-emerald-300 font-mono"
                             placeholder="0¤"
                           />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-amber-300 font-bold uppercase">Reward Item</label>
+                          <input value={choice.grantsItem || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsItem=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200" placeholder="Item name" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-amber-300 font-bold uppercase">Item Quantity</label>
+                          <input type="number" min="1" value={choice.grantsItemQuantity || 1} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsItemQuantity=Math.max(1,Number(e.target.value)); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-amber-200 font-mono" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-rose-300 font-bold uppercase">Restore HP</label>
+                          <input type="number" value={choice.grantsHp || 0} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsHp=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-rose-200" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-purple-300 font-bold uppercase">Restore Mana</label>
+                          <input type="number" value={choice.grantsMana || 0} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsMana=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-3xs text-purple-200" />
                         </div>
 
                         <div className="flex flex-col gap-0.5">
@@ -973,6 +987,126 @@ export const SceneStudio: React.FC<SceneStudioProps> = ({
                           className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-3xs text-slate-300"
                           placeholder="e.g. You slice through the firewall with surgical precision, unlocking the vault."
                         />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-slate-900/70 p-2 rounded border border-cyan-500/20">
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-cyan-300 font-bold uppercase">Next POI</label>
+                          <select
+                            value={choice.targetPOIId || ""}
+                            onChange={e => {
+                              const nextChoices = [...(activeStep.choices || [])];
+                              nextChoices[chIdx].targetPOIId = e.target.value || undefined;
+                              handleUpdateStep(activeStepId, { choices: nextChoices });
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-cyan-200"
+                          >
+                            <option value="">Stay in current POI</option>
+                            {allPOIs.map(poi => <option key={poi.id} value={poi.id}>{poi.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-emerald-300 font-bold uppercase">Completion Event</label>
+                          <input
+                            value={choice.completionAction || ""}
+                            onChange={e => {
+                              const nextChoices = [...(activeStep.choices || [])];
+                              nextChoices[chIdx].completionAction = e.target.value || undefined;
+                              handleUpdateStep(activeStepId, { choices: nextChoices });
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-emerald-200 font-mono"
+                            placeholder="poi_id:action"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-purple-300 font-bold uppercase">Hacking Puzzle</label>
+                          <select
+                            value={choice.triggerHackingPuzzleType || ""}
+                            onChange={e => {
+                              const nextChoices = [...(activeStep.choices || [])];
+                              nextChoices[chIdx].triggerHackingPuzzleType = (e.target.value || undefined) as POISceneChoice["triggerHackingPuzzleType"];
+                              handleUpdateStep(activeStepId, { choices: nextChoices });
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-purple-200"
+                          >
+                            <option value="">No hacking puzzle</option>
+                            <option value="sanctuary">Sanctuary</option>
+                            <option value="cargo_logs">Cargo Logs</option>
+                            <option value="security_mainframe">Security Mainframe</option>
+                            <option value="cryo_bypass">Cryo Bypass</option>
+                            <option value="nouveau_safe">Nouveau Safe</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-emerald-950/20 p-2 rounded border border-emerald-500/20">
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-cyan-300 font-bold uppercase">Activate Quest ID</label>
+                          <input value={choice.activateQuestId || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].activateQuestId=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-cyan-200 font-mono" placeholder="outcast_directive" />
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-emerald-300 font-bold uppercase">Complete Quest ID</label>
+                          <input value={choice.completeQuestId || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].completeQuestId=e.target.value||undefined; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-emerald-200 font-mono" placeholder="prologue" />
+                        </div>
+                        <label className="flex items-center gap-2 text-4xs text-slate-300 font-bold uppercase">
+                          <input type="checkbox" checked={!!choice.clearParty} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].clearParty=e.target.checked; handleUpdateStep(activeStepId,{choices:nextChoices}); }} />
+                          Clear Active Party
+                        </label>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-4xs text-purple-300 font-bold uppercase">Mindmancer Skill Bonus</label>
+                          <input type="number" value={choice.grantsMindmancerSkill || 0} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].grantsMindmancerSkill=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-purple-200" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 bg-rose-950/20 p-2 rounded border border-rose-500/20">
+                        <div className="md:col-span-2 flex flex-col gap-0.5">
+                          <label className="text-4xs text-rose-300 font-bold uppercase">Failure Narrative</label>
+                          <input
+                            value={choice.failureNarrative || ""}
+                            onChange={e => {
+                              const nextChoices = [...(activeStep.choices || [])];
+                              nextChoices[chIdx].failureNarrative = e.target.value || undefined;
+                              handleUpdateStep(activeStepId, { choices: nextChoices });
+                            }}
+                            className="bg-slate-950 border border-slate-700 rounded px-1.5 py-1 text-3xs text-rose-100"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <input type="number" value={choice.failureHpDamage || 0} title="Failure HP damage" onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].failureHpDamage=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-rose-300" />
+                          <input type="number" value={choice.failureManaDamage || 0} title="Failure mana damage" onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].failureManaDamage=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-purple-300" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-orange-950/20 p-2 rounded border border-orange-500/20">
+                        <label className="flex items-center gap-2 text-4xs text-orange-300 font-bold uppercase">
+                          <input
+                            type="checkbox"
+                            checked={!!choice.combat}
+                            onChange={e => {
+                              const nextChoices = [...(activeStep.choices || [])];
+                              nextChoices[chIdx].combat = e.target.checked ? {
+                                enemyName: "Enemy Squad",
+                                enemyHp: 100,
+                                enemyShields: 0,
+                                turnLog: "Hostile units engage."
+                              } : undefined;
+                              handleUpdateStep(activeStepId, { choices: nextChoices });
+                            }}
+                          />
+                          Trigger Combat
+                        </label>
+                        {choice.combat && <>
+                          <input value={choice.combat.enemyName} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].combat={...choice.combat!,enemyName:e.target.value}; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-orange-200" placeholder="Enemy name" />
+                          <input type="number" value={choice.combat.enemyHp} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].combat={...choice.combat!,enemyHp:Number(e.target.value)}; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-orange-200" title="Enemy HP" />
+                          <input type="number" value={choice.combat.enemyShields || 0} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].combat={...choice.combat!,enemyShields:Number(e.target.value)}; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-cyan-200" title="Enemy shields" />
+                          <input value={choice.combat.victorySceneId || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].combat={...choice.combat!,victorySceneId:e.target.value||undefined}; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-emerald-200 font-mono" placeholder="Victory scene ID" />
+                          <input value={choice.combat.victoryCompletionAction || ""} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].combat={...choice.combat!,victoryCompletionAction:e.target.value||undefined}; handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-emerald-200 font-mono" placeholder="Victory event key" />
+                        </>}
+                        <label className="flex items-center gap-1 text-4xs text-purple-300 font-bold uppercase">
+                          <input type="checkbox" checked={!!choice.unlockMindmancer} onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].unlockMindmancer=e.target.checked; handleUpdateStep(activeStepId,{choices:nextChoices}); }} />
+                          Unlock Mindmancer
+                        </label>
+                        <input type="number" value={choice.maxHpDelta || 0} title="Max HP delta" onChange={e => { const nextChoices=[...(activeStep.choices||[])]; nextChoices[chIdx].maxHpDelta=Number(e.target.value); handleUpdateStep(activeStepId,{choices:nextChoices}); }} className="bg-slate-950 border border-slate-700 rounded px-1 text-3xs text-rose-300" />
                       </div>
                     </div>
                   ))}

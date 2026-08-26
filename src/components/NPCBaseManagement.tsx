@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { GameState, BaseNPC } from "../types";
 import { DEFAULT_CAMPAIGN_NPCS } from "../npcsData";
+import { advanceQuestStage, completeQuest } from "../questEngine";
 
 interface NPCBaseManagementProps {
   isOpen: boolean;
@@ -140,7 +141,7 @@ export default function NPCBaseManagement({
   const updateNPC = (updater: (npc: BaseNPC) => Partial<BaseNPC>, actionMessage: string) => {
     setGameState(prev => {
       if (!prev) return prev;
-      const next = { ...prev };
+      let next = { ...prev };
       next.baseNPCs = (next.baseNPCs || []).map(n => {
         if (n.id === currentNPC.id) {
           const updatedFields = updater(n);
@@ -157,7 +158,7 @@ export default function NPCBaseManagement({
     // Set immediate visual response in the RED block
     setGameState(prev => {
       if (!prev) return prev;
-      const next = { ...prev };
+      let next = { ...prev };
       next.baseNPCs = (next.baseNPCs || []).map(n => {
         if (n.id === currentNPC.id) {
           return {
@@ -891,7 +892,7 @@ export default function NPCBaseManagement({
   const handleNPCQuestAction = (questId: string, stageId: string, pathId?: string) => {
     setGameState(prev => {
       if (!prev) return prev;
-      const next = { ...prev };
+      let next = { ...prev };
       const quests = [...(next.campaignQuestsRegistry || [])];
       const questIdx = quests.findIndex(q => q.id === questId);
       if (questIdx === -1) return prev;
@@ -940,49 +941,15 @@ export default function NPCBaseManagement({
       if (path?.grantsBonusXP) next.xp = (next.xp || 0) + path.grantsBonusXP;
       if (path?.grantsBonusItem) next.inventory = [...next.inventory, path.grantsBonusItem];
 
-      // Mark stage complete
-      stage.completed = true;
-      quest.stages[stageIdx] = stage;
-
-      // Check if all stages completed
-      const allStagesCompleted = quest.stages.every(s => s.completed);
+      next = advanceQuestStage(next, questId, stageId);
+      const advancedQuest = next.campaignQuestsRegistry?.find(item => item.id === questId);
+      const allStagesCompleted = !!advancedQuest?.stages.every(item => item.completed);
       if (allStagesCompleted) {
-        quest.completed = true;
-        if (!next.completedQuests.includes(quest.title)) {
-          next.completedQuests.push(quest.title);
-        }
-        next.activeQuests = (next.activeQuests || []).filter(q => !q.includes(quest.title) && !q.includes(quest.id));
-
-        // Grant rewards
-        if (quest.rewardXP) next.xp = (next.xp || 0) + quest.rewardXP;
-        if (quest.rewardCredits) next.credits = (next.credits || 0) + quest.rewardCredits;
-        if (quest.rewardItems && quest.rewardItems.length > 0) {
-          next.inventory = [...next.inventory, ...quest.rewardItems];
-        }
-
-        // Apply world unlocks
-        if (quest.worldUnlocks) {
-          if (quest.worldUnlocks.unlockBaseId) {
-            next.unlockedBases = Array.from(new Set([...(next.unlockedBases || ["hideout"]), quest.worldUnlocks.unlockBaseId]));
-          }
-          if (quest.worldUnlocks.unlockDistrictId) {
-            next.unlockedDistricts = Array.from(new Set([...(next.unlockedDistricts || ["slums", "downtown"]), quest.worldUnlocks.unlockDistrictId]));
-          }
-          if (quest.worldUnlocks.unlockPerkOrSkill) {
-            next.perks = Array.from(new Set([...(next.perks || []), quest.worldUnlocks.unlockPerkOrSkill]));
-          }
-          if (quest.worldUnlocks.recruitCompanionId) {
-            next.recruitedCompanions = Array.from(new Set([...(next.recruitedCompanions || []), quest.worldUnlocks.recruitCompanionId]));
-          }
-        }
-
-        triggerToast(`🎉 QUEST COMPLETE: "${quest.title}" (+${quest.rewardXP || 100} XP, +${quest.rewardCredits || 250}¤)!`);
+        next = completeQuest(next, questId);
+        triggerToast(`🎉 QUEST COMPLETE: "${quest.title}"!`);
       } else {
         triggerToast(`🎯 STAGE COMPLETED: "${stage.title}"! Next objective updated.`);
       }
-
-      quests[questIdx] = quest;
-      next.campaignQuestsRegistry = quests;
 
       // Update NPC dialogue reaction
       next.baseNPCs = (next.baseNPCs || []).map(n => {
@@ -1322,8 +1289,7 @@ export default function NPCBaseManagement({
               const customChoices = matchedCustom?.choices || [];
 
               const activeQuestDirectives = (gameState?.campaignQuestsRegistry || []).flatMap(quest => {
-                const isQuestActive = gameState?.activeQuests?.some(q => q.includes(quest.title) || q.includes(quest.id));
-                if (!isQuestActive) return [];
+                if (quest.status !== "ACTIVE") return [];
                 const currentStage = quest.stages?.find(s => !s.completed);
                 if (!currentStage) return [];
                 const targetNpcLower = (currentStage.targetNPC || "").toLowerCase();
@@ -1616,7 +1582,7 @@ export default function NPCBaseManagement({
                 fortifiedDoors: false,
                 intrusionLogs: []
               };
-              const isRaidEnabled = gameState.completedQuests.length >= 3;
+              const isRaidEnabled = (gameState.campaignQuestsRegistry || []).filter(quest => quest.status === "COMPLETED").length >= 3;
 
               return (
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 w-full p-2 text-left">

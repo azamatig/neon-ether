@@ -79,124 +79,165 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
     log: ["Infiltrated Level B4 corridors with squad. Terminal firewall located."],
     stages: [
       {
-        id: "p_s1",
+        id: "prologue_ventilation",
         stageIndex: 1,
-        title: "Infiltrate Level B4 Ventilation Shaft",
-        description: "Breach the rusted ventilation chute with Vice and Tracker to gain access to the subterranean catacombs.",
+        title: "Cross the Ventilation Shaft",
+        description: "Slip through the variable-frequency fan blades or use an emergency override to reach the Security Sub-Terminal.",
         objectiveType: "interact_poi",
-        targetPOI: "Level B4 Ventilation Shaft",
+        targetPOI: "Ventilation Shaft (Entry Point)",
+        targetPOIId: "ventilation_shaft",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "ventilation_shaft",
-        linkedPOISceneStepId: "entry",
-        operationalPaths: [
-          {
-            id: "p_path_pry",
-            label: "[Strength 10] Pry open the grating with crowbar",
-            checkType: "str",
-            checkValue: 10,
-            outcomeDesc: "With a grinding screech, the rusted bolts shear off, opening the main conduit shaft.",
-            grantsBonusXP: 25
-          },
-          {
-            id: "p_path_squeeze",
-            label: "[Dexterity 11] Squeeze through narrow maintenance air-filter",
-            checkType: "dex",
-            checkValue: 11,
-            outcomeDesc: "You slip silently through the grease trap and drop behind the heavy gate.",
-            grantsBonusXP: 30
-          }
-        ]
+        completionAction: "ventilation_shaft:slip",
+        linkedPOISceneId: "prologue_ventilation",
+        linkedPOISceneStepId: "entry"
       },
       {
-        id: "p_s2",
+        id: "prologue_security_terminal",
         stageIndex: 2,
-        title: "Bypass Reinforced Hydraulic Blast Door",
-        description: "Hack the security terminal ICE or cut the hydraulic pressure lines to enter the inner vault chamber.",
+        title: "Bypass the Security Sub-Terminal",
+        description: "Slice the alarm sub-grid and open the route to the Heavy Blast Door.",
         objectiveType: "hack_terminal",
-        targetPOI: "Reinforced Hydraulic Blast Door",
+        targetPOI: "Security Sub-Terminal",
+        targetPOIId: "security_terminal",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "blast_door",
-        linkedPOISceneStepId: "door_approach",
-        operationalPaths: [
-          {
-            id: "p_path_hack",
-            label: "[Intelligence 11] Bypass ICE Firewall directly",
-            checkType: "int",
-            checkValue: 11,
-            outcomeDesc: "Your deck slices clean through the security nodes, downloading the crystal without sounding an alarm.",
-            grantsBonusXP: 40
-          },
-          {
-            id: "p_path_plasma",
-            label: "[Plasma Torch] Overload door actuator solenoid",
-            checkType: "none",
-            outcomeDesc: "Superheated plasma cuts the secondary locking pins, venting pressurized hydraulics.",
-            grantsBonusCredits: 50
-          }
-        ]
+        completionAction: "security_terminal:bypass",
+        linkedPOISceneId: "prologue_security_terminal",
+        linkedPOISceneStepId: "console"
       },
       {
-        id: "p_s3",
+        id: "prologue_blast_door",
         stageIndex: 3,
-        title: "Investigate the Obsidian Altar Anomaly",
-        description: "Examine the floating golden relic discovered behind the vault console and interact with its frequency matrix.",
+        title: "Open the Heavy Blast Door",
+        description: "Force the hydraulic valve while Vice and Tracker cover the corridor.",
         objectiveType: "interact_poi",
-        targetPOI: "Mysterious Relic Altar",
+        targetPOI: "Heavy Blast Door",
+        targetPOIId: "blast_door",
         targetDistrict: "conduit09",
         targetCount: 1,
         currentCount: 0,
         completed: false,
-        linkedPOISceneId: "relic_altar",
-        linkedPOISceneStepId: "intro",
-        operationalPaths: [
-          {
-            id: "p_path_scan",
-            label: "[Cyberdeck Scan] Analyze high-ether frequency signature",
-            checkType: "int",
-            checkValue: 10,
-            outcomeDesc: "You confirm the relic operates on raw cognitive bio-electricity before touching it.",
-            grantsBonusXP: 35
-          },
-          {
-            id: "p_path_touch",
-            label: "[Direct Contact] Reach out and touch the Relic to awaken Mindmancy",
-            checkType: "none",
-            outcomeDesc: "A blinding violet shockwave rearranges your synaptic cells and awakens hyper-consciousness.",
-            grantsBonusXP: 50
-          }
-        ]
+        completionAction: "blast_door:pry",
+        linkedPOISceneId: "prologue_blast_door",
+        linkedPOISceneStepId: "door"
       },
       {
-        id: "p_s4",
+        id: "prologue_section_gate",
         stageIndex: 4,
-        title: "Repel Ares Strike Team Ambush",
-        description: "Engage the corporate enforcers that breached the vault sanctuary and avenge Tracker's sacrifice.",
+        title: "Transit to Shatter-Ridge Core",
+        description: "Use the Next Section Gate and complete the squad insertion briefing.",
+        objectiveType: "interact_poi",
+        targetPOI: "Next Section Gate (Transit)",
+        targetPOIId: "section_gate",
+        targetDistrict: "conduit09",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "section_gate:transit",
+        linkedPOISceneId: "prologue_section_gate",
+        linkedPOISceneStepId: "transit"
+      },
+      {
+        id: "prologue_security_checkpoint",
+        stageIndex: 5,
+        title: "Disable the Shatter-Ridge Security Checkpoint",
+        description: "Overclock the defensive grid and disable the checkpoint barrier.",
+        objectiveType: "hack_terminal",
+        targetPOI: "Shatter-Ridge Security Checkpoint",
+        targetPOIId: "shatter_ridge_security_post",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "shatter_ridge_security_post:gate",
+        linkedPOISceneId: "prologue_security_checkpoint",
+        linkedPOISceneStepId: "checkpoint"
+      },
+      {
+        id: "prologue_reactor_well",
+        stageIndex: 6,
+        title: "Cross the Shatter-Ridge Reactor Well",
+        description: "Inspect the reactor well, then proceed through the maintenance route to the Main Array.",
+        objectiveType: "interact_poi",
+        targetPOI: "Shatter-Ridge Reactor Well",
+        targetPOIId: "shatter_ridge_reactor_well",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "shatter_ridge_reactor_well:transit",
+        linkedPOISceneId: "prologue_reactor_well",
+        linkedPOISceneStepId: "well"
+      },
+      {
+        id: "prologue_core_array",
+        stageIndex: 7,
+        title: "Defend the Core Array",
+        description: "Destroy the autonomous security drones while Tracker bypasses the primary locks.",
+        objectiveType: "kill_target",
+        targetPOI: "Core Array Shatter-Ridge",
+        targetPOIId: "main_array_core",
+        targetDistrict: "shatter_ridge_core",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "main_array_core:defended",
+        linkedPOISceneId: "prologue_core_array",
+        linkedPOISceneStepId: "ambush"
+      },
+      {
+        id: "prologue_vault_terminal",
+        stageIndex: 8,
+        title: "Hack the Sanctuary Terminal",
+        description: "Decrypt the primary cyber-vault and extract the Ares Data Crystal.",
+        objectiveType: "hack_terminal",
+        targetPOI: "Sanctuary Hacking Terminal",
+        targetPOIId: "terminal_hacking_puzzle",
+        targetDistrict: "data_vault",
+        targetItem: "Ares Data Crystal",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "terminal_hacking_puzzle:hacked",
+        linkedPOISceneId: "prologue_vault_terminal",
+        linkedPOISceneStepId: "terminal"
+      },
+      {
+        id: "prologue_relic_altar",
+        stageIndex: 9,
+        title: "Survive the Relic Altar Ambush",
+        description: "Investigate the relic, awaken Mindmancy, and repel the Ares strike team.",
         objectiveType: "kill_target",
         targetPOI: "Mysterious Relic Altar",
-        targetDistrict: "conduit09",
-        targetCount: 3,
-        currentCount: 0,
-        completed: false,
-        linkedPOISceneId: "relic_altar",
-        linkedPOISceneStepId: "awakened_fury"
-      },
-      {
-        id: "p_s5",
-        stageIndex: 5,
-        title: "Evacuate to Aurus Safehouse",
-        description: "Escape Conduit 09 with Vice and establish a safe base of operations in the Aurus District.",
-        objectiveType: "interact_poi",
-        targetPOI: "Aurus Safehouse (The Hideout)",
-        targetDistrict: "aurus",
+        targetPOIId: "relic_altar",
+        targetDistrict: "data_vault",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "relic_altar:ambush_survived",
+        linkedPOISceneId: "relic_altar",
+        linkedPOISceneStepId: "intro"
+      },
+      {
+        id: "prologue_escape",
+        stageIndex: 10,
+        title: "Escape to the Aurus Safehouse",
+        description: "Resolve the captured officer's fate, salvage Tracker's gear, and escape with Vice to Aurus.",
+        objectiveType: "custom_choice",
+        targetPOI: "Mysterious Relic Altar",
+        targetPOIId: "relic_altar",
+        targetDistrict: "data_vault",
+        targetCount: 1,
+        currentCount: 0,
+        completed: false,
+        completionAction: "prologue:escaped",
+        linkedPOISceneId: "prologue_escape",
+        linkedPOISceneStepId: "officer"
       }
     ],
     rewards: {
@@ -234,11 +275,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Search the debris in Shatter Ridge Corridors (Downtown Region) and extract the core.",
         objectiveType: "collect_item",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Technical Signal Core",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "outcast:core_secured",
+        linkedPOISceneId: "outcast_core_recovery",
+        linkedPOISceneStepId: "search",
         operationalPaths: [
           {
             id: "mq1_p1_search",
@@ -264,11 +309,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meet Agent Jax at Neon Abyss Bar in Conduit 09 to decrypt the data stream.",
         objectiveType: "talk_npc",
         targetPOI: "Neon Abyss Bar",
+        targetPOIId: "bar",
         targetDistrict: "conduit09",
         targetNPC: "Agent Jax",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "outcast:delivered",
+        linkedPOISceneId: "outcast_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -301,11 +350,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Infiltrate Sludge Conduits (Docks) and destroy the bio-engineered Behemoth.",
         objectiveType: "kill_target",
         targetPOI: "Sludge Conduits",
+        targetPOIId: "sludge_conduits",
         targetDistrict: "docks",
         targetItem: "Acid Beast Core",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "corporate_hunt:behemoth_defeated",
+        linkedPOISceneId: "corporate_hunt_behemoth",
+        linkedPOISceneStepId: "hunt",
         operationalPaths: [
           {
             id: "mq2_p1_science",
@@ -332,11 +385,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Deliver the Acid Beast Core to Chancellor Aria at Apex Armory in Downtown.",
         objectiveType: "talk_npc",
         targetPOI: "Apex Armory",
+        targetPOIId: "armory",
         targetDistrict: "downtown",
         targetNPC: "Chancellor Aria",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "corporate_hunt:delivered",
+        linkedPOISceneId: "corporate_hunt_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -373,11 +430,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meditate at the Satoshi Cyber-Shrine to harmonize your ether channels.",
         objectiveType: "interact_poi",
         targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOIId: "neon_shrine",
         targetDistrict: "satoshi",
         targetItem: "Charged Ley-Matrix",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "syndicate:matrix_charged",
+        linkedPOISceneId: "syndicate_charge_matrix",
+        linkedPOISceneStepId: "shrine",
         operationalPaths: [
           {
             id: "mq3_p1_mind",
@@ -403,12 +464,16 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         title: "Return Matrix to Priestess Morgana",
         description: "Deliver the Charged Ley-Matrix to Priestess Morgana in Satoshi Square.",
         objectiveType: "talk_npc",
-        targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOI: "The Iron Coven Temple",
+        targetPOIId: "temple",
         targetDistrict: "satoshi",
         targetNPC: "Priestess Morgana",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "syndicate:matrix_delivered",
+        linkedPOISceneId: "syndicate_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -445,10 +510,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Infiltrate Titan Logistics Freight Hub (Docks) and extract transport logs.",
         objectiveType: "hack_terminal",
         targetPOI: "Titan Logistics Freight Hub",
+        targetPOIId: "freight_hub",
         targetDistrict: "docks",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "hunt_for_vice:logs_acquired",
+        linkedPOISceneId: "hunt_for_vice_freight_logs",
+        linkedPOISceneStepId: "terminal",
         operationalPaths: [
           {
             id: "mq4_p1_bribe",
@@ -499,10 +568,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Assault or disable the automated laser grid guarding Corporate Plaza entrance.",
         objectiveType: "interact_poi",
         targetPOI: "Corporate Plaza Sublevels",
+        targetPOIId: "corporate_plaza",
         targetDistrict: "downtown",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "rescue_vice:checkpoint_bypassed",
+        linkedPOISceneId: "rescue_vice_plaza",
+        linkedPOISceneStepId: "checkpoint",
         operationalPaths: [
           {
             id: "mq5_p1_guns",
@@ -528,11 +601,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Override Cryo-Pod B-12 and escort Vice back to the Safehouse.",
         objectiveType: "talk_npc",
         targetPOI: "Corporate Plaza Sublevels",
+        targetPOIId: "corporate_plaza",
         targetDistrict: "downtown",
         targetNPC: "Vice",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "rescue_vice:extracted",
+        linkedPOISceneId: "rescue_vice_plaza",
+        linkedPOISceneStepId: "cryo_bay"
       }
     ],
     rewards: {
@@ -569,10 +646,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Fight through the elite cyber-crusader vanguard at the cathedral gates.",
         objectiveType: "kill_target",
         targetPOI: "Hyperion Neo-Cathedral",
+        targetPOIId: "hyperion_gate",
         targetDistrict: "hyperion_cathedral",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "singularity:spire_breached",
+        linkedPOISceneId: "singularity_spire_gate",
+        linkedPOISceneStepId: "gate"
       },
       {
         id: "mq6_s2",
@@ -581,10 +662,14 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Climb to the Ley-Altar summit and destroy the divine AI construct.",
         objectiveType: "kill_target",
         targetPOI: "Hyperion Ley-Altar Summit",
+        targetPOIId: "hyperion_summit",
         targetDistrict: "hyperion_cathedral",
         targetCount: 1,
         currentCount: 0,
         completed: false,
+        completionAction: "singularity:archon_destroyed",
+        linkedPOISceneId: "singularity_archon_confrontation",
+        linkedPOISceneStepId: "altar",
         operationalPaths: [
           {
             id: "mq6_p1_mind",
@@ -641,11 +726,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Explore the toxic waterways in Docks Region to collect 3 slime samples.",
         objectiveType: "collect_item",
         targetPOI: "Sludge Conduits",
+        targetPOIId: "sludge_conduits",
         targetDistrict: "docks",
         targetItem: "Glowing Slime",
         targetCount: 3,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "chem_weaver:slime_harvested",
+        linkedPOISceneId: "chem_weaver_harvest",
+        linkedPOISceneStepId: "harvest"
       },
       {
         id: "cw_s2",
@@ -654,11 +743,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Bring the 3 harvested samples to Priestess Morgana in Satoshi Square.",
         objectiveType: "talk_npc",
         targetPOI: "Satoshi Cyber-Shrine Gardens",
+        targetPOIId: "temple",
         targetDistrict: "satoshi",
         targetNPC: "Priestess Morgana",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "chem_weaver:delivered",
+        linkedPOISceneId: "chem_weaver_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -690,11 +783,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Defeat the Rust-Claw Orc band in Shatter Ridge and recover the Experimental Drone Chip.",
         objectiveType: "kill_target",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Experimental Drone Chip",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "drone:chip_recovered",
+        linkedPOISceneId: "drone_chip_recovery",
+        linkedPOISceneStepId: "ambush"
       },
       {
         id: "drone_s2",
@@ -703,11 +800,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Turn in the chip to Agent Jax at the Neon Abyss Bar for credits, or install it directly at home.",
         objectiveType: "talk_npc",
         targetPOI: "Neon Abyss Bar",
+        targetPOIId: "bar",
         targetDistrict: "conduit09",
         targetNPC: "Agent Jax",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "drone:resolved",
+        linkedPOISceneId: "drone_chip_resolution",
+        linkedPOISceneStepId: "choice"
       }
     ],
     rewards: {
@@ -739,11 +840,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Assault the smuggler warehouse at Rusty Anchor Shipyard and seize the Stolen Weapon Crate.",
         objectiveType: "kill_target",
         targetPOI: "Rusty Anchor Shipyard",
+        targetPOIId: "shipyard",
         targetDistrict: "docks",
         targetItem: "Stolen Weapon Crate",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "smugglers:crate_recovered",
+        linkedPOISceneId: "smugglers_shipyard_raid",
+        linkedPOISceneStepId: "raid"
       },
       {
         id: "smug_s2",
@@ -752,11 +857,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Hand over the recovered weapons to the Quartermaster at Titan Logistics Freight Hub.",
         objectiveType: "talk_npc",
         targetPOI: "Titan Logistics Freight Hub",
+        targetPOIId: "freight_hub",
         targetDistrict: "docks",
         targetNPC: "Titan Logistics Quartermaster",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "smugglers:crate_delivered",
+        linkedPOISceneId: "smugglers_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -788,11 +897,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Engage Downtown patrol units at the Highwalk Homicide Site to harvest processors.",
         objectiveType: "collect_item",
         targetPOI: "Highwalk Homicide Site",
+        targetPOIId: "homicide_site",
         targetDistrict: "downtown",
         targetItem: "Neural Regulator",
         targetCount: 2,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "harvest:regulators_acquired",
+        linkedPOISceneId: "cybernetic_harvest_patrol",
+        linkedPOISceneStepId: "ambush"
       },
       {
         id: "harv_s2",
@@ -801,11 +914,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Bring the 2 Neural Regulators to Dr. Marv's Cyber-Clinic at the Docks.",
         objectiveType: "talk_npc",
         targetPOI: "Dr. Marv's Cyber-Clinic",
+        targetPOIId: "marv_clinic",
         targetDistrict: "docks",
         targetNPC: "Dr. Marv",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "harvest:regulators_delivered",
+        linkedPOISceneId: "cybernetic_harvest_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -837,12 +954,16 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Meet Cipher in Club Afterlife VIP Lounge to receive the security bypass keycard.",
         objectiveType: "talk_npc",
         targetPOI: "Club Afterlife VIP Lounge",
+        targetPOIId: "club_afterlife",
         targetDistrict: "downtown",
         targetNPC: "Cipher",
         targetItem: "VIP Afterlife Keycard",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:keycard_acquired",
+        linkedPOISceneId: "nouveau_heist_briefing",
+        linkedPOISceneStepId: "briefing"
       },
       {
         id: "nouveau_s2",
@@ -851,11 +972,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Crack the pressure shields in Nouveau Showroom (Downtown) and extract the battery.",
         objectiveType: "interact_poi",
         targetPOI: "Nouveau Cybernetic Showroom",
+        targetPOIId: "nouveau_chrome",
         targetDistrict: "downtown",
         targetItem: "Prototype Singularity Battery",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:battery_stolen",
+        linkedPOISceneId: "nouveau_showroom_heist",
+        linkedPOISceneStepId: "showroom"
       },
       {
         id: "nouveau_s3",
@@ -864,11 +989,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Return with the Singularity Battery to Cipher at Club Afterlife.",
         objectiveType: "talk_npc",
         targetPOI: "Club Afterlife VIP Lounge",
+        targetPOIId: "club_afterlife",
         targetDistrict: "downtown",
         targetNPC: "Cipher",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "nouveau:battery_delivered",
+        linkedPOISceneId: "nouveau_heist_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {
@@ -890,6 +1019,8 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
     giverPOI: "Aurus Safehouse (The Hideout)",
     minLevel: 4,
     prerequisiteQuestId: "rescue_vice",
+    requiredReputationFaction: "streetOutlaws",
+    requiredReputationValue: 80,
     status: "NOT_STARTED",
     log: [],
     stages: [
@@ -900,11 +1031,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Hack the server node at Shatter Ridge Corridors in Downtown Region.",
         objectiveType: "hack_terminal",
         targetPOI: "Shatter Ridge Corridors",
+        targetPOIId: "shatter_ridge",
         targetDistrict: "downtown",
         targetItem: "Encrypted Ares Ledger",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "vice:ledger_acquired",
+        linkedPOISceneId: "vice_ledger_hack",
+        linkedPOISceneStepId: "server"
       },
       {
         id: "vr_s2",
@@ -913,11 +1048,15 @@ export const DEFAULT_CAMPAIGN_QUESTS: UnifiedQuest[] = [
         description: "Return to the Safehouse and give the ledger to Vice to seal her devotion.",
         objectiveType: "talk_npc",
         targetPOI: "Aurus Safehouse (The Hideout)",
+        targetPOIId: "hideout",
         targetDistrict: "aurus",
         targetNPC: "Vice",
         targetCount: 1,
         currentCount: 0,
-        completed: false
+        completed: false,
+        completionAction: "vice:ledger_delivered",
+        linkedPOISceneId: "vice_ledger_turn_in",
+        linkedPOISceneStepId: "delivery"
       }
     ],
     rewards: {

@@ -25,6 +25,8 @@ export interface CombatState {
   playerCorrodedTurns?: number;
   enemyPanicTurns?: number;
   ironWillTriggered?: boolean;
+  victorySceneId?: string;
+  victoryCompletionAction?: string;
 }
 
 export interface EquipmentState {
@@ -242,6 +244,19 @@ export interface CustomPOIAction {
   rewardCredits?: number;
   rewardXP?: number;
   rewardItem?: string;
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "credits" | "mana" | "item";
+  checkValue?: number;
+  requiredItem?: string;
+  consumeItem?: boolean;
+  successTitle?: string;
+  successText?: string;
+  failureTitle?: string;
+  failureText?: string;
+  failureHpDamage?: number;
+  failureManaDamage?: number;
+  completionAction?: string;
+  requiredQuestId?: string;
+  repeatMode?: "always" | "once";
 }
 
 export interface CustomPOIData {
@@ -303,17 +318,42 @@ export interface POISceneChoice {
   label: string;
   targetStepId?: string;
   targetPOIId?: string;
-  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "item";
+  checkType?: "none" | "int" | "str" | "dex" | "will" | "mindmancer" | "credits" | "mana" | "item";
   checkValue?: number;
   requiredItem?: string;
+  requiredItemQuantity?: number;
   outcomeNarrative?: string;
   grantsXP?: number;
   grantsCredits?: number;
   grantsItem?: string;
+  grantsItemQuantity?: number;
   triggerCombatEncounterId?: string;
   unlockDistrictId?: string;
   unlockBaseId?: string;
   completeQuestStageId?: string;
+  completeQuestId?: string;
+  activateQuestId?: string;
+  completionAction?: string;
+  failureNarrative?: string;
+  failureTargetStepId?: string;
+  failureHpDamage?: number;
+  failureManaDamage?: number;
+  grantsHp?: number;
+  grantsMana?: number;
+  maxHpDelta?: number;
+  unlockMindmancer?: boolean;
+  grantsMindmancerSkill?: number;
+  clearParty?: boolean;
+  consumeItem?: boolean;
+  triggerHackingPuzzleType?: HackingPuzzleState["type"];
+  combat?: {
+    enemyName: string;
+    enemyHp: number;
+    enemyShields?: number;
+    turnLog: string;
+    victorySceneId?: string;
+    victoryCompletionAction?: string;
+  };
   variant?: "cyan" | "amber" | "rose" | "purple" | "emerald";
 }
 
@@ -370,13 +410,19 @@ export interface QuestStage {
   description: string;
   objectiveType: "interact_poi" | "kill_target" | "hack_terminal" | "talk_npc" | "collect_item" | "custom_choice";
   targetPOI?: string;
+  /** Stable MAP_POIS id. Names remain presentation-only and may be edited. */
+  targetPOIId?: string;
   targetDistrict?: string;
   targetNPC?: string;
   targetItem?: string;
   targetCount: number;
   currentCount: number;
   completed: boolean;
+  /** Runtime event key written to completedPOIActions when this stage is resolved. */
+  completionAction?: string;
   operationalPaths?: QuestOperationalPath[];
+  contentType?: "scene" | "poi_action" | "event";
+  linkedPOIActionId?: string;
   linkedPOISceneId?: string;
   linkedPOISceneStepId?: string;
 }
@@ -400,6 +446,8 @@ export interface UnifiedQuest {
   giverPOI?: string;
   minLevel?: number;
   prerequisiteQuestId?: string;
+  requiredReputationFaction?: "streetOutlaws" | "titanLogistics" | "aresCorporate";
+  requiredReputationValue?: number;
   nextQuestId?: string;
   stages: QuestStage[];
   rewards: {
@@ -557,6 +605,3 @@ export interface HackingPuzzleState {
 export type District = string;
 export type POI = any;
 export type Item = any;
-
-
-

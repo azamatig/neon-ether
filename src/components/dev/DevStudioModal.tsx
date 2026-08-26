@@ -329,15 +329,18 @@ export const DevStudioModal: React.FC<DevStudioModalProps> = ({
   // the runtime registry hydrated from persisted overrides so edited buttons
   // remain available after closing the studio or reloading the application.
   useEffect(() => {
-    if (!setGameState) return;
+    if (!setGameState || !gameState) return;
     setGameState(prev => {
+      // MainGame deliberately uses null while it is on the menu/loading a save.
+      // The updater may therefore run after the render-time guard above.
+      if (!prev) return prev;
       const current = prev.customPOIsRegistry || [];
       const currentJson = JSON.stringify(current);
       const authoredJson = JSON.stringify(customPOIs);
       if (currentJson === authoredJson) return prev;
       return { ...prev, customPOIsRegistry: customPOIs };
     });
-  }, [customPOIs, setGameState]);
+  }, [customPOIs, setGameState, !!gameState]);
 
   useEffect(() => {
     try {
